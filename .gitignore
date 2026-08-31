@@ -1,0 +1,45 @@
+# Byte-compiled and optimized Python files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+MANIFEST
+
+# Test, coverage, and static-analysis caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# Virtual environments and local configuration
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+.python-version
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/

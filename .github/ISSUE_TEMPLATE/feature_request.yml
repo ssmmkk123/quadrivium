@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose an API improvement or numerical method
+title: "[Feature]: "
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and pull requests for this proposal.
+          required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem or use case would this address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API or algorithm and how it could be validated.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References and additional context
+      description: Link authoritative papers or documentation where applicable.
