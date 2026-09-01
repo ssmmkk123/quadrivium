@@ -48,11 +48,11 @@ Every container behaves like a small immutable record with a readable ``repr`` s
 | --- | --- | --- |
 | *class*&nbsp;`RootResult` | `(root: Any, f_root: Any = None, iterations: int = 0, converged: bool = False, function_calls: int = 0, meth, ...)` | Outcome of a root-finding method. |
 | *class*&nbsp;`IterationResult` | `(x: Any, iterations: int = 0, converged: bool = False, residuals: list = <factory>, method: str = '', messa, ...)` | Outcome of an iterative linear solver. |
-| *class*&nbsp;`QuadratureResult` | `(value: float, error_estimate: float \| None = None, function_calls: int = 0, subintervals: int = 0, converg, ...)` | Outcome of a quadrature rule. |
-| *class*&nbsp;`ODESolution` | `(t: numpy.ndarray, y: numpy.ndarray, method: str = '', n_steps: int = 0, n_accepted: int = 0, n_rejected: i, ...)` | Outcome of an initial-value problem integration. |
+| *class*&nbsp;`QuadratureResult` | `(value: float, error_estimate: Optional[float] = None, function_calls: int = 0, subintervals: int = 0, conv, ...)` | Outcome of a quadrature rule. |
+| *class*&nbsp;`ODESolution` | `(t: np.ndarray, y: np.ndarray, method: str = '', n_steps: int = 0, n_accepted: int = 0, n_rejected: int = 0, ...)` | Outcome of an initial-value problem integration. |
 | *class*&nbsp;`OptimizeResult` | `(x: Any, fun: float = nan, jac: Any = None, hess: Any = None, iterations: int = 0, converged: bool = False, ...)` | Outcome of an optimization run. |
-| *class*&nbsp;`EigenResult` | `(eigenvalues: numpy.ndarray, eigenvectors: numpy.ndarray \| None = None, iterations: int = 0, converged: boo, ...)` | Eigenvalues (and optionally eigenvectors) of a matrix. |
-| *class*&nbsp;`PDESolution` | `(u: numpy.ndarray, grids: Sequence[numpy.ndarray] = (), t: numpy.ndarray \| None = None, method: str = '', i, ...)` | Outcome of a PDE solve on a structured grid. |
+| *class*&nbsp;`EigenResult` | `(eigenvalues: np.ndarray, eigenvectors: Optional[np.ndarray] = None, iterations: int = 0, converged: bool =, ...)` | Eigenvalues (and optionally eigenvectors) of a matrix. |
+| *class*&nbsp;`PDESolution` | `(u: np.ndarray, grids: Sequence[np.ndarray] = (), t: Optional[np.ndarray] = None, method: str = '', iterati, ...)` | Outcome of a PDE solve on a structured grid. |
 
 ## `utils`
 
@@ -73,9 +73,9 @@ These helpers are used pervasively, so they are written to be allocation-light a
 | `condition_number` | `(A, p=2) -> float` | Condition number ``\|\|A\|\| * \|\|A^-1\|\|`` in the requested norm. |
 | `relative_error` | `(approx, exact) -> float` | Absolute error scaled by ``\|\|exact\|\|``; falls back to absolute if zero. |
 | `absolute_error` | `(approx, exact) -> float` | ``\|\|approx - exact\|\|_inf``. |
-| `as_vector` | `(x) -> numpy.ndarray` | Coerce to a 1-D float array (scalars become length-1 arrays). |
-| `as_matrix` | `(A) -> numpy.ndarray` | Coerce to a 2-D float array. |
-| `check_square` | `(A) -> numpy.ndarray` | Coerce to a 2-D float array and require it to be square. |
+| `as_vector` | `(x) -> np.ndarray` | Coerce to a 1-D float array (scalars become length-1 arrays). |
+| `as_matrix` | `(A) -> np.ndarray` | Coerce to a 2-D float array. |
+| `check_square` | `(A) -> np.ndarray` | Coerce to a 2-D float array and require it to be square. |
 | `is_symmetric` | `(A, tol: float = 1e-12) -> bool` |  |
 | `is_positive_definite` | `(A, tol: float = 0.0) -> bool` | True when ``A`` is symmetric with a successful Cholesky factorization. |
 | `is_diagonally_dominant` | `(A, strict: bool = True) -> bool` | Row diagonal dominance test (sufficient for Jacobi/Gauss-Seidel). |

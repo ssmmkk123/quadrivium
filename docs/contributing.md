@@ -79,7 +79,11 @@ python tools/gen_docs.py
 ```
 
 `python tools/gen_docs.py --check` verifies the checked-in pages match the
-code, and the test suite fails if they do not.
+code, and the test suite fails if they do not — on every supported Python, so
+the generator's output has to be interpreter-independent. That is why it reads
+annotations as source text rather than evaluating them: `Optional[float]`
+evaluates to a `typing` object whose `repr` changed in 3.14, which would make
+the pages depend on the version that generated them.
 
 **The navigation must resolve.** Every page in `mkdocs.yml` must exist, and
 every internal link must point at a real file.

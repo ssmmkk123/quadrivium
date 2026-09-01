@@ -34,12 +34,12 @@ Forward mode uses dual numbers and costs one pass per input; reverse mode record
 | *class*&nbsp;`HyperDual` | `(a, b=0.0, c=0.0, d=0.0)` | Hyper-dual number ``a + b e1 + c e2 + d e1 e2`` with ``e1^2 = e2^2 = 0``. |
 | *class*&nbsp;`Variable` | `(value, parents=(), grads=())` | Reverse-mode AD variable; call ``backward`` then read ``.grad``. |
 | `derivative` | `(f: Callable, x: float) -> float` | Exact first derivative of a scalar function by forward-mode AD. |
-| `forward_gradient` | `(f: Callable, x) -> numpy.ndarray` | Gradient by forward mode: one pass per input variable. |
-| `forward_jacobian` | `(F: Callable, x) -> numpy.ndarray` | Jacobian by forward mode. |
-| `gradient` | `(f: Callable, x) -> numpy.ndarray` | Gradient by reverse mode: one sweep for all partials. |
-| `jacobian` | `(F: Callable, x) -> numpy.ndarray` | Jacobian by reverse mode: one sweep per output component. |
-| `hessian` | `(f: Callable, x) -> numpy.ndarray` | Exact Hessian by hyper-dual (forward-over-forward) differentiation. |
-| `hessian_vector_product` | `(f: Callable, x, v) -> numpy.ndarray` | Hessian-vector product ``H v`` without forming ``H``. |
+| `forward_gradient` | `(f: Callable, x) -> np.ndarray` | Gradient by forward mode: one pass per input variable. |
+| `forward_jacobian` | `(F: Callable, x) -> np.ndarray` | Jacobian by forward mode. |
+| `gradient` | `(f: Callable, x) -> np.ndarray` | Gradient by reverse mode: one sweep for all partials. |
+| `jacobian` | `(F: Callable, x) -> np.ndarray` | Jacobian by reverse mode: one sweep per output component. |
+| `hessian` | `(f: Callable, x) -> np.ndarray` | Exact Hessian by hyper-dual (forward-over-forward) differentiation. |
+| `hessian_vector_product` | `(f: Callable, x, v) -> np.ndarray` | Hessian-vector product ``H v`` without forming ``H``. |
 | `second_derivative_ad` | `(f: Callable, x: float) -> float` | Exact second derivative of a scalar function via hyper-dual arithmetic. |
 | `value_and_grad` | `(f: Callable, x)` | Both the value and the gradient from a single reverse sweep. |
 | `taylor_coefficients` | `(f: Callable, x: float, order: int = 5, h: float = 0.1)` | Taylor coefficients of ``f`` about ``x`` up to ``order``. |

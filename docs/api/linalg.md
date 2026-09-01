@@ -33,38 +33,38 @@ Gaussian elimination in its several pivoting variants, the classical factorizati
 
 | Name | Signature | Summary |
 | --- | --- | --- |
-| `forward_substitution` | `(L, b, unit_diagonal: bool = False) -> numpy.ndarray` | Solve ``L x = b`` for lower-triangular ``L``. |
-| `back_substitution` | `(U, b, unit_diagonal: bool = False) -> numpy.ndarray` | Solve ``U x = b`` for upper-triangular ``U``. |
+| `forward_substitution` | `(L, b, unit_diagonal: bool = False) -> np.ndarray` | Solve ``L x = b`` for lower-triangular ``L``. |
+| `back_substitution` | `(U, b, unit_diagonal: bool = False) -> np.ndarray` | Solve ``U x = b`` for upper-triangular ``U``. |
 | `gauss_elimination` | `(A, b, pivoting: str = 'partial')` | Solve ``A x = b`` by Gaussian elimination. |
 | `gauss_jordan` | `(A, b=None)` | Gauss-Jordan elimination to reduced row echelon form. |
 | `lu_decomposition` | `(A)` | Unpivoted ``A = L U`` (Doolittle: unit diagonal on ``L``). |
-| `lu_solve` | `(L, U, b, P=None) -> numpy.ndarray` | Solve using a precomputed LU (optionally PLU) factorization. |
+| `lu_solve` | `(L, U, b, P=None) -> np.ndarray` | Solve using a precomputed LU (optionally PLU) factorization. |
 | `plu_decomposition` | `(A)` | Partially pivoted ``P A = L U``; returns ``(P, L, U)``. |
-| `plu_solve` | `(A, b) -> numpy.ndarray` | Factor with partial pivoting and solve in one call. |
+| `plu_solve` | `(A, b) -> np.ndarray` | Factor with partial pivoting and solve in one call. |
 | `lu_complete_pivot` | `(A)` | Complete pivoting ``P A Q = L U``; returns ``(P, L, U, Q)``. |
-| `cholesky` | `(A, lower: bool = True) -> numpy.ndarray` | Cholesky factor of a symmetric positive definite matrix. |
-| `cholesky_solve` | `(A, b) -> numpy.ndarray` | Solve an SPD system via Cholesky. |
+| `cholesky` | `(A, lower: bool = True) -> np.ndarray` | Cholesky factor of a symmetric positive definite matrix. |
+| `cholesky_solve` | `(A, b) -> np.ndarray` | Solve an SPD system via Cholesky. |
 | `ldl_decomposition` | `(A)` | ``A = L D L'`` for symmetric (possibly indefinite) ``A``; returns ``(L, d)``. |
-| `ldl_solve` | `(A, b) -> numpy.ndarray` | Solve a symmetric system via the ``L D L'`` factorization. |
+| `ldl_solve` | `(A, b) -> np.ndarray` | Solve a symmetric system via the ``L D L'`` factorization. |
 | `crout` | `(A)` | Crout factorization (unit diagonal on ``U``). |
 | `doolittle` | `(A)` | Doolittle factorization (unit diagonal on ``L``) computed by inner products. |
 | `gram_schmidt_qr` | `(A)` | Classical Gram-Schmidt ``A = Q R`` (numerically the weakest variant). |
 | `modified_gram_schmidt_qr` | `(A)` | Modified Gram-Schmidt: same result, far better orthogonality. |
 | `householder_qr` | `(A, reduced: bool = True)` | Householder reflections ``A = Q R`` (backward stable). |
 | `givens_qr` | `(A)` | QR by Givens rotations; ideal for sparse or nearly-triangular matrices. |
-| `qr_solve` | `(A, b, method: str = 'householder') -> numpy.ndarray` | Least-squares / square solve through a QR factorization. |
+| `qr_solve` | `(A, b, method: str = 'householder') -> np.ndarray` | Least-squares / square solve through a QR factorization. |
 | `hessenberg` | `(A, compute_q: bool = True)` | Reduce ``A`` to upper Hessenberg form by Householder similarity. |
 | `bidiagonalize` | `(A)` | Golub-Kahan bidiagonalization ``A = U B V'`` with ``B`` upper bidiagonal. |
-| `thomas` | `(a, b, c, d) -> numpy.ndarray` | Thomas algorithm for tridiagonal systems. |
-| `banded_solve` | `(A, b, kl: int, ku: int) -> numpy.ndarray` | Banded Gaussian elimination with partial pivoting. |
+| `thomas` | `(a, b, c, d) -> np.ndarray` | Thomas algorithm for tridiagonal systems. |
+| `banded_solve` | `(A, b, kl: int, ku: int) -> np.ndarray` | Banded Gaussian elimination with partial pivoting. |
 | `block_tridiagonal_solve` | `(A_blocks, B_blocks, C_blocks, d_blocks)` | Block Thomas algorithm. |
-| `solve` | `(A, b, method: str = 'auto') -> numpy.ndarray` | Solve ``A x = b``, choosing a factorization automatically by default. |
-| `inverse` | `(A) -> numpy.ndarray` | Matrix inverse via Gauss-Jordan elimination. |
+| `solve` | `(A, b, method: str = 'auto') -> np.ndarray` | Solve ``A x = b``, choosing a factorization automatically by default. |
+| `inverse` | `(A) -> np.ndarray` | Matrix inverse via Gauss-Jordan elimination. |
 | `determinant` | `(A) -> float` | Determinant from the pivoted LU factorization. |
 | `rank` | `(A, tol=None) -> int` | Numerical rank from the singular values. |
-| `nullspace` | `(A, tol=None) -> numpy.ndarray` | Orthonormal basis for the null space, from the SVD. |
-| `sherman_morrison` | `(Ainv, u, v) -> numpy.ndarray` | Inverse of the rank-one update ``A + u v'`` given ``A^-1``. |
-| `woodbury` | `(Ainv, U, Cinv, V) -> numpy.ndarray` | Inverse of ``A + U C V`` given ``A^-1`` and ``C^-1`` (Woodbury identity). |
+| `nullspace` | `(A, tol=None) -> np.ndarray` | Orthonormal basis for the null space, from the SVD. |
+| `sherman_morrison` | `(Ainv, u, v) -> np.ndarray` | Inverse of the rank-one update ``A + u v'`` given ``A^-1``. |
+| `woodbury` | `(Ainv, U, Cinv, V) -> np.ndarray` | Inverse of ``A + U C V`` given ``A^-1`` and ``C^-1`` (Woodbury identity). |
 
 ## `eigen`
 
@@ -93,11 +93,11 @@ Covers the vector iterations (power / inverse / Rayleigh), the QR algorithm in i
 | `svd_golub_kahan` | `(A)` | SVD through bidiagonalization plus a symmetric eigen-solve on ``B'B``. |
 | `polar_decomposition` | `(A, side: str = 'right')` | Polar decomposition of a (possibly rectangular) matrix. |
 | `schur` | `(A, tol: float = 1e-12, max_iter: int = 2000)` | Real Schur form ``A = Q T Q'`` by shifted QR with deflation. |
-| `schur_eigenvalues` | `(T, tol: float = 1e-13) -> numpy.ndarray` | Eigenvalues read from the diagonal blocks of a real Schur form. |
+| `schur_eigenvalues` | `(T, tol: float = 1e-13) -> np.ndarray` | Eigenvalues read from the diagonal blocks of a real Schur form. |
 | `gershgorin_disks` | `(A)` | Gershgorin disks as ``(centers, radii)``; the spectrum lies in their union. |
 | `spectral_radius` | `(A) -> float` | Largest eigenvalue modulus. |
-| `matrix_power` | `(A, p: int) -> numpy.ndarray` | Integer matrix power by binary exponentiation. |
-| `matrix_exponential` | `(A, order: int = 6) -> numpy.ndarray` | Matrix exponential by scaling-and-squaring with a Pade approximant. |
+| `matrix_power` | `(A, p: int) -> np.ndarray` | Integer matrix power by binary exponentiation. |
+| `matrix_exponential` | `(A, order: int = 6) -> np.ndarray` | Matrix exponential by scaling-and-squaring with a Pade approximant. |
 | `matrix_function` | `(A, f)` | Apply a scalar function to a diagonalizable matrix via its eigendecomposition. |
 
 ## `iterative`
@@ -142,15 +142,15 @@ The four classical routes to ``min ||Ax-b||`` -- normal equations, QR, SVD and t
 
 | Name | Signature | Summary |
 | --- | --- | --- |
-| `normal_equations` | `(A, b) -> numpy.ndarray` | Solve ``A'A x = A'b`` via Cholesky. |
-| `qr_least_squares` | `(A, b) -> numpy.ndarray` | Least squares by Householder QR -- the numerically preferred default. |
+| `normal_equations` | `(A, b) -> np.ndarray` | Solve ``A'A x = A'b`` via Cholesky. |
+| `qr_least_squares` | `(A, b) -> np.ndarray` | Least squares by Householder QR -- the numerically preferred default. |
 | `svd_least_squares` | `(A, b, rcond: float = 1e-15)` | Minimum-norm least squares via the SVD; handles rank deficiency. |
-| `pseudoinverse` | `(A, rcond: float = 1e-15) -> numpy.ndarray` | Moore-Penrose pseudoinverse from the SVD. |
-| `ridge_regression` | `(A, b, alpha: float = 1.0) -> numpy.ndarray` | L2-regularized solution ``(A'A + alpha I)^-1 A'b``. |
-| `tikhonov` | `(A, b, alpha: float = 1.0, L=None) -> numpy.ndarray` | General Tikhonov regularization ``min \|\|Ax-b\|\|^2 + alpha \|\|L x\|\|^2``. |
-| `truncated_svd` | `(A, b, k: int) -> numpy.ndarray` | Least squares keeping only the ``k`` largest singular values. |
+| `pseudoinverse` | `(A, rcond: float = 1e-15) -> np.ndarray` | Moore-Penrose pseudoinverse from the SVD. |
+| `ridge_regression` | `(A, b, alpha: float = 1.0) -> np.ndarray` | L2-regularized solution ``(A'A + alpha I)^-1 A'b``. |
+| `tikhonov` | `(A, b, alpha: float = 1.0, L=None) -> np.ndarray` | General Tikhonov regularization ``min \|\|Ax-b\|\|^2 + alpha \|\|L x\|\|^2``. |
+| `truncated_svd` | `(A, b, k: int) -> np.ndarray` | Least squares keeping only the ``k`` largest singular values. |
 | `total_least_squares` | `(A, b)` | Total least squares: errors in both ``A`` and ``b`` (orthogonal regression). |
-| `weighted_least_squares` | `(A, b, weights) -> numpy.ndarray` | Weighted least squares ``min sum w_i (a_i'x - b_i)^2``. |
+| `weighted_least_squares` | `(A, b, weights) -> np.ndarray` | Weighted least squares ``min sum w_i (a_i'x - b_i)^2``. |
 | `constrained_least_squares` | `(A, b, C, d)` | Equality-constrained least squares: minimize ``\|\|Ax-b\|\|`` s.t. ``Cx = d``. |
 | `nonnegative_least_squares` | `(A, b, tol: float = 1e-10, max_iter: int = 300)` | Lawson-Hanson active set algorithm for ``min \|\|Ax-b\|\|`` with ``x >= 0``. |
 | `lsqr_least_squares` | `(A, b, damp: float = 0.0, **kwargs)` | Iterative least squares through LSQR (large or sparse problems). |
