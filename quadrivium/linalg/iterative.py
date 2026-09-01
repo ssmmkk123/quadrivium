@@ -3,7 +3,7 @@
 Two families: classical stationary splittings (Jacobi through SSOR) and Krylov
 subspace methods (CG through GMRES). Every solver accepts either a dense array
 or any object exposing ``@`` / ``matvec``, so the sparse types in
-:mod:`numethods.linalg.sparse` work unchanged.
+:mod:`quadrivium.linalg.sparse` work unchanged.
 """
 
 from __future__ import annotations

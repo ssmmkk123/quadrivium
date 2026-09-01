@@ -64,7 +64,7 @@ def tensor_gauss(f, lows, highs, n=8):
     """Tensor-product Gauss-Legendre over a box in any dimension.
 
     Cost grows as ``n^d``, so this is practical up to about five dimensions;
-    beyond that use :func:`~numethods.integrate.monte_carlo.quasi_monte_carlo`.
+    beyond that use :func:`~quadrivium.integrate.monte_carlo.quasi_monte_carlo`.
     """
     lows, highs = as_vector(lows), as_vector(highs)
     d = lows.size

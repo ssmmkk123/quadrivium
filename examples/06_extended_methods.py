@@ -13,16 +13,16 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from numethods.integrate import filon, gauss_legendre, sparse_grid_quadrature
-from numethods.linalg import (condition_estimate, lyapunov, qz_decomposition,
+from quadrivium.integrate import filon, gauss_legendre, sparse_grid_quadrature
+from quadrivium.linalg import (condition_estimate, lyapunov, qz_decomposition,
                               qz_eigenvalues, randomized_svd, sqrtm, sylvester)
-from numethods.ode import (dormand_prince, gragg_bulirsch_stoer,
+from quadrivium.ode import (dormand_prince, gragg_bulirsch_stoer,
                            solve_ivp_events)
-from numethods.pde import lid_driven_cavity, navier_stokes_2d, weno_burgers
-from numethods.rootfind import anderson_acceleration, fixed_point_system
-from numethods.special import dawson, lambert_w, spherical_harmonic, zeta
-from numethods.stochastic import gillespie_ssa, milstein
-from numethods.transforms import wavedec, wavelet_denoise, waverec
+from quadrivium.pde import lid_driven_cavity, navier_stokes_2d, weno_burgers
+from quadrivium.rootfind import anderson_acceleration, fixed_point_system
+from quadrivium.special import dawson, lambert_w, spherical_harmonic, zeta
+from quadrivium.stochastic import gillespie_ssa, milstein
+from quadrivium.transforms import wavedec, wavelet_denoise, waverec
 
 np.set_printoptions(precision=6, suppress=True)
 

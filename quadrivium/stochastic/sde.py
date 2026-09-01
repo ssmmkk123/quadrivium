@@ -41,7 +41,7 @@ __all__ = [
 
 
 def _rng(rng):
-    return np.random.default_rng() if rng is None else rng
+    return np.random.default_rng(rng)
 
 
 def _drift_diffusion(a, b):

@@ -1,0 +1,114 @@
+site_name: Quadrivium
+site_description: >-
+  A comprehensive, from-scratch library of the numerical methods used in
+  scientific computing. 836 functions and classes, depending only on NumPy.
+site_url: https://ssmmkk123.github.io/quadrivium/
+repo_url: https://github.com/ssmmkk123/quadrivium
+repo_name: ssmmkk123/quadrivium
+edit_uri: edit/main/docs/
+copyright: Released under the MIT License
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# --strict turns each of these into a build failure, so a link that points at a
+# missing page or a heading that no longer exists cannot reach the site.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Core: guides/core.md
+      - Linear algebra: guides/linalg.md
+      - Root finding: guides/rootfind.md
+      - Interpolation: guides/interpolate.md
+      - Approximation: guides/approx.md
+      - Differentiation: guides/diff.md
+      - Integration: guides/integrate.md
+      - Ordinary differential equations: guides/ode.md
+      - Partial differential equations: guides/pde.md
+      - Optimization: guides/optimize.md
+      - Transforms: guides/transforms.md
+      - Stochastic methods: guides/stochastic.md
+      - Special functions: guides/special.md
+  - API reference:
+      - Overview: api/index.md
+      - core: api/core.md
+      - linalg: api/linalg.md
+      - rootfind: api/rootfind.md
+      - interpolate: api/interpolate.md
+      - approx: api/approx.md
+      - diff: api/diff.md
+      - integrate: api/integrate.md
+      - ode: api/ode.md
+      - pde: api/pde.md
+      - optimize: api/optimize.md
+      - transforms: api/transforms.md
+      - stochastic: api/stochastic.md
+      - special: api/special.md
+  - About:
+      - Design and validation: design.md
+      - Known limitations: limitations.md
+      - Examples: examples.md
+      - FAQ: faq.md
+      - Contributing: contributing.md
+      - Release process: release-process.md
+      - Changelog: changelog.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ssmmkk123/quadrivium
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/quadrivium/
+
+watch:
+  - quadrivium

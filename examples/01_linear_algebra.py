@@ -7,8 +7,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from numethods.core import condition_number
-from numethods.linalg import *
+from quadrivium.core import condition_number
+from quadrivium.linalg import *
 
 np.set_printoptions(precision=6, suppress=True)
 

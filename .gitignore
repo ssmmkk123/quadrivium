@@ -12,6 +12,9 @@ dist/
 *.egg
 MANIFEST
 
+# Built documentation
+site/
+
 # Test, coverage, and static-analysis caches
 .pytest_cache/
 .coverage

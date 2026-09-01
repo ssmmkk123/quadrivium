@@ -1,4 +1,4 @@
-"""numethods -- a comprehensive library of numerical methods.
+"""quadrivium -- a comprehensive library of numerical methods.
 
 A from-scratch implementation of the standard algorithms of scientific
 computing, organised by problem area. Every method is written out explicitly
@@ -33,22 +33,22 @@ Results are rounded below to the accuracy each method is actually asked for --
 ``solve_ivp`` defaults to ``rtol=1e-8``, so its last digits are not meaningful.
 
 >>> import numpy as np
->>> import numethods as nm
->>> round(nm.brent(lambda x: x**3 - 2*x - 5, 1, 3).root, 12)
+>>> import quadrivium as qd
+>>> round(qd.brent(lambda x: x**3 - 2*x - 5, 1, 3).root, 12)
 2.094551481542
->>> round(float(nm.quad(lambda x: np.exp(-x*x), -np.inf, np.inf).value), 12)
+>>> round(float(qd.quad(lambda x: np.exp(-x*x), -np.inf, np.inf).value), 12)
 1.772453850906
->>> round(float(nm.solve_ivp(lambda t, y: -2*y, (0, 1), [1.0]).y[-1, 0]), 9)
+>>> round(float(qd.solve_ivp(lambda t, y: -2*y, (0, 1), [1.0]).y[-1, 0]), 9)
 0.135335283
->>> round(float(nm.sqrtm([[4.0, 1.0], [2.0, 3.0]])[0, 0]), 12)
+>>> round(float(qd.sqrtm([[4.0, 1.0], [2.0, 3.0]])[0, 0]), 12)
 1.962116505791
->>> round(nm.lambert_w(np.e), 12)
+>>> round(qd.lambert_w(np.e), 12)
 1.0
 
 Each subpackage can also be imported directly::
 
-    from numethods.linalg import householder_qr
-    from numethods.ode import dormand_prince
+    from quadrivium.linalg import householder_qr
+    from quadrivium.ode import dormand_prince
 """
 
 from __future__ import annotations

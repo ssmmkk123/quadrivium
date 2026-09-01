@@ -4,10 +4,10 @@ import unittest
 
 import numpy as np
 
-from numethods.approx import *
-from numethods.core.exceptions import BracketError
-from numethods.interpolate import *
-from numethods.rootfind import *
+from quadrivium.approx import *
+from quadrivium.core.exceptions import BracketError
+from quadrivium.interpolate import *
+from quadrivium.rootfind import *
 
 CUBIC_ROOT = 2.0945514815423265        # real root of x^3 - 2x - 5
 
@@ -45,6 +45,35 @@ class TestScalarRootFinding(unittest.TestCase):
     def test_newton_beats_bisection(self):
         self.assertLess(newton(self.f, 2.0, self.df).iterations,
                         bisection(self.f, 1, 3).iterations)
+
+    def test_illinois_and_pegasus_break_the_regula_falsi_stall(self):
+        """The whole point of both variants: no stalled endpoint.
+
+        Plain false position keeps one endpoint fixed on a convex function and
+        crawls in linearly; halving (Illinois) or Pegasus-scaling the retained
+        value restores superlinear convergence.  Damping *every* step instead of
+        only the retained ones would give linear convergence with ratio 1/2 --
+        no better than bisection -- so the comparison against bisection is what
+        pins the rule down.
+        """
+        stalling = lambda x: x**10 - 1               # noqa: E731 - convex, stalls
+        for f, a, b in ((self.f, 1, 3), (lambda x: np.exp(x) - 3, 0, 3)):
+            bisect_calls = bisection(f, a, b).function_calls
+            for m in (illinois, pegasus):
+                with self.subTest(method=m.__name__, f=f):
+                    r = m(f, a, b)
+                    self.assertTrue(r.converged)
+                    self.assertAlmostEqual(r.root, brent(f, a, b).root, places=10)
+                    self.assertLess(r.function_calls, bisect_calls / 3)
+
+        # Pegasus's scaling is strictly stronger than Illinois's halving, and
+        # the two must not collapse onto the same iteration.
+        slow = false_position(stalling, 0.5, 1.5)
+        self.assertFalse(slow.converged)             # regula falsi stalls here
+        illinois_calls = illinois(stalling, 0.5, 1.5).function_calls
+        pegasus_calls = pegasus(stalling, 0.5, 1.5).function_calls
+        self.assertLess(illinois_calls, 30)
+        self.assertLess(pegasus_calls, illinois_calls)
 
     def test_multiplicity_correction(self):
         g, dg = lambda x: (x - 2) ** 3, lambda x: 3 * (x - 2) ** 2

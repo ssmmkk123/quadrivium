@@ -8,9 +8,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from numethods.diff import *
-from numethods.integrate import *
-from numethods.special import *
+from quadrivium.diff import *
+from quadrivium.integrate import *
+from quadrivium.special import *
 
 
 def banner(title):

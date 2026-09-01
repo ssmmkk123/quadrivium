@@ -12,41 +12,43 @@ import unittest
 
 import numpy as np
 
-from numethods.approx import aaa, chebyshev_economization
-from numethods.integrate import (cauchy_principal_value, filon,
-                                 hadamard_finite_part, sparse_grid_quadrature)
-from numethods.interpolate import (bezier, bezier_derivative, bezier_subdivide,
+from quadrivium.approx import aaa, chebyshev_economization
+from quadrivium.integrate import (cauchy_principal_value, filon,
+                                 hadamard_finite_part, monte_carlo,
+                                 sparse_grid_quadrature)
+from quadrivium.interpolate import (bezier, bezier_derivative, bezier_subdivide,
                                    de_casteljau, nurbs, nurbs_circle,
                                    open_uniform_knots, trilinear)
-from numethods.linalg import (condition_estimate, cur_decomposition,
+from quadrivium.linalg import (condition_estimate, cur_decomposition,
                               discrete_lyapunov, generalized_eigh,
                               interpolative_decomposition, lobpcg, logm,
                               lyapunov, nystrom_approximation, polar_decomposition,
-                              qz_decomposition, qz_eigenvalues, randomized_svd,
+                              qz_decomposition, qz_eigenvalues,
+                              randomized_range_finder, randomized_svd,
                               schur, schur_eigenvalues, signm, sqrtm,
                               subspace_iteration, sylvester)
-from numethods.ode import (dae_index1_bdf, dde_method_of_steps, detect_stiffness,
+from quadrivium.ode import (dae_index1_bdf, dde_method_of_steps, detect_stiffness,
                            dormand_prince, find_events, gragg_bulirsch_stoer,
                            mass_matrix_ode, modified_midpoint, rk4, rk_nystrom,
                            solve_ivp, solve_ivp_events, stormer_cowell)
-from numethods.optimize import lbfgsb, newton_cg
-from numethods.pde import (lid_driven_cavity, navier_stokes_2d,
+from quadrivium.optimize import lbfgsb, newton_cg
+from quadrivium.pde import (lid_driven_cavity, navier_stokes_2d,
                            poisson_neumann, poisson_periodic_fft, ssp_rk3,
                            vorticity_streamfunction, weno5_reconstruct,
                            weno_burgers, weno_conservation_law)
-from numethods.rootfind import anderson_acceleration, newton_krylov
-from numethods.special import (associated_legendre, bessel_i0, bessel_i1,
+from quadrivium.rootfind import anderson_acceleration, newton_krylov
+from quadrivium.special import (associated_legendre, bessel_i0, bessel_i1,
                                bessel_in, bessel_k0, bessel_k1, bessel_kn,
                                dawson, erfcx, expint_n, fresnel_c, fresnel_s,
                                hyp1f1, hyp2f1, lambert_w, logistic, logit,
                                polygamma, spherical_bessel_j, spherical_bessel_y,
                                spherical_harmonic, trigamma, zeta)
-from numethods.stochastic import (brownian_bridge, brownian_path,
+from quadrivium.stochastic import (brownian_bridge, brownian_path,
                                   cox_ingersoll_ross, euler_maruyama,
                                   geometric_brownian_motion, gillespie_ssa,
                                   milstein, ornstein_uhlenbeck, stochastic_heun,
                                   stochastic_rk, tau_leaping)
-from numethods.transforms import (cwt, dwt, dwt2, goertzel, idwt, idwt2, iswt,
+from quadrivium.transforms import (cwt, dwt, dwt2, goertzel, idwt, idwt2, iswt,
                                   scale_to_frequency, swt, wavedec,
                                   wavelet_denoise, wavelet_energy, waverec,
                                   window)
@@ -240,7 +242,7 @@ class TestWavelets(unittest.TestCase):
 
 class TestMatrixFunctions(unittest.TestCase):
     def test_sqrtm_and_logm(self):
-        from numethods.linalg import matrix_exponential
+        from quadrivium.linalg import matrix_exponential
 
         rng = np.random.default_rng(0)
         for n in (2, 5, 12):
@@ -676,7 +678,7 @@ class TestNewSpecialFunctions(unittest.TestCase):
             self.assertAlmostEqual(spherical_bessel_j(2, x), closed, places=13)
 
     def test_spherical_harmonics_are_orthonormal(self):
-        from numethods.approx import gauss_legendre_nodes
+        from quadrivium.approx import gauss_legendre_nodes
 
         xs, ws = gauss_legendre_nodes(60)
 
@@ -722,7 +724,7 @@ class TestNewSpecialFunctions(unittest.TestCase):
         self.assertAlmostEqual(expint_n(1, 1.0), 0.21938393439552027, places=13)
 
     def test_zeta_off_the_convergence_half_plane(self):
-        from numethods.special import gamma
+        from quadrivium.special import gamma
 
         for s in (0.01, 0.25, 0.6, 0.99, 2.3, -0.5, -7.3):
             lhs = zeta(s)
@@ -742,7 +744,7 @@ class TestNewQuadratureAndApproximation(unittest.TestCase):
     def test_filon_beats_gauss_on_oscillatory_integrals(self):
         """Filon's accuracy *improves* with frequency; ordinary quadrature's
         collapses, because it needs points per oscillation."""
-        from numethods.integrate import gauss_legendre
+        from quadrivium.integrate import gauss_legendre
 
         exact = lambda w: (math.exp(1) * (math.sin(w) - w * math.cos(w)) + w) / (1 + w * w)
         for w in (100.0, 1000.0, 10000.0):
@@ -866,7 +868,7 @@ class TestGeometryAndOptimization(unittest.TestCase):
                 return lap - lam * np.exp(u)
             return F
 
-        from numethods.rootfind import newton_system
+        from quadrivium.rootfind import newton_system
 
         F = make(20)
         a = newton_krylov(F, np.zeros(20), tol=1e-12)
@@ -923,6 +925,59 @@ class TestGeometryAndOptimization(unittest.TestCase):
         r = lbfgsb(rosen, np.array([-1.2, 1.0]), rg,
                    bounds=[(-2.0, 0.5), (-2.0, 2.0)], tol=1e-10)
         self.assertTrue(np.allclose(r.x, [0.5, 0.25], atol=1e-6))
+
+
+class TestRandomnessConventions(unittest.TestCase):
+    """``rng=`` accepts whatever ``np.random.default_rng`` accepts.
+
+    Every documented call takes an integer seed, a ``Generator``, or ``None``.
+    Passing the seed straight through to a generator method instead of
+    normalising it first raises ``AttributeError``, which is easy to miss
+    because ``None`` and a ``Generator`` both work.
+    """
+
+    def _cases(self):
+        rng = np.random.default_rng(7)
+        low_rank = rng.standard_normal((40, 6)) @ rng.standard_normal((6, 30))
+        spd = np.diag(np.arange(1.0, 13.0))
+        drift, diffusion = (lambda x, t: -x), (lambda x, t: 0.2)
+        return {
+            "randomized_svd": lambda r: randomized_svd(low_rank, 4, rng=r)[1],
+            "randomized_range_finder":
+                lambda r: randomized_range_finder(low_rank, 6, rng=r),
+            "nystrom_approximation": lambda r: nystrom_approximation(spd, 3, rng=r),
+            "cur_decomposition": lambda r: cur_decomposition(low_rank, 3, rng=r)[1],
+            "subspace_iteration":
+                lambda r: subspace_iteration(spd, 2, rng=r).eigenvalues,
+            "lobpcg": lambda r: lobpcg(spd, 2, rng=r).eigenvalues,
+            "brownian_path": lambda r: brownian_path((0, 1), n=16, rng=r)[1],
+            "euler_maruyama":
+                lambda r: euler_maruyama(drift, diffusion, (0, 1), [1.0], n=16, rng=r).y,
+            "milstein":
+                lambda r: milstein(drift, diffusion, (0, 1), [1.0], n=16, rng=r).y,
+            "monte_carlo": lambda r: monte_carlo(lambda x: x * x, 0, 1, n=500, rng=r).value,
+        }
+
+    def test_integer_seed_is_accepted_and_reproducible(self):
+        for name, call in self._cases().items():
+            with self.subTest(routine=name):
+                first = np.asarray(call(0), dtype=float)
+                second = np.asarray(call(0), dtype=float)
+                self.assertTrue(np.array_equal(first, second))
+
+    def test_generator_and_none_also_work(self):
+        for name, call in self._cases().items():
+            with self.subTest(routine=name):
+                seeded = np.asarray(call(np.random.default_rng(3)), dtype=float)
+                self.assertTrue(np.all(np.isfinite(seeded)))
+                self.assertTrue(np.all(np.isfinite(np.asarray(call(None), dtype=float))))
+
+    def test_the_same_seed_means_the_same_stream(self):
+        """An integer seed must reach the generator, not merely be accepted."""
+        by_int = randomized_svd(np.diag(np.arange(1.0, 9.0)), 3, rng=5)[1]
+        by_gen = randomized_svd(np.diag(np.arange(1.0, 9.0)), 3,
+                                rng=np.random.default_rng(5))[1]
+        self.assertTrue(np.array_equal(by_int, by_gen))
 
 
 if __name__ == "__main__":

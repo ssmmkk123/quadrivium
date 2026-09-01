@@ -7,10 +7,10 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from numethods.core.exceptions import DomainError
-from numethods.pde import *
-from numethods.stochastic import *
-from numethods.transforms import *
+from quadrivium.core.exceptions import DomainError
+from quadrivium.pde import *
+from quadrivium.stochastic import *
+from quadrivium.transforms import *
 
 
 def banner(title):

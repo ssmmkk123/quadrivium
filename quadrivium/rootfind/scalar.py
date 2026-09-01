@@ -95,7 +95,17 @@ def false_position(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 20
 
 
 def _modified_regula(f, a, b, tol, max_iter, rule, name):
-    """Shared driver for the Illinois and Pegasus stalling fixes."""
+    """Shared driver for the Illinois and Pegasus stalling fixes.
+
+    Both are regula falsi with one change.  When the same endpoint is retained
+    twice running -- the stall that drags plain false position down to linear
+    convergence -- the retained endpoint's function value is scaled down, so
+    the next secant leans back towards the other side.
+
+    The scaling belongs on the retained step only.  Applying it on every step
+    damps the good regula-falsi steps as well, and the iteration degenerates
+    to linear convergence with ratio 1/2, no better than bisection.
+    """
     fc = CountedFunction(f)
     a, b = float(a), float(b)
     fa, fb, exact = _check_bracket(fc, a, b)
@@ -109,26 +119,28 @@ def _modified_regula(f, a, b, tol, max_iter, rule, name):
         history.append(c)
         if abs(fcv) < tol or abs(b - a) < tol:
             return RootResult(c, fcv, k, True, fc.calls, name, history, "converged")
-        if np.sign(fcv) == np.sign(fb):
-            b, fb = c, fcv
-            fa = rule(fa, fcv, fb)
+        if np.sign(fcv) != np.sign(fb):
+            a, fa = b, fb           # the root moved to the other side: shift the bracket
         else:
-            a, fa = c, fcv
-            fb = rule(fb, fcv, fa)
+            fa = rule(fa, fb, fcv)  # ``a`` retained again: damp its value
+        b, fb = c, fcv
     return RootResult(c, fc(c), max_iter, False, fc.calls, name, history,
                       "maximum iterations reached")
 
 
 def illinois(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200):
     """Illinois variant: halve the retained endpoint's value to stop stalling."""
-    return _modified_regula(f, a, b, tol, max_iter, lambda fo, fc, fn: fo * 0.5, "illinois")
+    return _modified_regula(f, a, b, tol, max_iter,
+                            lambda f_kept, f_other, f_new: f_kept * 0.5, "illinois")
 
 
 def pegasus(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200):
     """Pegasus variant: scale by ``f_c/(f_c+f_new)``; faster than Illinois."""
     return _modified_regula(
         f, a, b, tol, max_iter,
-        lambda fo, fc, fn: fo * fc / (fc + fn) if (fc + fn) != 0 else fo * 0.5,
+        lambda f_kept, f_other, f_new: (
+            f_kept * f_other / (f_other + f_new)
+            if (f_other + f_new) != 0 else f_kept * 0.5),
         "pegasus",
     )
 

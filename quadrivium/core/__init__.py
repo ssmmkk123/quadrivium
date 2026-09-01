@@ -5,7 +5,7 @@ from .exceptions import (
     ConvergenceError,
     DimensionError,
     DomainError,
-    NumethodsError,
+    QuadriviumError,
     SingularMatrixError,
     StepSizeError,
 )

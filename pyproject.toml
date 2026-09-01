@@ -3,17 +3,34 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "numethods"
-version = "1.1.0"
+name = "quadrivium"
+dynamic = ["version"]
 description = "A comprehensive from-scratch library of numerical methods for scientific computing"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["numerical-methods", "scientific-computing", "mathematics"]
+keywords = [
+    "numerical-methods",
+    "scientific-computing",
+    "mathematics",
+    "linear-algebra",
+    "optimization",
+    "differential-equations",
+    "quadrature",
+    "interpolation",
+    "fft",
+    "wavelets",
+    "monte-carlo",
+    "special-functions",
+]
 dependencies = ["numpy>=1.20"]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -22,14 +39,37 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Education",
+    "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ssmmkk123/quadrivium"
+Documentation = "https://ssmmkk123.github.io/quadrivium/"
+Repository = "https://github.com/ssmmkk123/quadrivium"
+Changelog = "https://github.com/ssmmkk123/quadrivium/blob/main/CHANGELOG.md"
+Issues = "https://github.com/ssmmkk123/quadrivium/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+# MkDocs 2.0 is announced as backward-incompatible with the plugin and
+# theming systems these docs use, so the majors are capped.
+docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5,<10"]
+dev = [
+    "quadrivium[test,docs]",
+    "build>=1.2",
+    "twine>=5.0",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "quadrivium.__version__" }
 
 [tool.setuptools.packages.find]
-include = ["numethods*"]
+include = ["quadrivium*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

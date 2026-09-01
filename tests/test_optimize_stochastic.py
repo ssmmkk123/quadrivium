@@ -5,9 +5,9 @@ import unittest
 
 import numpy as np
 
-from numethods.optimize import *
-from numethods.stochastic import *
-from numethods.transforms import *
+from quadrivium.optimize import *
+from quadrivium.stochastic import *
+from quadrivium.transforms import *
 
 
 def rosenbrock(v):
@@ -808,7 +808,7 @@ class TestStatistics(unittest.TestCase):
         self.assertGreater(anova_one_way(a, c, rng.normal(0, 1, 80))["p_value"], 0.05)
 
     def test_ks_test_calibration(self):
-        from numethods.special import erf
+        from quadrivium.special import erf
         cdf = lambda t: 0.5 * (1 + erf(t / np.sqrt(2)))
         ps = np.array([ks_test(np.random.default_rng(i).normal(0, 1, 100), cdf)["p_value"]
                        for i in range(300)])

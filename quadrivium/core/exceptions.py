@@ -1,9 +1,9 @@
-"""Exception hierarchy shared by every solver in :mod:`numethods`."""
+"""Exception hierarchy shared by every solver in :mod:`quadrivium`."""
 
 from __future__ import annotations
 
 __all__ = [
-    "NumethodsError",
+    "QuadriviumError",
     "ConvergenceError",
     "SingularMatrixError",
     "DimensionError",
@@ -13,11 +13,11 @@ __all__ = [
 ]
 
 
-class NumethodsError(Exception):
+class QuadriviumError(Exception):
     """Base class for all library errors."""
 
 
-class ConvergenceError(NumethodsError):
+class ConvergenceError(QuadriviumError):
     """An iterative method failed to reach the requested tolerance.
 
     The partial state is attached so callers can inspect / restart.
@@ -30,21 +30,21 @@ class ConvergenceError(NumethodsError):
         self.best = best
 
 
-class SingularMatrixError(NumethodsError):
+class SingularMatrixError(QuadriviumError):
     """Matrix is singular (or numerically so) for the requested operation."""
 
 
-class DimensionError(NumethodsError, ValueError):
+class DimensionError(QuadriviumError, ValueError):
     """Array shapes are incompatible."""
 
 
-class DomainError(NumethodsError, ValueError):
+class DomainError(QuadriviumError, ValueError):
     """Argument outside the domain of validity of the method."""
 
 
-class StepSizeError(NumethodsError):
+class StepSizeError(QuadriviumError):
     """Adaptive step size underflowed the minimum allowed value."""
 
 
-class BracketError(NumethodsError, ValueError):
+class BracketError(QuadriviumError, ValueError):
     """A bracketing method was given an interval that does not bracket a root."""

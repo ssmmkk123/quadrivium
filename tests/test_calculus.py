@@ -6,10 +6,10 @@ from fractions import Fraction
 
 import numpy as np
 
-from numethods.core.exceptions import DomainError
-from numethods.diff import *
-from numethods.integrate import *
-from numethods.special import *
+from quadrivium.core.exceptions import DomainError
+from quadrivium.diff import *
+from quadrivium.integrate import *
+from quadrivium.special import *
 
 # int_0^2 e^-t sin(3t) dt
 QUAD_REF = (3 - np.exp(-2) * (np.sin(6) + 3 * np.cos(6))) / 10

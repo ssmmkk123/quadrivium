@@ -4,13 +4,13 @@ import unittest
 
 import numpy as np
 
-from numethods.core import (EPS, absolute_error, condition_number,
+from quadrivium.core import (EPS, absolute_error, condition_number,
                             is_diagonally_dominant, is_positive_definite,
                             machine_epsilon, matrix_norm, norm,
                             numerical_gradient, numerical_hessian,
                             numerical_jacobian, relative_error)
-from numethods.core.exceptions import DimensionError, SingularMatrixError
-from numethods.linalg import *
+from quadrivium.core.exceptions import DimensionError, SingularMatrixError
+from quadrivium.linalg import *
 
 
 class TestCoreUtils(unittest.TestCase):

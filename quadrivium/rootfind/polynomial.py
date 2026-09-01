@@ -151,7 +151,7 @@ def laguerre_root(coeffs, x0=0.0, tol: float = 1e-14, max_iter: int = 200):
 
     Cubically convergent and near-globally convergent for polynomials with real
     roots. Named ``laguerre_root`` to keep the bare name ``laguerre`` for the
-    Laguerre *polynomial* in :mod:`numethods.approx.orthopoly`.
+    Laguerre *polynomial* in :mod:`quadrivium.approx.orthopoly`.
     """
     c = np.asarray(coeffs, dtype=complex)
     n = len(c) - 1

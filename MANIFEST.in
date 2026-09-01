@@ -1,0 +1,22 @@
+# The sdist is meant to be a self-contained copy of the project: the package,
+# its full test suite, the runnable examples, and the documentation sources, so
+# a downstream packager can build and validate the release without a checkout.
+
+include CHANGELOG.md
+include CODE_OF_CONDUCT.md
+include CONTRIBUTING.md
+include SECURITY.md
+include SUPPORT.md
+include mkdocs.yml
+
+recursive-include tests *.py
+recursive-include examples *.py
+recursive-include docs *.md
+recursive-include tools *.py
+
+# Never ship build, cache, or editor droppings.
+global-exclude *.py[cod]
+global-exclude .DS_Store
+prune .github
+prune .pytest_cache
+prune **/__pycache__

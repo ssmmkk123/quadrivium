@@ -4,9 +4,9 @@ import unittest
 
 import numpy as np
 
-from numethods.core.exceptions import DomainError
-from numethods.ode import *
-from numethods.pde import *
+from quadrivium.core.exceptions import DomainError
+from quadrivium.ode import *
+from quadrivium.pde import *
 
 # y' = -2y + t, y(0) = 1
 LINEAR_RHS = lambda t, y: -2 * y + t
@@ -186,7 +186,7 @@ class TestExponentialIntegrators(unittest.TestCase):
     def test_exact_for_linear_problems(self):
         A = np.array([[-100.0, 1.0], [0.0, -1.0]])
         y0 = np.array([1.0, 1.0])
-        from numethods.linalg import matrix_exponential
+        from quadrivium.linalg import matrix_exponential
         exact = matrix_exponential(A) @ y0
         for m in (exponential_euler, etd_rk2, etd_rk4):
             r = m(A, lambda t, y: np.zeros(2), (0, 1), y0, 10)
@@ -199,7 +199,7 @@ class TestExponentialIntegrators(unittest.TestCase):
         self.assertLess(max(norms) - min(norms), 1e-12)
 
     def test_krylov_expm(self):
-        from numethods.linalg import matrix_exponential
+        from quadrivium.linalg import matrix_exponential
         rng = np.random.default_rng(0)
         M = rng.random((40, 40)) - 0.5
         v = rng.random(40)

@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Index to publish to
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]" build twine
+
+      # A tag that disagrees with the packaged version would publish a release
+      # under the wrong number, and PyPI never lets a number be reused.
+      - name: Check the tag matches quadrivium.__version__
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(python -c 'import quadrivium; print(quadrivium.__version__)')"
+          echo "tag=$tag package=$version"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag v$version expected, got ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Run the test suite
+        run: python -m unittest discover -s tests
+
+      - name: Build the sdist and wheel
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Smoke-test the wheel outside the source tree
+        run: |
+          python -m venv /tmp/relcheck
+          /tmp/relcheck/bin/python -m pip install --upgrade pip
+          /tmp/relcheck/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/relcheck/bin/python -c "
+          import quadrivium as qd, numpy as np
+          print('quadrivium', qd.__version__)
+          assert abs(qd.brent(lambda x: x**3 - 2*x - 5, 1, 3).root - 2.0945514815423265) < 1e-12
+          assert abs(float(qd.quad(lambda x: np.exp(-x*x), -np.inf, np.inf)) - np.sqrt(np.pi)) < 1e-10
+          "
+
+      - name: Upload the distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/quadrivium/
+    permissions:
+      id-token: write          # OIDC identity for Trusted Publishing
+
+    steps:
+      - name: Download the distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/quadrivium/
+    permissions:
+      id-token: write          # OIDC identity for Trusted Publishing
+      attestations: write      # build provenance for the artifacts
+      contents: write          # create the GitHub Release
+
+    steps:
+      - name: Download the distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist/
+
+      - name: Attest the build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+      - name: Create the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Quadrivium ${GITHUB_REF_NAME#v}" \
+            --notes "Install with \`pip install quadrivium==${GITHUB_REF_NAME#v}\`.
+
+          See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md) for what changed, and the [documentation](https://ssmmkk123.github.io/quadrivium/) for the guides and API reference."

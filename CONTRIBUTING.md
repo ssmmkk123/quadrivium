@@ -1,6 +1,6 @@
-# Contributing to numethods
+# Contributing to Quadrivium
 
-Thank you for helping improve numethods. Contributions may be bug fixes,
+Thank you for helping improve quadrivium. Contributions may be bug fixes,
 documentation improvements, new tests, performance work, or carefully scoped
 numerical methods.
 
@@ -31,6 +31,9 @@ Run the complete test suite before submitting a pull request:
 python -m unittest discover -s tests
 ```
 
+That is 370 tests -- 341 covering the numerics, the rest checking that the
+documentation still matches the code -- and takes about half a minute.
+
 You can run a single module while developing:
 
 ```bash
@@ -55,8 +58,23 @@ the method itself should remain visible in the source.
 - Add or update docstrings for public APIs.
 - Keep public behavior backward compatible unless the change has been agreed
   upon in an issue.
-- Update the README or examples when user-facing behavior changes.
+- Update the README, the guides in `docs/`, or the examples when user-facing
+  behavior changes.
 - Add a regression test for every bug fix when practical.
+
+The documentation is checked by the test suite, so two commands matter after
+any change to the public API or to `docs/`:
+
+```bash
+python tools/gen_docs.py       # regenerate docs/api/*.md and docs/changelog.md
+mkdocs build --strict          # no broken links, anchors, or missing pages
+```
+
+Examples in the documentation are written as doctests and executed by
+`tests/test_docs.py`. Because doctest compares printed output exactly, convert
+NumPy scalars with `float()`, `int()`, or `bool()` before displaying them, and
+round to fewer digits than the method actually delivers. Install the tools with
+`pip install -e ".[dev]"`.
 
 ## Pull requests
 

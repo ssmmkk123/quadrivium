@@ -350,7 +350,7 @@ def randomized_range_finder(A, size: int, power_iterations: int = 2, rng=None):
     numerically onto the leading singular vector.
     """
     A = as_matrix(A)
-    rng = np.random.default_rng() if rng is None else rng
+    rng = np.random.default_rng(rng)
     Omega = rng.standard_normal((A.shape[1], size))
     Y = A @ Omega
     Q, _ = householder_qr(Y, reduced=True)
@@ -399,7 +399,7 @@ def nystrom_approximation(A, k: int, rng=None):
     preconditioner.
     """
     A = check_square(A)
-    rng = np.random.default_rng() if rng is None else rng
+    rng = np.random.default_rng(rng)
     n = A.shape[0]
     Omega = rng.standard_normal((n, min(k, n)))
     Q, _ = householder_qr(Omega, reduced=True)
@@ -472,7 +472,7 @@ def subspace_iteration(A, k: int = 1, tol: float = 1e-10, max_iter: int = 1000,
     """
     A = check_square(A)
     n = A.shape[0]
-    rng = np.random.default_rng() if rng is None else rng
+    rng = np.random.default_rng(rng)
     V = rng.standard_normal((n, k)) if V0 is None else as_matrix(V0)
     V, _ = householder_qr(V, reduced=True)
     lam = np.zeros(k)
@@ -510,7 +510,7 @@ def lobpcg(A, k: int = 1, B=None, X0=None, tol: float = 1e-10,
     """
     A = check_square(A)
     n = A.shape[0]
-    rng = np.random.default_rng() if rng is None else rng
+    rng = np.random.default_rng(rng)
     X = rng.standard_normal((n, k)) if X0 is None else as_matrix(X0)
     Bmul = (lambda V: V) if B is None else (lambda V: np.asarray(B) @ V)
     X = _b_orthonormalize(X, Bmul)

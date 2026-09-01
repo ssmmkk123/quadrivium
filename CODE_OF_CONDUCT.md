@@ -2,7 +2,7 @@
 
 ## Our commitment
 
-We are committed to making participation in numethods a respectful,
+We are committed to making participation in Quadrivium a respectful,
 harassment-free experience for everyone, regardless of background, identity,
 experience level, or viewpoint.
 
