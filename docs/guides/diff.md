@@ -5,6 +5,11 @@ from quadrivium.diff import Dual, Variable, fornberg_weights, chebyshev_derivati
 import quadrivium as qd          # qd.derivative, qd.gradient, qd.hessian, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `diff` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 41 routines in three families that differ in what they cost and what they can
 promise: finite differences (approximate, work on anything), automatic
 differentiation (exact, needs a traceable function), and spectral
@@ -214,6 +219,16 @@ statement about analytic functions, and a kink drops it straight back to first
 order. `chebyshev_coefficients`, `chebyshev_evaluate`, and `clenshaw` handle
 the coefficient side of the same expansion.
 
+## Visual evidence
+
+![diff method selection chart](../assets/figures/guides/diff-method-map.svg)
+
+*Figure: Method-selection map for `diff` routines by problem class and constraints. See the [diff API reference](../api/diff.md).* 
+
+![diff representative behavior plot](../assets/figures/guides/diff-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `diff` methods.*
+
 ## Pitfalls
 
 - **Never pick `h` yourself without a reason.** The optimal step is roughly
@@ -228,6 +243,17 @@ the coefficient side of the same expansion.
 - **Spectral differentiation of a non-periodic function on a uniform grid**
   produces large errors at the boundaries (the Gibbs phenomenon). Use
   Chebyshev points.
+
+## API links
+
+- [`quadrivium.diff` API overview](../api/diff.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

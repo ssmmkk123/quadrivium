@@ -42,6 +42,16 @@ qd.minimize(rosenbrock, [-1.2, 1.0], method="bfgs")
 
 </div>
 
+## Visual orientation
+
+![Method landscape map across all subpackages](assets/figures/core/method-landscape.svg)
+
+*Figure: High-level map of numerical method families and where each subpackage fits.*
+
+![Module selection decision flow](assets/figures/core/module-selection-flow.svg)
+
+*Figure: Fast decision path from a problem statement to the right guide and API section.*
+
 ## Who this is for
 
 Three audiences, in order of how well the library serves them:

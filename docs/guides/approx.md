@@ -5,6 +5,11 @@ from quadrivium.approx import remez, pade, aaa, gauss_legendre_nodes
 import quadrivium as qd          # qd.polyfit, qd.chebyshev_fit, qd.legendre, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `approx` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 38 routines in two groups: orthogonal polynomials with their Gauss quadrature
 nodes, and fitting — least squares, minimax, rational, and Fourier. Full
 signatures are in the [`approx` reference](../api/approx.md).
@@ -174,6 +179,16 @@ overshoot at a jump converges to about 9% of the jump height however many
 harmonics you add. `trigonometric_fit` fits harmonics to sampled data, and
 `fourier_coefficients` returns the coefficients themselves.
 
+## Visual evidence
+
+![approx method selection chart](../assets/figures/guides/approx-method-map.svg)
+
+*Figure: Method-selection map for `approx` routines by problem class and constraints. See the [approx API reference](../api/approx.md).* 
+
+![approx representative behavior plot](../assets/figures/guides/approx-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `approx` methods.*
+
 ## Pitfalls
 
 - **Least squares in the monomial basis is ill-conditioned.** Use
@@ -187,6 +202,17 @@ harmonics you add. `trigonometric_fit` fits harmonics to sampled data, and
   it; filter the coefficients or accept the ringing.
 - **Extrapolation is not approximation.** Every method here is fitted on an
   interval and says nothing outside it.
+
+## API links
+
+- [`quadrivium.approx` API overview](../api/approx.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

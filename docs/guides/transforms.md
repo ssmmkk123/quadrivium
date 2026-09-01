@@ -5,6 +5,11 @@ from quadrivium.transforms import fft, wavedec, welch, cwt
 import quadrivium as qd          # qd.fft, qd.convolve, qd.power_spectrum, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `transforms` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 57 routines: the discrete Fourier family and its fast algorithms, signal
 processing built on them, and wavelets. Full signatures are in the
 [`transforms` reference](../api/transforms.md).
@@ -185,6 +190,16 @@ artefacts that decimation introduces at edges; `dwt2` and `idwt2` handle
 images; `cwt` is the continuous transform with Morlet and Ricker wavelets, and
 `scale_to_frequency` converts its scales to frequencies.
 
+## Visual evidence
+
+![transforms method selection chart](../assets/figures/guides/transforms-method-map.svg)
+
+*Figure: Method-selection map for `transforms` routines by problem class and constraints. See the [transforms API reference](../api/transforms.md).* 
+
+![transforms representative behavior plot](../assets/figures/guides/transforms-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `transforms` methods.*
+
 ## Pitfalls
 
 - **Sampling below the Nyquist rate aliases, invisibly.** A component above
@@ -197,6 +212,17 @@ images; `cwt` is the continuous transform with Morlet and Ricker wavelets, and
 - **DWT levels are limited by the length.** Level `k` needs at least
   `2ᵏ · (filter length)` samples; beyond that the coefficients are boundary
   artefacts.
+
+## API links
+
+- [`quadrivium.transforms` API overview](../api/transforms.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

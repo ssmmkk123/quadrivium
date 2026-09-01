@@ -5,6 +5,11 @@ from quadrivium.interpolate import pchip, bspline, rbf_interpolation
 import quadrivium as qd          # qd.cubic_spline, qd.barycentric, qd.nurbs, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `interpolate` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 60 routines: polynomial interpolation in five equivalent forms, the spline
 family, rational interpolants, and multivariate methods on grids and scattered
 points. Full signatures are in the
@@ -234,6 +239,16 @@ True
 alongside the value; `shepard` and `inverse_distance_weighting` are the
 cheapest scattered methods and are exact at the data by construction.
 
+## Visual evidence
+
+![interpolate method selection chart](../assets/figures/guides/interpolate-method-map.svg)
+
+*Figure: Method-selection map for `interpolate` routines by problem class and constraints. See the [interpolate API reference](../api/interpolate.md).* 
+
+![interpolate representative behavior plot](../assets/figures/guides/interpolate-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `interpolate` methods.*
+
 ## Pitfalls
 
 - **Interpolation is not approximation.** With noisy data, an interpolant
@@ -248,6 +263,17 @@ cheapest scattered methods and are exact at the data by construction.
 - **RBFs need a shape parameter.** `epsilon` too small makes the matrix
   ill-conditioned, too large makes the surface local and lumpy. Start at the
   typical point spacing.
+
+## API links
+
+- [`quadrivium.interpolate` API overview](../api/interpolate.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

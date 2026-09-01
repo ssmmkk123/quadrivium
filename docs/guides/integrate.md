@@ -5,6 +5,11 @@ from quadrivium.integrate import quad, tanh_sinh, adaptive_gauss_kronrod
 import quadrivium as qd          # qd.quad, qd.romberg, qd.monte_carlo, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `integrate` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 66 quadrature rules: the Newton-Cotes family, Gauss rules for six weight
 functions, adaptive subdivision, Monte Carlo and quasi-Monte Carlo, rules for
 oscillatory and singular integrands, and multidimensional cubature. Full
@@ -267,6 +272,16 @@ True
 
 ```
 
+## Visual evidence
+
+![integrate method selection chart](../assets/figures/guides/integrate-method-map.svg)
+
+*Figure: Method-selection map for `integrate` routines by problem class and constraints. See the [integrate API reference](../api/integrate.md).* 
+
+![integrate representative behavior plot](../assets/figures/guides/integrate-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `integrate` methods.*
+
 ## Pitfalls
 
 - **An error estimate is an estimate.** Adaptive rules estimate the error from
@@ -283,6 +298,17 @@ True
   better.
 - **Infinite limits need the transformation `quad` performs.** Passing a large
   finite number instead silently truncates the tail.
+
+## API links
+
+- [`quadrivium.integrate` API overview](../api/integrate.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

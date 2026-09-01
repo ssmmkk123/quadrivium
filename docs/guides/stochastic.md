@@ -5,6 +5,11 @@ from quadrivium.stochastic import milstein, hamiltonian_mc, bootstrap
 import quadrivium as qd          # qd.metropolis_hastings, qd.euler_maruyama, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `stochastic` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 75 routines: pseudorandom and low-discrepancy generators, sampling algorithms,
 MCMC with diagnostics, descriptive and inferential statistics, and SDE
 integrators. Full signatures are in the
@@ -204,6 +209,16 @@ discretization error. For jump processes, `poisson_process`, `gillespie_ssa`
 (exact stochastic simulation of a reaction network), and `tau_leaping` (its
 approximate, faster cousin).
 
+## Visual evidence
+
+![stochastic method selection chart](../assets/figures/guides/stochastic-method-map.svg)
+
+*Figure: Method-selection map for `stochastic` routines by problem class and constraints. See the [stochastic API reference](../api/stochastic.md).* 
+
+![stochastic representative behavior plot](../assets/figures/guides/stochastic-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `stochastic` methods.*
+
 ## Pitfalls
 
 - **Stochastic Heun solves the Stratonovich equation, not the Itô one.** For
@@ -216,6 +231,17 @@ approximate, faster cousin).
 - **Monte Carlo error falls as `1/√n`.** Four times the samples for two times
   the accuracy — see the [integration guide](integrate.md).
 - **The historical generators are not safe for simulation.** Use `rng=`.
+
+## API links
+
+- [`quadrivium.stochastic` API overview](../api/stochastic.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

@@ -4,6 +4,12 @@ The library rests on four commitments. They are what distinguish it from a
 thin wrapper around a compiled library, and they are why its tests look the
 way they do.
 
+## Visual evidence
+
+![Validation evidence matrix mapping claims to tests](assets/figures/core/validation-matrix.svg)
+
+*Figure: Traceability from numerical claims to independent validation evidence.*
+
 ## 1. The algorithm stays visible
 
 Every method is written out at the level a textbook states it. LU

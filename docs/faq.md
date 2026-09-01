@@ -1,5 +1,15 @@
 # Frequently asked questions
 
+## Quick decision visuals
+
+![FAQ method choice decision chart](assets/figures/faq/method-choice-decision.svg)
+
+*Figure: A compact route from common questions to the right guide/API entry point.*
+
+![FAQ reproducibility checklist visual](assets/figures/faq/reproducibility-checklist.svg)
+
+*Figure: Checklist for reproducible runs across stochastic and deterministic routines.*
+
 ## Should I use this instead of SciPy?
 
 For production numerics on large problems, no — use SciPy, which wraps decades

@@ -5,6 +5,11 @@ from quadrivium.rootfind import brent, newton_system, polynomial_roots
 import quadrivium as qd          # qd.brent, qd.newton, qd.newton_krylov, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `rootfind` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 45 routines for `f(x) = 0`: eighteen for scalar equations, twelve for systems,
 and fifteen for polynomials, where the structure permits methods the general
 case cannot use. Full signatures are in the
@@ -229,6 +234,16 @@ True
 
 ```
 
+## Visual evidence
+
+![rootfind method selection chart](../assets/figures/guides/rootfind-method-map.svg)
+
+*Figure: Method-selection map for `rootfind` routines by problem class and constraints. See the [rootfind API reference](../api/rootfind.md).* 
+
+![rootfind representative behavior plot](../assets/figures/guides/rootfind-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `rootfind` methods.*
+
 ## Pitfalls
 
 - **A bracket is a promise; check it exists.** Bracketing methods raise
@@ -246,6 +261,17 @@ True
 - **Steffensen squares the function's scale.** It evaluates `f(x + f(x))`, so
   a large `f` takes it far away. It is best on functions already near their
   root.
+
+## API links
+
+- [`quadrivium.rootfind` API overview](../api/rootfind.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

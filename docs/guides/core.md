@@ -5,6 +5,11 @@ from quadrivium.core import norm, condition_number, CountedFunction
 import quadrivium as qd          # every core name is re-exported at the top level
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `core` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 35 names shared by everything else: the result records solvers return, the
 exception hierarchy they raise, norms and conditioning, shape and property
 checks, and numerical derivatives. Full signatures are in the
@@ -169,6 +174,27 @@ True
 
 `wrap_scalar_function` adapts a scalar callable to the vector interface the
 multivariate routines expect.
+
+## Visual evidence
+
+![core method selection chart](../assets/figures/guides/core-method-map.svg)
+
+*Figure: Method-selection map for `core` helpers by validation and diagnostics use case. See the [core API reference](../api/core.md).* 
+
+![core representative behavior plot](../assets/figures/guides/core-behavior-plot.svg)
+
+*Figure: Representative behavior for precision helpers and diagnostic metadata flow.*
+
+## API links
+
+- [`quadrivium.core` API overview](../api/core.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

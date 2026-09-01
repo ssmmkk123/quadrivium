@@ -22,6 +22,7 @@ DOCS = ROOT / "docs"
 # Doctest compares printed output literally, so the examples round their
 # results and convert NumPy scalars; these two flags absorb what is left.
 OPTIONFLAGS = doctest.NORMALIZE_WHITESPACE | doctest.ELLIPSIS
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp"}
 
 # The generated reference pages are tables of signatures with no examples in
 # them; running doctest over 836 entries would only cost time.
@@ -83,6 +84,41 @@ class TestDocumentationIsCurrent(unittest.TestCase):
                 with self.subTest(page=page.name, link=target):
                     self.assertTrue((page.parent / path).resolve().exists(),
                                     f"{page.name} links to missing {target}")
+
+    def test_image_links_have_alt_text_and_resolve(self):
+        """Image links should be accessible and point at existing files."""
+        image = re.compile(r"!\[([^\]]*)\]\((?!https?://|mailto:|#)([^)\s]+)\)")
+        for page in list(DOCS.rglob("*.md")) + [ROOT / "README.md"]:
+            text = page.read_text(encoding="utf-8")
+            for alt, target in image.findall(text):
+                with self.subTest(page=page.name, image=target):
+                    self.assertTrue(alt.strip(), f"{page.name} has empty alt text: {target}")
+                    path = target.split("#", 1)[0]
+                    self.assertTrue((page.parent / path).resolve().exists(),
+                                    f"{page.name} image target missing: {target}")
+
+    def test_docs_assets_are_not_orphaned(self):
+        """Every image asset under docs/assets should be referenced by docs."""
+        assets_root = DOCS / "assets"
+        if not assets_root.exists():
+            return
+        assets = {
+            p.resolve()
+            for p in assets_root.rglob("*")
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+        }
+        image = re.compile(r"!\[[^\]]*\]\((?!https?://|mailto:|#)([^)\s]+)\)")
+        referenced = set()
+        for page in list(DOCS.rglob("*.md")) + [ROOT / "README.md"]:
+            text = page.read_text(encoding="utf-8")
+            for target in image.findall(text):
+                path = target.split("#", 1)[0]
+                resolved = (page.parent / path).resolve()
+                if resolved.suffix.lower() in IMAGE_EXTENSIONS:
+                    referenced.add(resolved)
+        for asset in sorted(assets):
+            with self.subTest(asset=asset.name):
+                self.assertIn(asset, referenced, f"orphaned docs asset: {asset}")
 
     def test_the_documented_version_is_the_packaged_one(self):
         """Version numbers quoted in the docs must be the current release."""

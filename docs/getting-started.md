@@ -97,6 +97,16 @@ True
 
 ```
 
+## Visual evidence
+
+![Result record anatomy with diagnostics fields](assets/figures/core/result-record-anatomy.svg)
+
+*Figure: How answer fields, diagnostics, and convergence metadata are packaged together.*
+
+![Tolerance-versus-cost tradeoff curve](assets/figures/core/tolerance-tradeoff.svg)
+
+*Figure: Tightening tolerances improves accuracy but increases computational cost.*
+
 ## Calling conventions
 
 **Arrays in, arrays out.** Anything array-shaped may be a list, a tuple, or a

@@ -26,6 +26,16 @@ products, reverse Cuthill-McKee reordering, and the Krylov solvers. There is
 no sparse direct factorization, no fill-reducing ordering beyond RCM, and no
 graph partitioning.
 
+## Visual evidence
+
+![Failure boundaries for common numerical regimes](assets/figures/core/failure-boundaries.svg)
+
+*Figure: Typical boundaries where naive method choices become unstable.*
+
+![Stability-region method switching guide](assets/figures/core/stability-regions.svg)
+
+*Figure: Use this regime map to switch from fragile to stable alternatives.*
+
 ## Specific methods
 
 **`cauchy_point` trust region converges linearly.** It minimises the model

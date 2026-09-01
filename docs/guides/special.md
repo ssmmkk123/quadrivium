@@ -5,6 +5,11 @@ from quadrivium.special import gamma, bessel_jn, zeta, lambert_w
 import quadrivium as qd          # qd.gamma, qd.erf, qd.beta, qd.lambert_w
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `special` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 52 functions: the gamma and beta families, error functions, Bessel and Airy
 functions, elliptic and exponential integrals, the Riemann zeta function,
 Lambert W, hypergeometric functions, and spherical harmonics. Full signatures
@@ -169,6 +174,16 @@ True
 
 ```
 
+## Visual evidence
+
+![special method selection chart](../assets/figures/guides/special-method-map.svg)
+
+*Figure: Method-selection map for `special` routines by problem class and constraints. See the [special API reference](../api/special.md).* 
+
+![special representative behavior plot](../assets/figures/guides/special-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `special` methods.*
+
 ## Pitfalls
 
 - **Check the domain.** `gamma` has poles at the non-positive integers,
@@ -186,6 +201,17 @@ True
   functions.
 - **`zeta` near `s = 1` is a pole.** Values close to 1 lose accuracy;
   `zeta(1.0)` is undefined.
+
+## API links
+
+- [`quadrivium.special` API overview](../api/special.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

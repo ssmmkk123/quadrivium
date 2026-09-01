@@ -5,6 +5,11 @@ from quadrivium.pde import heat_crank_nicolson, multigrid_solve, weno_burgers
 import quadrivium as qd          # qd.poisson_2d_direct, qd.navier_stokes_2d, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `pde` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 72 routines across the three classical types — parabolic, hyperbolic, elliptic
 — plus multigrid, finite elements, finite volumes, spectral methods,
 high-resolution schemes, and an incompressible Navier-Stokes solver. Full
@@ -189,6 +194,16 @@ the step, so the resulting velocity is divergence-free to `10⁻¹⁶` rather th
 `lid_driven_cavity` solves the standard benchmark — it reproduces Ghia, Ghia
 and Shin (1982) to within 1% at Re = 100.
 
+## Visual evidence
+
+![pde method selection chart](../assets/figures/guides/pde-method-map.svg)
+
+*Figure: Method-selection map for `pde` routines by problem class and constraints. See the [pde API reference](../api/pde.md).* 
+
+![pde representative behavior plot](../assets/figures/guides/pde-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `pde` methods.*
+
 ## Pitfalls
 
 - **Explicit schemes have step limits, and exceeding them diverges.**
@@ -203,6 +218,17 @@ and Shin (1982) to within 1% at Re = 100.
   constant, and the data must satisfy a compatibility condition.
 - **Spectral accuracy needs smoothness and periodicity.** Neither one alone
   suffices; a jump gives Gibbs oscillations that do not shrink with `n`.
+
+## API links
+
+- [`quadrivium.pde` API overview](../api/pde.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

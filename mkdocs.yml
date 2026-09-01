@@ -94,6 +94,10 @@ nav:
       - transforms: api/transforms.md
       - stochastic: api/stochastic.md
       - special: api/special.md
+  - Documentation system:
+      - Audit and scope map: documentation-audit.md
+      - Visual architecture and standards: documentation-visual-standards.md
+      - Overhaul roadmap: documentation-roadmap.md
   - About:
       - Design and validation: design.md
       - Known limitations: limitations.md

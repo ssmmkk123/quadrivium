@@ -5,6 +5,11 @@ from quadrivium.linalg import householder_qr, conjugate_gradient, randomized_svd
 import quadrivium as qd          # qd.solve, qd.cholesky, qd.gmres, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `linalg` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 124 routines covering direct solvers and factorizations, eigenvalue and
 singular value problems, stationary and Krylov iterations, least squares,
 sparse storage, matrix functions and matrix equations, and randomized
@@ -384,6 +389,16 @@ The last two select actual rows and columns of `A`, so the factors keep the
 meaning of the original data — the reason to prefer them over an SVD when the
 columns are measurements of something.
 
+## Visual evidence
+
+![linalg method selection chart](../assets/figures/guides/linalg-method-map.svg)
+
+*Figure: Method-selection map for `linalg` routines by problem class and constraints. See the [linalg API reference](../api/linalg.md).* 
+
+![linalg representative behavior plot](../assets/figures/guides/linalg-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `linalg` methods.*
+
 ## Pitfalls
 
 - **`normal_equations` squares the condition number.** For a Vandermonde
@@ -402,6 +417,17 @@ columns are measurements of something.
 - **The QR algorithm on a nonsymmetric matrix returns complex eigenvalues.**
   Real Schur form keeps 2×2 blocks; `schur_eigenvalues` extracts the complex
   pairs from them.
+
+## API links
+
+- [`quadrivium.linalg` API overview](../api/linalg.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 

@@ -17,6 +17,32 @@ python examples/01_linear_algebra.py
 Each script inserts the repository root on `sys.path`, so they run from a
 clone without installing anything.
 
+## Visual summaries
+
+![Example 01 summary figure for linear algebra script](assets/figures/examples/example-01.svg)
+
+*Figure: `examples/01_linear_algebra.py` summary of reconstruction, spectra, and convergence checks.*
+
+![Example 02 summary figure for calculus script](assets/figures/examples/example-02.svg)
+
+*Figure: `examples/02_calculus.py` summary of derivative/integration accuracy behavior.*
+
+![Example 03 summary figure for differential equations script](assets/figures/examples/example-03.svg)
+
+*Figure: `examples/03_differential_equations.py` summary of adaptive stepping and stiffness behavior.*
+
+![Example 04 summary figure for optimization script](assets/figures/examples/example-04.svg)
+
+*Figure: `examples/04_optimization.py` summary of local/global method outcomes.*
+
+![Example 05 summary figure for PDE and transforms script](assets/figures/examples/example-05.svg)
+
+*Figure: `examples/05_pde_and_transforms.py` summary of stability and spectral behavior.*
+
+![Example 06 summary figure for extended methods script](assets/figures/examples/example-06.svg)
+
+*Figure: `examples/06_extended_methods.py` summary of advanced-method diagnostics.*
+
 ## 01 — Linear algebra
 
 *~4 seconds.* Factorizations reconstructing their matrix exactly; the four QR

@@ -5,6 +5,11 @@ from quadrivium.optimize import lbfgs, curve_fit, differential_evolution
 import quadrivium as qd          # qd.minimize, qd.bfgs, qd.linprog, ...
 ```
 
+## Problem framing
+
+Use this guide when the main challenge is selecting robust `optimize` routines for a specific numerical workload while balancing stability, accuracy, and cost.
+
+
 95 routines: one-dimensional searches, line searches, gradient and quasi-Newton
 methods, trust regions, derivative-free search, global optimizers, constrained
 methods, proximal splitting, and linear programming. Full signatures are in the
@@ -265,6 +270,16 @@ basis differently; `interior_point_lp` is a primal-dual path-following method,
 which is the one that scales. `assignment_problem` solves the rectangular
 assignment problem by the Hungarian algorithm in `O(n³)`.
 
+## Visual evidence
+
+![optimize method selection chart](../assets/figures/guides/optimize-method-map.svg)
+
+*Figure: Method-selection map for `optimize` routines by problem class and constraints. See the [optimize API reference](../api/optimize.md).* 
+
+![optimize representative behavior plot](../assets/figures/guides/optimize-behavior-plot.svg)
+
+*Figure: Representative behavior (convergence, error, or stability trend) for key `optimize` methods.*
+
 ## Pitfalls
 
 - **`converged=True` means a stationary point, not a global minimum.** For a
@@ -280,6 +295,17 @@ assignment problem by the Hungarian algorithm in `O(n³)`.
   the real budget; `tol` only detects that the population has collapsed.
 - **Penalty methods become ill-conditioned as the penalty grows.** Use
   `augmented_lagrangian` when the constraints must be satisfied tightly.
+
+## API links
+
+- [`quadrivium.optimize` API overview](../api/optimize.md)
+- [API index](../api/index.md)
+
+## Next steps
+
+- Start with one representative problem and validate with the diagnostics shown in this guide.
+- Compare at least two candidate methods from the selection table before scaling up.
+- Follow links to neighboring guides when the problem mixes multiple method families.
 
 ## See also
 
