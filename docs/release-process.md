@@ -7,6 +7,17 @@ Releases are automated: pushing a `v*` tag builds the distributions, checks
 them, publishes to PyPI over OIDC with no stored credentials, and creates a
 GitHub Release with the artifacts and their build attestations attached.
 
+```mermaid
+flowchart LR
+    A["bump the version<br/>and the changelog"] --> B["local checks<br/>tests, gen_docs --check,<br/>gen_figures --check, mkdocs --strict"]
+    B --> C["git tag v1.2.3<br/>git push --tags"]
+    C --> D["release.yml<br/>build, twine check"]
+    D --> E["PyPI<br/>Trusted Publishing, OIDC"]
+    D --> F["GitHub Release<br/>artifacts + attestations"]
+    C --> G["docs.yml<br/>build the site"]
+    G --> H["GitHub Pages"]
+```
+
 ## One-time setup
 
 ### 1. Claim the name on PyPI
@@ -90,10 +101,15 @@ python tools/gen_docs.py
 ```bash
 python -m unittest discover -s tests     # the full suite, all green
 python tools/gen_docs.py --check         # generated pages match the code
+python tools/gen_figures.py --check      # figures match the code (needs [figures])
 mkdocs build --strict                    # no broken links or missing pages
 python -m build                          # sdist + wheel into dist/
 python -m twine check dist/*             # metadata renders on PyPI
 ```
+
+`gen_figures.py --check` compares byte for byte, so it can report a difference
+that is only a Matplotlib version change. Look at what changed before
+regenerating: a figure that has genuinely moved is worth seeing.
 
 Then install the built wheel into a clean environment and import it from
 somewhere other than the source tree, which is the check that catches a

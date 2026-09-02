@@ -17,6 +17,24 @@ python examples/01_linear_algebra.py
 Each script inserts the repository root on `sys.path`, so they run from a
 clone without installing anything.
 
+```mermaid
+flowchart LR
+    S1["01 linear algebra"] --> linalg["linalg"]
+    S2["02 calculus"] --> diff["diff"]
+    S2 --> integrate["integrate"]
+    S2 --> special["special"]
+    S3["03 differential equations"] --> ode["ode"]
+    S4["04 optimization"] --> optimize["optimize"]
+    S5["05 PDEs and transforms"] --> pde["pde"]
+    S5 --> transforms["transforms"]
+    S5 --> stochastic["stochastic"]
+    S6["06 extended methods"] --> stochastic
+    S6 --> transforms
+    S6 --> linalg
+    S6 --> pde
+    S6 --> integrate
+```
+
 ## 01 — Linear algebra
 
 *~4 seconds.* Factorizations reconstructing their matrix exactly; the four QR

@@ -28,6 +28,21 @@ python -m pytest                          # same suite under pytest
 
 CI runs the suite on Python 3.9 through 3.14 and must pass on every version.
 
+```mermaid
+flowchart TD
+    A["a change"] --> B{"what kind?"}
+    B -- "a new method" --> C["open an issue first<br/>scope and validation strategy"]
+    B -- "bug fix" --> D["a regression test that fails first"]
+    B -- "documentation" --> E["doctests, and figures if the point is visual"]
+    C --> F["a property test:<br/>order, exactness, identity,<br/>conservation, or a known failure"]
+    D --> G["python -m unittest discover -s tests"]
+    F --> G
+    E --> H["python tools/gen_docs.py<br/>python tools/gen_figures.py"]
+    H --> G
+    G --> I["mkdocs build --strict"]
+    I --> J["pull request"]
+```
+
 ## What a numerical change needs
 
 A single expected value is not evidence that an algorithm is right. Add a test
@@ -54,7 +69,7 @@ mkdocs serve      # live reload at http://127.0.0.1:8000
 mkdocs build      # render into site/
 ```
 
-Three rules keep these pages honest, and the test suite enforces all three:
+Four rules keep these pages honest, and the test suite enforces all four:
 
 **Every example is executed.** Examples are written as doctests, and
 `tests/test_docs.py` runs every one on every documentation page. An example
@@ -84,6 +99,37 @@ the generator's output has to be interpreter-independent. That is why it reads
 annotations as source text rather than evaluating them: `Optional[float]`
 evaluates to a `typing` object whose `repr` changed in 3.14, which would make
 the pages depend on the version that generated them.
+
+**Every figure is generated from the library.** The pictures under
+`docs/assets/figures` are drawn by `tools/gen_figures.py`, which runs the
+methods being illustrated and plots what they return. Nothing is drawn by
+hand, so a figure cannot claim something the code does not do.
+
+```bash
+python -m pip install -e ".[figures]"        # Matplotlib, for this tool only
+python tools/gen_figures.py                  # rewrite every figure
+python tools/gen_figures.py --only "^ode-"   # just the ones you changed
+python tools/gen_figures.py --check          # are the checked-in ones current?
+python tools/gen_figures.py --only "^pde-" --png /tmp/preview   # for a look
+```
+
+Each figure is a function in `tools/figures/<page>.py` decorated with
+`@figure(name, page, summary)`, and is rendered twice — once for the light
+theme and once for the dark — because an image cannot see the theme the reader
+chose. Embed both, and Material shows the right one:
+
+```markdown
+<figure markdown="span">
+  ![what it shows](../assets/figures/name.svg#only-light)
+  ![what it shows](../assets/figures/name-dark.svg#only-dark)
+  <figcaption>What to look at, and what it means.</figcaption>
+</figure>
+```
+
+The test suite checks that both variants exist, that every figure is shown on
+the page it was registered for, and that no figure is left unreferenced. It
+does not re-render them: byte-identical SVG output depends on the Matplotlib
+version, so `--check` is a local tool rather than a CI gate.
 
 **The navigation must resolve.** Every page in `mkdocs.yml` must exist, and
 every internal link must point at a real file.

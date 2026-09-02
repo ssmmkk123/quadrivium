@@ -13,7 +13,36 @@ that could break an existing call.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **83 generated figures across the documentation site**, one to seven per
+  page: convergence histories, stability regions, sparsity patterns, node
+  distributions, spectra, shocks, sampling diagnostics, and the rest. Every one
+  of them is drawn by `tools/gen_figures.py` from data the library computes —
+  the residual histories are real residual histories, the convergence orders
+  are measured by refining a discretization and fitting the slope, the
+  stability regions are found by taking one step of the method being described.
+  Each figure is rendered twice, once for each colour scheme, and checked in,
+  so building the site needs neither Matplotlib nor the minutes the
+  computations take.
+- **Decision diagrams** on the guides that have to answer "which method?" —
+  `solve`'s dispatch, the scalar root finders, the interpolation and
+  approximation families, quadrature rules, stiff and non-stiff integrators,
+  the three PDE types, and the optimizers — plus the result-record and
+  exception hierarchies on the core guide, and the subpackage import graph on
+  the home page.
+- **`tools/gen_figures.py`** and the `figures` extra
+  (`pip install -e ".[figures]"`, Matplotlib only). `--check` reports stale
+  figures, `--only REGEX` re-renders a subset, and `--png DIR` writes copies
+  for inspection.
+- **Six tests covering the figures**: both colour variants exist for every
+  figure, every figure a page references exists, every figure that exists is
+  shown on the page it was registered for, and the catalogue matches the
+  directory.
+
+### Changed
+
+- The test suite is 376 tests, up from 370.
 
 ## [1.1.0] - 2026-09-01
 

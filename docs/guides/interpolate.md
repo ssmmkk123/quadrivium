@@ -42,6 +42,21 @@ True
 | scattered points in any dimension | `rbf_interpolation`, `shepard`, `kriging` |
 | scattered points, want an uncertainty too | `kriging` |
 
+```mermaid
+flowchart TD
+    A["points to pass through"] --> B{"one dimension?"}
+    B -- no --> C{"on a grid?"}
+    C -- yes --> D["bilinear, bicubic<br/>regular_grid_interpolator"]
+    C -- no --> E["rbf_interpolation<br/>kriging, shepard"]
+    B -- yes --> F{"noisy?"}
+    F -- yes --> G["smoothing_spline<br/>or fit instead"]
+    F -- no --> H{"must not overshoot?"}
+    H -- yes --> I["pchip, akima_spline"]
+    H -- no --> J{"how many points?"}
+    J -- "a few" --> K["barycentric<br/>on chebyshev_nodes"]
+    J -- many --> L["cubic_spline"]
+```
+
 ## Polynomial interpolation
 
 Five constructions give the same polynomial, and differ only in cost and
@@ -98,6 +113,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Runge's phenomenon, and what Chebyshev nodes do to it](../assets/figures/interpolate-runge.svg#only-light)
+  ![Runge's phenomenon, and what Chebyshev nodes do to it](../assets/figures/interpolate-runge-dark.svg#only-dark)
+  <figcaption>Both interpolants are degree 20 and both pass through every one of their own points. Only the node placement differs: equally spaced nodes give an interpolant that oscillates wildly near the ends and gets worse with degree, while Chebyshev nodes converge.</figcaption>
+</figure>
+
 `runge_demo_error` measures the effect directly, and
 `interpolation_error_bound` evaluates the theoretical bound
 `|f⁽ⁿ⁺¹⁾|/(n+1)! · ∏(t − xᵢ)` that explains it.
@@ -136,6 +157,12 @@ Cubic splines converge as `O(h⁴)`:
 
 ```
 
+<figure markdown="span">
+  ![Measured convergence of piecewise interpolants as the knots close up](../assets/figures/interpolate-spline-convergence.svg#only-light)
+  ![Measured convergence of piecewise interpolants as the knots close up](../assets/figures/interpolate-spline-convergence-dark.svg#only-dark)
+  <figcaption>Fitting exp on [0, 1]. The cubic spline's error falls as h⁴ — halve the spacing and divide the error by sixteen — while the shape-preserving interpolants pay a power of h for the property they add.</figcaption>
+</figure>
+
 ### Shape preservation
 
 A cubic spline can overshoot between points. When the data is monotone and the
@@ -155,9 +182,21 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Cubic spline, PCHIP and Akima on data with a step](../assets/figures/interpolate-spline-shape.svg#only-light)
+  ![Cubic spline, PCHIP and Akima on data with a step](../assets/figures/interpolate-spline-shape-dark.svg#only-dark)
+  <figcaption>Data that never decreases, and an interpolant that does. The cubic spline buys its second-derivative continuity with an undershoot; PCHIP and Akima give up a derivative and keep the shape.</figcaption>
+</figure>
+
 `smoothing_spline` trades fidelity for smoothness with a parameter `lam` — the
 right tool when the data is noisy and interpolating it exactly would be
 interpolating the noise.
+
+<figure markdown="span">
+  ![An interpolating spline against smoothing splines on noisy data](../assets/figures/interpolate-smoothing.svg#only-light)
+  ![An interpolating spline against smoothing splines on noisy data](../assets/figures/interpolate-smoothing-dark.svg#only-dark)
+  <figcaption>The interpolant is required to pass through every sample, so it reproduces the noise faithfully. A smoothing spline trades closeness to the data for curvature, and `lam` sets the exchange rate.</figcaption>
+</figure>
 
 ## Curves and surfaces
 
@@ -175,6 +214,12 @@ and `nurbs` evaluates by de Boor's algorithm.
 
 ```
 
+<figure markdown="span">
+  ![Cubic B-spline basis functions on an open uniform knot vector](../assets/figures/interpolate-bspline-basis.svg#only-light)
+  ![Cubic B-spline basis functions on an open uniform knot vector](../assets/figures/interpolate-bspline-basis-dark.svg#only-dark)
+  <figcaption>Each basis function is supported on four knot spans and no more, which is what makes a B-spline curve locally editable; their sum is exactly one everywhere, which is what makes the curve lie inside the convex hull of its control points.</figcaption>
+</figure>
+
 NURBS can represent a circle exactly, which no polynomial curve can:
 
 ```pycon
@@ -185,6 +230,12 @@ NURBS can represent a circle exactly, which no polynomial curve can:
 True
 
 ```
+
+<figure markdown="span">
+  ![A Bezier curve with its control polygon, and a NURBS circle](../assets/figures/interpolate-curves.svg#only-light)
+  ![A Bezier curve with its control polygon, and a NURBS circle](../assets/figures/interpolate-curves-dark.svg#only-dark)
+  <figcaption>A Bezier curve is a polynomial and stays inside the hull of its control points. A circle is not a polynomial curve at all: NURBS reaches it with rational weights, exactly, to the last bit.</figcaption>
+</figure>
 
 ## Rational interpolation
 
@@ -233,6 +284,12 @@ True
 `kriging` is the geostatistical alternative and returns a variance estimate
 alongside the value; `shepard` and `inverse_distance_weighting` are the
 cheapest scattered methods and are exact at the data by construction.
+
+<figure markdown="span">
+  ![A thin-plate RBF surface through scattered data, with the kriging variance](../assets/figures/interpolate-scattered.svg#only-light)
+  ![A thin-plate RBF surface through scattered data, with the kriging variance](../assets/figures/interpolate-scattered-dark.svg#only-dark)
+  <figcaption>Forty points placed at random, and an interpolant through all of them. Kriging answers a second question at the same time — how far the query point is from anything that was measured — which is what the right-hand panel shows.</figcaption>
+</figure>
 
 ## Pitfalls
 

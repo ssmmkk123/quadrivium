@@ -12,7 +12,7 @@ factorization loops over its pivots, the FFT does its own bit reversal, the
 Hungarian algorithm walks its own augmenting paths — so the method itself is
 readable rather than hidden behind a compiled call.
 
-**836 public functions and classes across 13 subpackages. 370 tests, all passing.
+**836 public functions and classes across 13 subpackages. 376 tests, all passing.
 Depends only on NumPy.**
 
 *The quadrivium was the medieval curriculum of the four mathematical arts —
@@ -110,8 +110,9 @@ material this README only summarizes:
   records, tolerances, how failure is reported, reproducible randomness, and an
   honest account of performance.
 - **[Guides](https://ssmmkk123.github.io/quadrivium/guides/linalg/)** — one per
-  subpackage, each opening with a table that maps a situation to a method, then
-  working through the choice with runnable examples.
+  subpackage, each opening with a table and a decision diagram that map a
+  situation to a method, then working through the choice with runnable
+  examples and 83 figures.
 - **[API reference](https://ssmmkk123.github.io/quadrivium/api/)** — all 836
   public names with real signatures, generated from the package itself.
 - **[Design and validation](https://ssmmkk123.github.io/quadrivium/design/)** and
@@ -119,7 +120,10 @@ material this README only summarizes:
 
 Every example on those pages is a doctest executed by the test suite, and the
 API reference is regenerated and compared against the package, so neither can
-drift from the code.
+drift from the code. The figures are generated the same way, by
+`tools/gen_figures.py`, which runs the method being illustrated and plots what
+it returns — a stability region is measured by taking one step of the method,
+a convergence order by refining the grid, a shock by capturing it.
 
 ## Design
 

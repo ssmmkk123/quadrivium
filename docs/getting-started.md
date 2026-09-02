@@ -15,7 +15,6 @@ These pages import the package as `qd`. The natural abbreviation of
 general-purpose integrator, and `quad.quad(f, a, b)` reads like a mistake —
 `qd.quad(f, a, b)` does not. Any alias works; the package does not care.
 
-
 ```pycon
 >>> import quadrivium as qd
 >>> qd.brent is qd.rootfind.brent
@@ -209,12 +208,28 @@ Asking for more than the arithmetic can deliver is not an error: the method
 stops when it stops improving and says so in `message`. A tolerance below
 about `1e-16` relative is never achievable in double precision.
 
+<figure markdown="span">
+  ![What asking for more digits costs, and what it buys](assets/figures/getting-started-tolerance.svg#only-light)
+  ![What asking for more digits costs, and what it buys](assets/figures/getting-started-tolerance-dark.svg#only-dark)
+  <figcaption>The same equation solved to every tolerance from 1e-2 to 1e-15. Bisection's cost is linear in the number of digits; a superlinear method's is almost flat. Both stop improving at the same place, because that place is a property of double precision and not of the method.</figcaption>
+</figure>
+
 ## How failure is reported
 
 **Iterative non-convergence is data, not an exception.** A method that runs
 out of iterations, stalls, or diverges returns its best answer with
 `converged=False` and a `message` explaining what happened. This keeps a
 failed solve inspectable instead of unwinding the stack.
+
+```mermaid
+flowchart TD
+    A["you call a routine"] --> B{"is the input usable?"}
+    B -- no --> C["raise<br/>QuadriviumError subclass"]
+    B -- yes --> D["run the method"]
+    D --> E{"did it get there?"}
+    E -- yes --> F["result with<br/>converged = True"]
+    E -- no --> G["result with converged = False,<br/>a message, and the best answer so far"]
+```
 
 ```pycon
 >>> r = qd.newton(lambda x: x**2 + 1, 1.0, lambda x: 2*x, max_iter=20)

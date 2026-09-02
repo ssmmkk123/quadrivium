@@ -46,6 +46,12 @@ combinatorial values. The incomplete forms — `incomplete_gamma_lower`,
 `incomplete_beta` — are the CDFs of the chi-square, Poisson, gamma, beta,
 Student-t and F distributions, which is where they are usually met.
 
+<figure markdown="span">
+  ![The gamma function through its poles, and the logarithm that stays finite](../assets/figures/special-gamma.svg#only-light)
+  ![The gamma function through its poles, and the logarithm that stays finite](../assets/figures/special-gamma-dark.svg#only-dark)
+  <figcaption>Γ has a pole at every non-positive integer and passes through the factorials at the positive ones. It also overflows a double past x = 172, which is the whole reason `log_gamma` exists as a separate function rather than as `log(gamma(x))`.</figcaption>
+</figure>
+
 ```pycon
 >>> from quadrivium.special import regularized_gamma_p, regularized_gamma_q
 >>> p, q = regularized_gamma_p(3.0, 4.0), regularized_gamma_q(3.0, 4.0)
@@ -80,6 +86,12 @@ True
 `e^{−x²}∫e^{t²}dt` and the scaled complementary error function — overflow
 before they meet in the middle. `fresnel_s` and `fresnel_c` complete the set.
 
+<figure markdown="span">
+  ![The error function family, and the scaled form that survives the tail](../assets/figures/special-error-family.svg#only-light)
+  ![The error function family, and the scaled form that survives the tail](../assets/figures/special-error-family-dark.svg#only-dark)
+  <figcaption>erfc underflows to exactly zero at x = 27, which makes any tail probability computed through it zero as well. erfcx carries the e^{x²} factor and keeps returning digits far beyond that point.</figcaption>
+</figure>
+
 ## Bessel and Airy functions
 
 ```pycon
@@ -104,11 +116,23 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Bessel functions of the first and second kind](../assets/figures/special-bessel.svg#only-light)
+  ![Bessel functions of the first and second kind](../assets/figures/special-bessel-dark.svg#only-dark)
+  <figcaption>J is regular at the origin and Y is not, which is how a physical problem picks between them. The Wronskian identity ties the two families together and holds across the whole range plotted — a check no table of values could give you.</figcaption>
+</figure>
+
 Modified Bessel functions (`bessel_i0`, `bessel_i1`, `bessel_in`, `bessel_k0`,
 `bessel_k1`, `bessel_kn`) and spherical Bessel functions
 (`spherical_bessel_j`, `spherical_bessel_y`) follow the same pattern.
 `airy_ai` and `airy_bi` solve `y″ = xy`, the equation that governs the
 transition between oscillation and exponential growth.
+
+<figure markdown="span">
+  ![Airy functions: oscillation on one side, exponential behaviour on the other](../assets/figures/special-airy.svg#only-light)
+  ![Airy functions: oscillation on one side, exponential behaviour on the other](../assets/figures/special-airy-dark.svg#only-dark)
+  <figcaption>Both solve y″ = xy. Where x is negative the equation is oscillatory and both functions ring; where x is positive one decays and the other grows. That turning point is why the Airy functions appear wherever a wave meets a barrier.</figcaption>
+</figure>
 
 ## Integrals and zeta
 
@@ -168,6 +192,12 @@ True
 True
 
 ```
+
+<figure markdown="span">
+  ![The zeta function on the real line, and both real branches of Lambert W](../assets/figures/special-zeta-lambert.svg#only-light)
+  ![The zeta function on the real line, and both real branches of Lambert W](../assets/figures/special-zeta-lambert-dark.svg#only-dark)
+  <figcaption>ζ is evaluated by three different representations either side of its pole at s = 1, and reproduces the values that are known in closed form. Lambert W inverts w·eʷ, which is two-valued on [−1/e, 0): the branch is an argument, not a guess.</figcaption>
+</figure>
 
 ## Pitfalls
 

@@ -25,6 +25,20 @@ signatures are in the [`diff` reference](../api/diff.md).
 | samples of a periodic function | `fourier_derivative` | spectral |
 | a function you may sample where you like | `chebyshev_derivative` | spectral |
 
+```mermaid
+flowchart TD
+    A["a derivative"] --> B{"can you trace the function?"}
+    B -- "yes, in Python" --> C{"many inputs, one output?"}
+    C -- yes --> D["reverse mode<br/>gradient, Variable"]
+    C -- no --> E["forward mode<br/>derivative, Dual, hessian"]
+    B -- "no, a black box" --> F{"what do you have?"}
+    F -- "samples on a grid" --> G["differentiate_data<br/>savitzky_golay_derivative"]
+    F -- "samples, periodic" --> H["fourier_derivative"]
+    F -- "you choose the samples" --> I["chebyshev_derivative"]
+    F -- "a callable, analytic" --> J["complex_step_derivative"]
+    F -- "a callable, anything" --> K["central_difference<br/>richardson_derivative"]
+```
+
 ## Automatic differentiation
 
 Forward mode carries a derivative alongside every value. `Dual` numbers do it
@@ -80,6 +94,12 @@ round when there are many inputs and one output — the machine-learning case:
 `value_and_grad` returns both in one call, and `hessian_vector_product`
 computes `H·v` without forming `H`.
 
+<figure markdown="span">
+  ![What a gradient costs, and what it is worth](../assets/figures/diff-gradient-cost.svg#only-light)
+  ![What a gradient costs, and what it is worth](../assets/figures/diff-gradient-cost-dark.svg#only-dark)
+  <figcaption>Evaluations of your function for one gradient, counted with `CountedFunction`. Finite differences cost 2n; forward-mode AD costs n; reverse mode costs one sweep whatever the dimension — and unlike the differences, it is exact.</figcaption>
+</figure>
+
 The limit of AD is what it can trace: a function that calls into compiled code,
 reads a table, or branches on the value of its input cannot be differentiated
 this way. That is when finite differences earn their place.
@@ -107,6 +127,12 @@ The error falls as `h²` until about `h = 10⁻⁶`, then rises again as
 subtracting two nearly equal numbers destroys the significant digits.
 `optimal_step_size` returns the `h` that balances the two effects, and it is
 the default the routines use.
+
+<figure markdown="span">
+  ![Finite-difference error against step size, with the three ways around it](../assets/figures/diff-step-size.svg#only-light)
+  ![Finite-difference error against step size, with the three ways around it](../assets/figures/diff-step-size-dark.svg#only-dark)
+  <figcaption>Truncation error falls with h and cancellation rises as h shrinks, so every finite difference has a best step and a floor it cannot pass. The complex step avoids the subtraction entirely and hits machine precision; Richardson extrapolation gets most of the way there from a large step.</figcaption>
+</figure>
 
 The complex-step derivative avoids the subtraction entirely — there is no
 difference of nearby values, so `h` can be made arbitrarily small:
@@ -149,6 +175,12 @@ special case, and `differentiation_matrix(x, order)` assembles the whole
 operator for a grid — including a non-uniform one, which is what makes it
 useful for a stretched mesh.
 
+<figure markdown="span">
+  ![The finite-difference and Chebyshev differentiation matrices](../assets/figures/diff-differentiation-matrices.svg#only-light)
+  ![The finite-difference and Chebyshev differentiation matrices](../assets/figures/diff-differentiation-matrices-dark.svg#only-dark)
+  <figcaption>`differentiation_matrix` on 24 uniform points is banded: each row is a local stencil. The Chebyshev matrix on the same number of points is full — every value influences every derivative — which is exactly why it is spectrally accurate and why applying it costs O(n²).</figcaption>
+</figure>
+
 ### Richardson extrapolation
 
 Combining evaluations at `h`, `h/2`, `h/4`, … cancels the leading error terms
@@ -183,6 +215,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Differentiating noisy samples directly, and after a local polynomial fit](../assets/figures/diff-noisy-data.svg#only-light)
+  ![Differentiating noisy samples directly, and after a local polynomial fit](../assets/figures/diff-noisy-data-dark.svg#only-dark)
+  <figcaption>Noise of size ε in the data becomes noise of size ε/h in a difference quotient. Savitzky-Golay fits a cubic to a moving window of 21 points and differentiates that, trading a little resolution for two orders of magnitude of noise.</figcaption>
+</figure>
+
 ## Spectral differentiation
 
 For a smooth periodic function sampled on a uniform grid, differentiating the
@@ -208,6 +246,12 @@ cluster at the endpoints:
 True
 
 ```
+
+<figure markdown="span">
+  ![Finite differences against spectral differentiation as the grid is refined](../assets/figures/diff-spectral-accuracy.svg#only-light)
+  ![Finite differences against spectral differentiation as the grid is refined](../assets/figures/diff-spectral-accuracy-dark.svg#only-dark)
+  <figcaption>A fixed-order stencil gains a fixed factor per refinement — a straight line on this log-log plot. The spectral methods gain digits per added point until they reach machine precision, which they do here with fewer than fifty points.</figcaption>
+</figure>
 
 Both come apart if the function is not smooth: spectral accuracy is a
 statement about analytic functions, and a kink drops it straight back to first

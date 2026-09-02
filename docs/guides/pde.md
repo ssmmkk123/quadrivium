@@ -13,6 +13,21 @@ signatures are in the [`pde` reference](../api/pde.md).
 Solvers return a `PDESolution` carrying `u`, the coordinate `grids`, the time
 levels `t` where there are any, and the residual history for iterative solvers.
 
+```mermaid
+flowchart TD
+    A["a PDE"] --> B{"which type?"}
+    B -- "parabolic<br/>diffusion" --> C{"step limited by stability?"}
+    C -- "no, use implicit" --> D["heat_btcs<br/>heat_crank_nicolson"]
+    C -- "explicit is fine" --> E["heat_ftcs<br/>r ≤ 1/2"]
+    B -- "hyperbolic<br/>waves, advection" --> F{"is the solution smooth?"}
+    F -- yes --> G["lax_wendroff<br/>beam_warming"]
+    F -- "shocks or jumps" --> H["tvd_scheme<br/>weno_burgers"]
+    B -- "elliptic<br/>Poisson, Laplace" --> I{"how large?"}
+    I -- small --> J["poisson_2d_direct<br/>poisson_9point"]
+    I -- large --> K["multigrid_solve"]
+    I -- periodic --> L["poisson_fft"]
+```
+
 ## Parabolic: diffusion
 
 ```pycon
@@ -28,6 +43,12 @@ levels `t` where there are any, and the residual history for iterative solvers.
 True
 
 ```
+
+<figure markdown="span">
+  ![Crank-Nicolson diffusion profiles against the analytic solution](../assets/figures/pde-heat-evolution.svg#only-light)
+  ![Crank-Nicolson diffusion profiles against the analytic solution](../assets/figures/pde-heat-evolution-dark.svg#only-dark)
+  <figcaption>The dotted curves are exp(−απ²t)·sin(πx), the exact solution of the problem being solved. Crank-Nicolson is second order in time and unconditionally stable, so refining the grid lowers the error without any constraint on the step.</figcaption>
+</figure>
 
 | Scheme | Function | Stability | Order in time |
 | --- | --- | --- | --- |
@@ -56,6 +77,12 @@ and `advection_diffusion` add the other two terms; `method_of_lines`
 discretizes space only and hands the resulting ODE system to any solver from
 [`quadrivium.ode`](ode.md).
 
+<figure markdown="span">
+  ![The explicit diffusion scheme above and below its stability limit](../assets/figures/pde-ftcs-stability.svg#only-light)
+  ![The explicit diffusion scheme above and below its stability limit](../assets/figures/pde-ftcs-stability-dark.svg#only-dark)
+  <figcaption>The initial data carries a 2% component at the shortest wavelength the grid can hold — as any real data does. Below r = 1/2 it decays; at exactly 1/2 it neither grows nor decays; at 0.52 it grows by twenty orders of magnitude, which is why `heat_ftcs` refuses the step rather than returning it.</figcaption>
+</figure>
+
 ## Hyperbolic: waves and advection
 
 Twelve schemes for the same equation, because their failure modes differ and
@@ -77,6 +104,12 @@ That is the Godunov barrier in one example: a linear scheme of second order or
 higher cannot be monotone. Upwind is monotone but smears the discontinuity;
 Lax-Wendroff is sharp but oscillates; a flux limiter switches between them
 locally and gets both.
+
+<figure markdown="span">
+  ![Three schemes advecting the same square pulse](../assets/figures/pde-godunov-barrier.svg#only-light)
+  ![Three schemes advecting the same square pulse](../assets/figures/pde-godunov-barrier-dark.svg#only-dark)
+  <figcaption>After one transit of the domain: upwind has smeared the jump over twenty cells but stayed monotone, Lax-Wendroff has kept it sharp and acquired oscillations of 27% below zero, and the van Leer limiter has kept the sharpness without the overshoot.</figcaption>
+</figure>
 
 `flux_limiter(r, kind)` exposes the seven limiters (`minmod`, `van_leer`,
 `superbee`, `mc`, `koren`, `ospre`, `van_albada`), all of which lie inside
@@ -115,6 +148,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![The Poisson solution, and what the fourth-order stencil buys](../assets/figures/pde-poisson-accuracy.svg#only-light)
+  ![The Poisson solution, and what the fourth-order stencil buys](../assets/figures/pde-poisson-accuracy-dark.svg#only-dark)
+  <figcaption>A manufactured solution, so the error is known exactly. The five-point stencil is second order and the Mehrstellen nine-point stencil fourth: at h = 1/40 that is the difference between 1e-3 and 1e-6, for the same sparsity pattern.</figcaption>
+</figure>
+
 The five-point stencil is second order; `poisson_9point` uses the fourth-order
 Mehrstellen stencil; `poisson_fft` solves the periodic problem in `O(n² log n)`
 by diagonalizing the difference operator exactly; `poisson_neumann` handles
@@ -137,6 +176,12 @@ independent of how fine the grid is:
 the algorithm can be assembled or inspected. `poisson_2d_iterative` runs
 plain Jacobi, Gauss-Seidel, SOR, or CG for comparison — which is the way to see
 what multigrid buys.
+
+<figure markdown="span">
+  ![Multigrid against single-grid iterations, and the mesh independence](../assets/figures/pde-multigrid.svg#only-light)
+  ![Multigrid against single-grid iterations, and the mesh independence](../assets/figures/pde-multigrid-dark.svg#only-dark)
+  <figcaption>A single-grid iteration removes the high-frequency error quickly and then crawls; multigrid moves the low frequencies to a coarse grid where they are high frequencies again. The count of V-cycles is flat in the mesh size, which is the property that matters.</figcaption>
+</figure>
 
 ## Finite elements
 
@@ -177,6 +222,12 @@ True
 `spectral_burgers` includes dealiasing; `kuramoto_sivashinsky` integrates the
 canonical chaotic PDE with an exponential time-differencing scheme.
 
+<figure markdown="span">
+  ![A shock forming in Burgers' equation](../assets/figures/pde-weno-burgers.svg#only-light)
+  ![A shock forming in Burgers' equation](../assets/figures/pde-weno-burgers-dark.svg#only-dark)
+  <figcaption>Smooth initial data steepens until the solution becomes discontinuous, and then keeps travelling. WENO5 is fifth order where the solution is smooth and drops its stencil where it is not, so the jump stays within a cell or two and no oscillation appears beside it.</figcaption>
+</figure>
+
 ## Incompressible Navier-Stokes
 
 `navier_stokes_2d` uses Chorin projection: advance momentum, then project onto
@@ -188,6 +239,12 @@ the step, so the resulting velocity is divergence-free to `10⁻¹⁶` rather th
 `vorticity_streamfunction` is the pseudo-spectral alternative, and
 `lid_driven_cavity` solves the standard benchmark — it reproduces Ghia, Ghia
 and Shin (1982) to within 1% at Re = 100.
+
+<figure markdown="span">
+  ![The lid-driven cavity at Re = 100, against the published benchmark](../assets/figures/pde-cavity.svg#only-light)
+  ![The lid-driven cavity at Re = 100, against the published benchmark](../assets/figures/pde-cavity-dark.svg#only-dark)
+  <figcaption>Streamlines of the steady solution, with the primary vortex centre marked, and the three numbers the benchmark reports. The agreement is the whole point: this is a solver checked against a published result, not against itself.</figcaption>
+</figure>
 
 ## Pitfalls
 

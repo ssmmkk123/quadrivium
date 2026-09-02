@@ -61,6 +61,20 @@ timescale in the equation is far shorter than the time you want to integrate
 over. `detect_stiffness` and `stiffness_ratio` answer it from the Jacobian's
 eigenvalues.
 
+```mermaid
+flowchart TD
+    A["y' = f(t, y)"] --> B{"stiff?<br/>detect_stiffness"}
+    B -- no --> C{"what matters?"}
+    C -- "a good default" --> D["solve_ivp<br/>(Dormand-Prince)"]
+    C -- "many digits" --> E["gragg_bulirsch_stoer"]
+    C -- "energy over long times" --> F["velocity_verlet<br/>yoshida4, pefrl"]
+    C -- "second order y''" --> G["rk_nystrom<br/>stormer_cowell"]
+    B -- yes --> H{"how nonlinear?"}
+    H -- "mildly" --> I["rosenbrock<br/>one solve per step"]
+    H -- "fully" --> J["radau_iia, bdf<br/>tr_bdf2, esdirk"]
+    H -- "stiff linear part only" --> K["etd_rk4<br/>exponential_rosenbrock"]
+```
+
 | Problem | Method |
 | --- | --- |
 | non-stiff, general | `solve_ivp` (Dormand-Prince), `dormand_prince`, `cash_karp`, `rkf45` |
@@ -95,6 +109,12 @@ True
 That is the whole argument for implicit methods: the cost per step is higher,
 but the step is chosen by the accuracy you want, not by the stability limit.
 
+<figure markdown="span">
+  ![An explicit method above its stability limit against an implicit one](../assets/figures/ode-stiffness.svg#only-light)
+  ![An explicit method above its stability limit against an implicit one](../assets/figures/ode-stiffness-dark.svg#only-dark)
+  <figcaption>The solution is a smooth cosine; the equation also contains a timescale a thousand times faster. RK4 at a step of 0.01 does not merely lose accuracy — it grows by forty orders of magnitude — while Radau IIA takes the same step and stays on the solution.</figcaption>
+</figure>
+
 ### Convergence orders
 
 Each family converges at its stated order — halving the step divides the error
@@ -111,6 +131,27 @@ heun   order 2: error ratio     4
 rk4    order 4: error ratio    16
 
 ```
+
+<figure markdown="span">
+  ![Measured convergence orders of four fixed-step methods](../assets/figures/ode-convergence-orders.svg#only-light)
+  ![Measured convergence orders of four fixed-step methods](../assets/figures/ode-convergence-orders-dark.svg#only-dark)
+  <figcaption>The slope of each line is the order of the method, measured on y′ = −y. An implementation that is subtly one order low passes a value check and fails this one, which is why the test suite measures slopes rather than values.</figcaption>
+</figure>
+
+### Stability regions
+
+Convergence order says how accurate a step is; stability says whether the step
+is allowed at all. For a stiff problem only the second question matters, and
+the answer is a region in the complex plane: the method is stable at step `h`
+when `hλ` lies inside it for every eigenvalue `λ` of the Jacobian.
+
+<figure markdown="span">
+  ![Regions of absolute stability, measured by taking one step](../assets/figures/ode-stability-regions.svg#only-light)
+  ![Regions of absolute stability, measured by taking one step](../assets/figures/ode-stability-regions-dark.svg#only-dark)
+  <figcaption>Each region is where one step of the method leaves |y| no larger than it found it, computed by running the method on the complex test equation written as a real 2×2 system. An explicit method's region is bounded — that bound is the step limit; the implicit methods cover the whole left half plane and, in backward Euler's case, more.</figcaption>
+</figure>
+
+## Symplectic integrators
 
 ## Symplectic integrators
 
@@ -141,6 +182,12 @@ interface for molecular dynamics; `ruth3`, `forest_ruth`, `yoshida4`, and
 `pefrl` are higher-order compositions. `energy_drift` measures the drift for
 any solution.
 
+<figure markdown="span">
+  ![Energy error over 200 time units, symplectic against general purpose](../assets/figures/ode-symplectic-energy.svg#only-light)
+  ![Energy error over 200 time units, symplectic against general purpose](../assets/figures/ode-symplectic-energy-dark.svg#only-dark)
+  <figcaption>A symplectic integrator's energy error oscillates within a band and stays there; RK4's grows steadily despite being fourth order, and forward Euler's grows without bound. Over a long integration the bound matters more than the order.</figcaption>
+</figure>
+
 ## Events
 
 `solve_ivp_events` locates the roots of `g(t, y)` on the dense output, so the
@@ -159,6 +206,12 @@ True
 True
 
 ```
+
+<figure markdown="span">
+  ![Event location on the dense output rather than on the step grid](../assets/figures/ode-events.svg#only-light)
+  ![Event location on the dense output rather than on the step grid](../assets/figures/ode-events-dark.svg#only-dark)
+  <figcaption>The integrator took five steps over the whole flight, none of them near the landing. The event time still comes out right to 1e-13, because the root is found on the interpolant rather than on the stored states.</figcaption>
+</figure>
 
 `direction=` on `find_events` filters to upward or downward crossings only,
 which is how you catch "the ball landing" without also catching the launch.
@@ -183,6 +236,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![A boundary value problem by finite differences, and its order](../assets/figures/ode-bvp-solution.svg#only-light)
+  ![A boundary value problem by finite differences, and its order](../assets/figures/ode-bvp-solution-dark.svg#only-dark)
+  <figcaption>Conditions at both ends make this a linear system over the whole grid rather than a march in time. The measured order is 2, which is what the central difference in the interior promises.</figcaption>
+</figure>
+
 `multiple_shooting` splits the interval into segments and matches them
 simultaneously, which is what makes shooting work on a problem where a single
 trajectory would overflow before reaching the far end.
@@ -190,6 +249,12 @@ trajectory would overflow before reaching the far end.
 `sturm_liouville` solves the eigenvalue problem `-(p y')' + q y = λ w y`,
 returning the eigenvalues and eigenfunctions — the discrete spectrum that
 separation of variables produces.
+
+<figure markdown="span">
+  ![Sturm-Liouville eigenfunctions and the error in their eigenvalues](../assets/figures/ode-bvp-eigenfunctions.svg#only-light)
+  ![Sturm-Liouville eigenfunctions and the error in their eigenvalues](../assets/figures/ode-bvp-eigenfunctions-dark.svg#only-dark)
+  <figcaption>Separation of variables produces an eigenvalue problem, and discretizing it produces a matrix one. The low modes are resolved to five digits on 200 points; the high ones, which oscillate on the scale of the grid, are not — the usual bargain in a discrete spectrum.</figcaption>
+</figure>
 
 ## Beyond ODEs
 
@@ -224,6 +289,12 @@ True
 
 `richardson_ode` applies the same idea to any fixed-step method of known
 order.
+
+<figure markdown="span">
+  ![How an adaptive integrator spends its steps](../assets/figures/ode-adaptive-steps.svg#only-light)
+  ![How an adaptive integrator spends its steps](../assets/figures/ode-adaptive-steps-dark.svg#only-dark)
+  <figcaption>Van der Pol at μ = 12 alternates slow stretches with fast switches. The step size, which is `np.diff(sol.t)`, falls by two orders of magnitude at each switch and recovers between them: that is what the error estimate buys.</figcaption>
+</figure>
 
 ## Pitfalls
 

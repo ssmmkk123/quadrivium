@@ -7,6 +7,12 @@ Every public name in the library, grouped by subpackage, with its real signature
 
 The narrative [guides](../guides/linalg.md) explain when to reach for which method; this reference tells you what to call.
 
+<figure markdown="span">
+  ![Public names by subpackage](../assets/figures/api-public-names.svg#only-light)
+  ![Public names by subpackage](../assets/figures/api-public-names-dark.svg#only-dark)
+  <figcaption>Every public name, by subpackage, with the portion re-exported at the top level. The counts are read from the package's own <code>__all__</code> lists when the figure is generated.</figcaption>
+</figure>
+
 | Subpackage | Public names | Covers |
 | --- | --- | --- |
 | [`core`](core.md) | 35 | Result records, exceptions, norms, and shared numerical helpers |

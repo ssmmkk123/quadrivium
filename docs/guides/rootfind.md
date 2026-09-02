@@ -15,6 +15,21 @@ case cannot use. Full signatures are in the
 The first question is whether you have a bracket — an interval `[a, b]` with
 `f(a)` and `f(b)` of opposite signs. With one, convergence is guaranteed.
 
+```mermaid
+flowchart TD
+    A["f(x) = 0, one variable"] --> B{"bracket with a sign change?"}
+    B -- yes --> C{"how much do you care<br/>about the worst case?"}
+    C -- "guaranteed bound" --> D["bisection<br/>or itp"]
+    C -- "fast in practice" --> E["brent<br/>(the default)"]
+    B -- no --> F{"derivative available?"}
+    F -- "f' and f''" --> G["halley<br/>chebyshev_method"]
+    F -- "f' only" --> H["newton"]
+    F -- none --> I{"two starting points?"}
+    I -- yes --> J["secant, muller"]
+    I -- no --> K["steffensen"]
+    B -- "none known" --> L["bracket_root<br/>find_all_roots"]
+```
+
 | Situation | Method | Order |
 | --- | --- | --- |
 | you have a bracket and want the default | `brent` | superlinear, never worse than bisection |
@@ -39,6 +54,12 @@ The first question is whether you have a bracket — an interval `[a, b]` with
 
 ```
 
+<figure markdown="span">
+  ![Error against iteration for five scalar root finders](../assets/figures/rootfind-convergence-rates.svg#only-light)
+  ![Error against iteration for five scalar root finders](../assets/figures/rootfind-convergence-rates-dark.svg#only-dark)
+  <figcaption>The `history` field of each result, on x³ − 2x − 5 = 0. Bisection is a straight line on a log scale — one bit per evaluation, always; the superlinear methods bend downwards, and the last step of a quadratic method roughly doubles the number of correct digits.</figcaption>
+</figure>
+
 Every method reports its cost, which is how you compare them honestly — by
 function evaluations, not by iterations:
 
@@ -53,6 +74,12 @@ ridders      4 iterations  10 calls
 brent       10 iterations  11 calls
 
 ```
+
+<figure markdown="span">
+  ![Function evaluations each method needs to reach a tolerance of 1e-12](../assets/figures/rootfind-cost.svg#only-light)
+  ![Function evaluations each method needs to reach a tolerance of 1e-12](../assets/figures/rootfind-cost-dark.svg#only-dark)
+  <figcaption>The same equation and the same tolerance for every method, counted in evaluations rather than iterations, because an iteration means something different in each. Newton is cheapest here and carries no guarantee; bisection is dearest and cannot fail.</figcaption>
+</figure>
 
 ### Finding a bracket
 
@@ -86,6 +113,12 @@ everywhere else. Two arguments handle the common failures:
 
 ```
 
+<figure markdown="span">
+  ![Which root Newton reaches, as a function of where it starts](../assets/figures/rootfind-newton-basins.svg#only-light)
+  ![Which root Newton reaches, as a function of where it starts](../assets/figures/rootfind-newton-basins-dark.svg#only-dark)
+  <figcaption>Every starting point in the strip below was run through `newton` on x³ − x, and coloured by the root it converged to. Near the points where f′ vanishes the answer stops being a continuous function of the start: a step from one side of a band lands on a different root.</figcaption>
+</figure>
+
 `damping=` scales the step, which tames the overshoot that sends a Newton
 iterate off to infinity. `multiplicity=m` restores quadratic convergence at a
 root of multiplicity `m`, where plain Newton degrades to linear:
@@ -101,6 +134,12 @@ True
 1.0
 
 ```
+
+<figure markdown="span">
+  ![Newton at a triple root, with and without the multiplicity correction](../assets/figures/rootfind-multiplicity.svg#only-light)
+  ![Newton at a triple root, with and without the multiplicity correction](../assets/figures/rootfind-multiplicity-dark.svg#only-dark)
+  <figcaption>At a root of multiplicity three, plain Newton converges linearly — it gains a fixed fraction of a digit per step — because the root-finding problem is no longer simple. Telling it <code>multiplicity=3</code> restores the quadratic rate.</figcaption>
+</figure>
 
 Without a derivative, `newton` falls back to a finite difference, so it always
 runs; supplying `df` is faster and more accurate.
@@ -193,6 +232,12 @@ first, matching `numpy.polyval`.
 | `bairstow` | quadratic factors | complex pairs without complex arithmetic |
 | `jenkins_traub_like` | all roots | Laguerre plus deflation |
 | `newton_polynomial` | one root | Newton via Horner, two evaluations per step |
+
+<figure markdown="span">
+  ![Polynomial roots in the complex plane, inside the bounds on their moduli](../assets/figures/rootfind-polynomial-roots.svg#only-light)
+  ![Polynomial roots in the complex plane, inside the bounds on their moduli](../assets/figures/rootfind-polynomial-roots-dark.svg#only-dark)
+  <figcaption>Two methods on a degree-six polynomial: the companion-matrix eigenvalues and the simultaneous Aberth-Ehrlich iteration agree to plotting accuracy. The circles are `root_bounds`, computed from the coefficients alone, before any root is found.</figcaption>
+</figure>
 
 Supporting machinery: `horner` and `horner_derivative` evaluate in `n`
 multiplications, `synthetic_division` and `deflate` remove a known root,

@@ -74,7 +74,7 @@ python -m pip install -e ".[dev]"
 python -m unittest discover -s tests
 ```
 
-The suite is 370 tests and takes about half a minute. `pytest` works too, and
+The suite is 376 tests and takes about half a minute. `pytest` works too, and
 is what the `test` extra installs:
 
 ```bash

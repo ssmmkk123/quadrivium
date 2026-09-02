@@ -63,6 +63,29 @@ True
 | assignment or matching | `assignment_problem` |
 | one variable, bracketed | `brent_minimize`, `golden_section` |
 
+```mermaid
+flowchart TD
+    A["minimize f(x)"] --> B{"how many local minima?"}
+    B -- "many" --> C["differential_evolution<br/>cma_es, basin_hopping"]
+    B -- "one, or the nearest will do" --> D{"is f smooth?"}
+    D -- "no, or noisy" --> E["nelder_mead, powell<br/>compass_search"]
+    D -- yes --> F{"gradient available?"}
+    F -- "no" --> G["finite differences<br/>are used for you"]
+    F -- "yes" --> H{"what shape is the problem?"}
+    H -- "sum of squares" --> I["levenberg_marquardt<br/>gauss_newton, curve_fit"]
+    H -- "smooth + nonsmooth penalty" --> J["fista, admm, lasso"]
+    H -- "constraints" --> K["sqp, augmented_lagrangian<br/>projected_gradient"]
+    H -- "plain and smooth" --> L{"how many variables?"}
+    L -- "few" --> M["bfgs, trust_region"]
+    L -- "many" --> N["lbfgs, newton_cg"]
+```
+
+<figure markdown="span">
+  ![The path three optimizers take across the Rosenbrock valley](../assets/figures/optimize-rosenbrock-paths.svg#only-light)
+  ![The path three optimizers take across the Rosenbrock valley](../assets/figures/optimize-rosenbrock-paths-dark.svg#only-dark)
+  <figcaption>The `history` field of each result, from the same starting point. BFGS builds curvature information and cuts across; Nelder-Mead crawls the floor of the valley with a simplex; gradient descent follows the steepest direction, which in a narrow valley is mostly across it.</figcaption>
+</figure>
+
 ## One dimension
 
 ```pycon
@@ -95,6 +118,12 @@ searches are exposed separately, so a method can be assembled from parts:
 The strong Wolfe conditions are what `bfgs` and `lbfgs` use, because the
 curvature condition is what keeps the quasi-Newton update positive definite.
 
+<figure markdown="span">
+  ![What the Armijo and Wolfe conditions accept along a search direction](../assets/figures/optimize-line-search.svg#only-light)
+  ![What the Armijo and Wolfe conditions accept along a search direction](../assets/figures/optimize-line-search-dark.svg#only-dark)
+  <figcaption>φ(α) is the objective along one search direction. Sufficient decrease alone accepts almost every short step, including steps far too small to make progress; the curvature condition cuts the interval down to steps that actually flatten the slope.</figcaption>
+</figure>
+
 ## Quasi-Newton methods
 
 BFGS builds an approximate inverse Hessian from successive gradients. It
@@ -117,6 +146,12 @@ than `O(n²)` — the difference between feasible and impossible in high
 dimensions. `newton_cg` (truncated Newton) goes further: it never forms the
 Hessian at all, solving each Newton system approximately with CG and
 terminating on a forcing sequence.
+
+<figure markdown="span">
+  ![How fast the objective falls, by method](../assets/figures/optimize-convergence.svg#only-light)
+  ![How fast the objective falls, by method](../assets/figures/optimize-convergence-dark.svg#only-dark)
+  <figcaption>The same objective and the same start. A superlinear method's last few iterations cover more ground than all the ones before it; steepest descent is still at 1e-2 after five thousand iterations, which is what linear convergence costs in practice.</figcaption>
+</figure>
 
 ```pycon
 >>> from quadrivium.optimize import newton_cg
@@ -176,6 +211,12 @@ differentiate, these use only function values:
 
 ```
 
+<figure markdown="span">
+  ![A nonlinear least squares fit and its residuals](../assets/figures/optimize-curve-fit.svg#only-light)
+  ![A nonlinear least squares fit and its residuals](../assets/figures/optimize-curve-fit-dark.svg#only-dark)
+  <figcaption>`curve_fit` wraps Levenberg-Marquardt, which interpolates between Gauss-Newton near the solution and gradient descent far from it. The residual panel is the check that matters: structure left in it means the model is wrong, not the optimizer.</figcaption>
+</figure>
+
 `nelder_mead` reflects and contracts a simplex; `powell` does successive line
 searches along conjugate directions; `hooke_jeeves` and `compass_search` are
 pattern searches with convergence guarantees on smooth functions.
@@ -200,6 +241,12 @@ on ill-conditioned nonconvex problems; `particle_swarm` and
 `basin_hopping` accept worse points to escape local minima;
 `dual_annealing_lite` alternates annealing with local refinement. All take
 `rng=` for reproducibility.
+
+<figure markdown="span">
+  ![A landscape full of local minima, and what each kind of method finds](../assets/figures/optimize-global-landscape.svg#only-light)
+  ![A landscape full of local minima, and what each kind of method finds](../assets/figures/optimize-global-landscape-dark.svg#only-dark)
+  <figcaption>Rastrigin's function has a minimum in every unit cell. A local method converges — correctly, and to the wrong answer; a global method samples the whole box first and refines afterwards.</figcaption>
+</figure>
 
 ## Constrained optimization
 
@@ -244,6 +291,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![L1 against L2 on an underdetermined system](../assets/figures/optimize-sparse-recovery.svg#only-light)
+  ![L1 against L2 on an underdetermined system](../assets/figures/optimize-sparse-recovery-dark.svg#only-dark)
+  <figcaption>Thirty measurements of sixty unknowns: without a prior there are infinitely many solutions. The L1 penalty picks the sparse one and recovers the signal to 0.02; the L2 penalty picks the minimum-energy one, which spreads the answer over all sixty coefficients.</figcaption>
+</figure>
+
 `ista`, `fista`, `proximal_gradient`, `admm`, `admm_lasso`, and
 `douglas_rachford` are the general splitting methods; `soft_threshold`,
 `prox_l1`, `prox_l2`, `prox_box`, and `prox_nonneg` are the proximal
@@ -258,6 +311,12 @@ operators; `ridge` and `elastic_net` complete the regularized regression set.
 ([4.0, 0.0], -12.0)
 
 ```
+
+<figure markdown="span">
+  ![A linear program, its feasible region, and where the optimum has to be](../assets/figures/optimize-linprog.svg#only-light)
+  ![A linear program, its feasible region, and where the optimum has to be](../assets/figures/optimize-linprog-dark.svg#only-dark)
+  <figcaption>The constraints bound a polygon and the objective is a family of parallel lines. The last line to touch the polygon touches it at a vertex — which is why the simplex method only ever visits vertices.</figcaption>
+</figure>
 
 `simplex` is the two-phase method with Bland's rule available for degenerate
 pivots; `big_m_simplex` and `two_phase_simplex` handle the initial feasible

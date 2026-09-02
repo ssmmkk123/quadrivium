@@ -49,6 +49,12 @@ True
 `fftfreq` gives the frequency of each bin and `fftshift` reorders them to put
 zero in the middle — both needed for any plot to mean anything.
 
+<figure markdown="span">
+  ![A noisy two-tone signal and its magnitude spectrum](../assets/figures/transforms-signal-spectrum.svg#only-light)
+  ![A noisy two-tone signal and its magnitude spectrum](../assets/figures/transforms-signal-spectrum-dark.svg#only-dark)
+  <figcaption>Two sinusoids and a good deal of noise. In the time domain neither tone is obvious; in the transform both stand at their own frequency with the amplitude they were given, and the noise spreads across every bin.</figcaption>
+</figure>
+
 Parseval's identity holds to machine precision, which is the standard check
 that a transform is correctly normalized:
 
@@ -108,9 +114,21 @@ main lobe (resolution) and the height of the side lobes (leakage):
 rectangular resolves closest but leaks worst, flat-top has the most accurate
 amplitude, Kaiser is tunable through `beta`.
 
+<figure markdown="span">
+  ![Four windows, in time and in frequency](../assets/figures/transforms-windows.svg#only-light)
+  ![Four windows, in time and in frequency](../assets/figures/transforms-windows-dark.svg#only-dark)
+  <figcaption>A window trades main-lobe width for side-lobe height: the rectangular window resolves two close tones best and leaks worst, Blackman and Kaiser leak least and blur most. The decibel axis is where leakage is visible at all.</figcaption>
+</figure>
+
 `spectrogram` computes the short-time transform for a signal whose content
 changes, and `hilbert` gives the analytic signal, from which instantaneous
 amplitude and phase follow.
+
+<figure markdown="span">
+  ![A raw periodogram against Welch's averaged estimate](../assets/figures/transforms-periodogram-welch.svg#only-light)
+  ![A raw periodogram against Welch's averaged estimate](../assets/figures/transforms-periodogram-welch-dark.svg#only-dark)
+  <figcaption>The periodogram's variance does not fall as the record lengthens — more data buys more frequency bins, each as noisy as before. Averaging overlapping segments trades resolution for a spectrum that can be read.</figcaption>
+</figure>
 
 ## Filtering and resampling
 
@@ -128,6 +146,12 @@ True
 exact for a band-limited signal; `moving_average` and `savitzky_golay_filter`
 smooth in the time domain, the latter preserving peak heights that a moving
 average flattens.
+
+<figure markdown="span">
+  ![Sampling below the Nyquist rate](../assets/figures/transforms-aliasing.svg#only-light)
+  ![Sampling below the Nyquist rate](../assets/figures/transforms-aliasing-dark.svg#only-dark)
+  <figcaption>Both curves pass through every sample, so the samples cannot tell them apart and no transform applied afterwards can either. Aliasing is decided at the moment of sampling; a filter before the sampler is the only fix.</figcaption>
+</figure>
 
 ## Wavelets
 
@@ -168,6 +192,12 @@ That property is what makes wavelets good at denoising: the signal is
 concentrated in a few large coefficients while noise spreads across all of
 them, so thresholding removes mostly noise.
 
+<figure markdown="span">
+  ![A Daubechies-N wavelet annihilates polynomials of degree below N](../assets/figures/transforms-vanishing-moments.svg#only-light)
+  ![A Daubechies-N wavelet annihilates polynomials of degree below N](../assets/figures/transforms-vanishing-moments-dark.svg#only-dark)
+  <figcaption>The largest interior detail coefficient, for four signals and four wavelets. Haar kills a constant; db2 kills a line as well; db4 kills everything up to a cubic. Away from the edges these are zeros to machine precision, not merely small numbers.</figcaption>
+</figure>
+
 ```pycon
 >>> from quadrivium.transforms import wavelet_denoise
 >>> t2 = np.linspace(0, 1, 512)
@@ -179,11 +209,23 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Wavelet thresholding of a signal with a step in it](../assets/figures/transforms-wavelet-denoise.svg#only-light)
+  ![Wavelet thresholding of a signal with a step in it](../assets/figures/transforms-wavelet-denoise-dark.svg#only-dark)
+  <figcaption>The signal occupies a few large coefficients and the noise spreads across all of them, so a threshold removes mostly noise. The step survives, which is what distinguishes this from a low-pass filter.</figcaption>
+</figure>
+
 `universal_threshold` computes Donoho and Johnstone's `σ√(2 log n)`; `swt` and
 `iswt` are the shift-invariant (undecimated) transform, which avoids the
 artefacts that decimation introduces at edges; `dwt2` and `idwt2` handle
 images; `cwt` is the continuous transform with Morlet and Ricker wavelets, and
 `scale_to_frequency` converts its scales to frequencies.
+
+<figure markdown="span">
+  ![A chirp: one transform for the whole record cannot say when](../assets/figures/transforms-spectrogram.svg#only-light)
+  ![A chirp: one transform for the whole record cannot say when](../assets/figures/transforms-spectrogram-dark.svg#only-dark)
+  <figcaption>The whole-record spectrum reports every frequency the signal ever contained, with no indication of order. The short-time transform trades frequency resolution for time resolution and shows both the sweep and the tone that starts halfway through.</figcaption>
+</figure>
 
 ## Pitfalls
 

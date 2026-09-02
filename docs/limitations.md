@@ -98,6 +98,12 @@ These are properties of the mathematics, not of the code:
 - **Explicit time stepping has a stability limit.** Exceeding it diverges;
   it does not merely lose accuracy.
 
+<figure markdown="span">
+  ![The best each technique can do, measured](assets/figures/limitations-accuracy-floors.svg#only-light)
+  ![The best each technique can do, measured](assets/figures/limitations-accuracy-floors-dark.svg#only-dark)
+  <figcaption>None of these floors is an implementation defect. A forward difference cannot beat √ε whatever step it takes; Monte Carlo buys a digit for a hundred times the samples; automatic differentiation has no floor of its own because it never subtracts nearby numbers.</figcaption>
+</figure>
+
 ## Reporting something else
 
 If a method is wrong rather than limited — the wrong answer, the wrong

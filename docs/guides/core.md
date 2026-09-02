@@ -34,6 +34,17 @@ Each carries the diagnostics for its kind of method — see
 [Result records](../getting-started.md#result-records) for the full field
 lists. Three of them behave like the value they hold:
 
+```mermaid
+flowchart LR
+    R["a routine returns"] --> A["RootResult<br/>root finders"]
+    R --> B["IterationResult<br/>iterative linear solvers"]
+    R --> C["QuadratureResult<br/>quadrature"]
+    R --> D["ODESolution<br/>IVP, BVP, SDE"]
+    R --> E["OptimizeResult<br/>optimizers"]
+    R --> F["EigenResult<br/>eigenvalue routines"]
+    R --> G["PDESolution<br/>PDE solvers"]
+```
+
 ```pycon
 >>> import numpy as np
 >>> import quadrivium as qd
@@ -71,6 +82,19 @@ Failure to converge is reported in the result record instead, with
 that have no partial answer to give, and it carries `iterations`, `residual`,
 and `best` so even that path keeps what was computed.
 
+```mermaid
+flowchart TD
+    Q["QuadriviumError"] --> C["ConvergenceError<br/>no partial answer to give"]
+    Q --> S["SingularMatrixError<br/>singular, or numerically so"]
+    Q --> D["DimensionError<br/>incompatible shapes"]
+    Q --> M["DomainError<br/>outside the method's domain"]
+    Q --> T["StepSizeError<br/>adaptive step underflowed"]
+    Q --> B["BracketError<br/>the interval does not bracket a root"]
+```
+
+One `except QuadriviumError` therefore catches everything the library throws,
+and nothing it merely reports.
+
 ## Norms and conditioning
 
 ```pycon
@@ -89,6 +113,12 @@ the 1, 2, Frobenius and infinity norms; `condition_number` uses the 2-norm by
 default. For a large matrix, `quadrivium.linalg.condition_estimate` gives
 Hager's 1-norm estimate without forming an inverse.
 
+<figure markdown="span">
+  ![The unit ball of each p-norm, and where they all end up](../assets/figures/core-norms.svg#only-light)
+  ![The unit ball of each p-norm, and where they all end up](../assets/figures/core-norms-dark.svg#only-dark)
+  <figcaption>`norm(x, p)` accepts any positive p, and the shape of the unit ball is what the choice means: the 1-norm's diamond is why an L1 penalty produces sparse answers, and every p-norm approaches the infinity norm as p grows.</figcaption>
+</figure>
+
 `relative_error` and `absolute_error` are the obvious two, with the guard that
 matters:
 
@@ -98,6 +128,12 @@ matters:
 (5e-05, 0.00010000000000021103)
 
 ```
+
+<figure markdown="span">
+  ![The condition number as a prediction, and the error actually made](../assets/figures/core-conditioning.svg#only-light)
+  ![The condition number as a prediction, and the error actually made](../assets/figures/core-conditioning-dark.svg#only-dark)
+  <figcaption>For the Hilbert matrix, κ·ε is not a loose bound: the measured error of a least squares solve tracks it across sixteen orders of magnitude. This is what `condition_number` is for — knowing how much of the answer to believe before computing it.</figcaption>
+</figure>
 
 ## Shape and property checks
 

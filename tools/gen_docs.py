@@ -281,6 +281,20 @@ def render_index() -> str:
         "The narrative [guides](../guides/linalg.md) explain when to reach for "
         "which method; this reference tells you what to call.\n"
     )
+    # The figure is drawn by tools/gen_figures.py from the same __all__ lists
+    # this page is built from, so the counts below and the bars agree.
+    out.append(
+        '<figure markdown="span">\n'
+        '  ![Public names by subpackage]'
+        '(../assets/figures/api-public-names.svg#only-light)\n'
+        '  ![Public names by subpackage]'
+        '(../assets/figures/api-public-names-dark.svg#only-dark)\n'
+        "  <figcaption>Every public name, by subpackage, with the portion "
+        "re-exported at the top level. The counts are read from the package's "
+        "own <code>__all__</code> lists when the figure is generated."
+        "</figcaption>\n"
+        "</figure>\n"
+    )
     total = 0
     rows = ["| Subpackage | Public names | Covers |", "| --- | --- | --- |"]
     for name, title, blurb in SUBPACKAGES:

@@ -35,6 +35,12 @@ factor — RK4 by 16, Boole's rule by 64, BDF6 by 64, cubic splines by 16. An
 implementation that is subtly one order low passes a value check and fails
 this one.
 
+<figure markdown="span">
+  ![Convergence orders measured across the library](assets/figures/design-measured-orders.svg#only-light)
+  ![Convergence orders measured across the library](assets/figures/design-measured-orders-dark.svg#only-dark)
+  <figcaption>Every bar pair is one method's promised order beside the order measured by refining the discretization and fitting the slope. These are computed when this page is built, by the same code the test suite runs on every commit.</figcaption>
+</figure>
+
 ```pycon
 >>> import numpy as np
 >>> import quadrivium as qd
@@ -129,6 +135,25 @@ Unpreconditioned Newton-Krylov needs more Krylov steps as a mesh is refined.
 
 These are collected in [Known limitations](limitations.md).
 
+## The figures are generated too
+
+Every figure on this site is drawn by `tools/gen_figures.py` from data the
+library computes: the residual histories are real residual histories, the
+convergence orders are measured, the shock was captured by the solver being
+described. A figure is registered next to the page it belongs to, rendered
+once for each colour scheme, and checked in — so building the site needs
+neither Matplotlib nor the minutes it takes to solve every problem shown.
+
+```bash
+python -m pip install -e ".[figures]"   # Matplotlib, only for regenerating
+python tools/gen_figures.py             # rewrite every figure
+python tools/gen_figures.py --check     # verify the checked-in ones
+```
+
+The test suite checks that every figure a page references exists and that
+every figure that exists is referenced by the page it was registered for, so
+a renamed method cannot leave a stale picture behind.
+
 ## Testing your own changes
 
 The same standard applies to contributions. A new method needs evidence beyond
@@ -137,7 +162,7 @@ law, an identity, or agreement with an independent analytic solution. See
 [Contributing](contributing.md).
 
 ```bash
-python -m unittest discover -s tests      # 370 tests, about half a minute
+python -m unittest discover -s tests      # 376 tests, about half a minute
 python -m pytest                          # same suite under pytest
 ```
 

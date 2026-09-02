@@ -58,8 +58,11 @@ test = ["pytest>=7.0"]
 # MkDocs 2.0 is announced as backward-incompatible with the plugin and
 # theming systems these docs use, so the majors are capped.
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5,<10"]
+# Only needed to regenerate the figures under docs/assets/figures, which are
+# checked in; building the site does not need Matplotlib.
+figures = ["matplotlib>=3.6"]
 dev = [
-    "quadrivium[test,docs]",
+    "quadrivium[test,docs,figures]",
     "build>=1.2",
     "twine>=5.0",
 ]

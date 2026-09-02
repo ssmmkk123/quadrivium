@@ -32,6 +32,24 @@ algorithm for a tridiagonal one, and pivoted LU otherwise. Pass `method=` to
 override: `"lu"`, `"plu"`, `"cholesky"`, `"ldl"`, `"qr"`, `"thomas"`,
 `"gauss"`.
 
+```mermaid
+flowchart TD
+    A["solve(A, b)"] --> B{"square?"}
+    B -- no --> C["least squares<br/>qr_least_squares"]
+    B -- yes --> D{"tridiagonal?"}
+    D -- yes --> E["Thomas<br/>O(n)"]
+    D -- no --> G{"symmetric?"}
+    G -- no --> H["pivoted LU<br/>2n³/3"]
+    G -- yes --> I{"positive definite?"}
+    I -- yes --> J["Cholesky<br/>n³/3"]
+    I -- no --> K["LDLᵀ<br/>n³/3"]
+```
+
+The questions it asks are the public ones from
+[`quadrivium.core`](core.md#shape-and-property-checks) — `is_symmetric`,
+`is_positive_definite`, `is_diagonally_dominant` — so you can ask them
+yourself before choosing a method by hand.
+
 When the matrix has structure worth exploiting, or you need the factors
 themselves, call the factorization directly:
 
@@ -106,6 +124,12 @@ produces a `Q` whose columns are visibly not orthogonal while Householder's
 are orthogonal to machine precision. Givens is the one to reach for when the
 matrix is already nearly triangular, since it can zero one entry at a time.
 
+<figure markdown="span">
+  ![Loss of orthogonality against condition number for four QR algorithms](../assets/figures/linalg-qr-orthogonality.svg#only-light)
+  ![Loss of orthogonality against condition number for four QR algorithms](../assets/figures/linalg-qr-orthogonality-dark.svg#only-dark)
+  <figcaption>Each algorithm factorizes the same nearly rank-deficient matrix. <code>max|QᵀQ − I|</code> ought to be zero: classical Gram-Schmidt loses it as the square of the condition number, the modified form as the first power, and the two orthogonal-transformation methods do not lose it at all.</figcaption>
+</figure>
+
 ## Conditioning
 
 Before trusting a solve, ask how much the answer can move:
@@ -171,6 +195,12 @@ True
 
 Eigenvectors are returned as *columns*, matching `numpy.linalg.eig`.
 
+<figure markdown="span">
+  ![Gershgorin disks and the eigenvalues they contain](../assets/figures/linalg-gershgorin.svg#only-light)
+  ![Gershgorin disks and the eigenvalues they contain](../assets/figures/linalg-gershgorin-dark.svg#only-dark)
+  <figcaption>Each row gives a disk centred on its diagonal entry whose radius is the sum of the other magnitudes in that row, and every eigenvalue lies in one of them. The disks cost O(n²) additions and no factorization; the eigenvalues plotted inside them came from `francis_qr`.</figcaption>
+</figure>
+
 ### Decompositions built on eigenvalues
 
 `schur` gives the real Schur form (quasi-triangular, 2×2 blocks for complex
@@ -217,6 +247,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Residual histories of CG, GMRES, SOR and Gauss-Seidel](../assets/figures/linalg-krylov-convergence.svg#only-light)
+  ![Residual histories of CG, GMRES, SOR and Gauss-Seidel](../assets/figures/linalg-krylov-convergence-dark.svg#only-dark)
+  <figcaption>The residual history each solver returns, on the five-point Laplacian of a 16×16 grid. Both Krylov methods reach machine precision in fewer iterations than the matrix has rows; the stationary iterations are still going when the plot ends.</figcaption>
+</figure>
+
 `IterationResult.residuals` is the full convergence history, which is the
 point of using these methods interactively:
 
@@ -244,6 +280,12 @@ Four are provided: `jacobi_preconditioner` (diagonal), `ssor_preconditioner`,
 True
 
 ```
+
+<figure markdown="span">
+  ![Plain CG against Jacobi- and incomplete-Cholesky-preconditioned CG](../assets/figures/linalg-preconditioning.svg#only-light)
+  ![Plain CG against Jacobi- and incomplete-Cholesky-preconditioned CG](../assets/figures/linalg-preconditioning-dark.svg#only-dark)
+  <figcaption>The same system, badly scaled on purpose: a diagonal rescaling of the Poisson matrix spanning four orders of magnitude. The preconditioner changes the iteration count by a factor of sixty, and the answer not at all.</figcaption>
+</figure>
 
 `sor` needs a relaxation parameter; `optimal_sor_omega` computes the value
 that minimises the spectral radius of the iteration matrix for a consistently
@@ -286,6 +328,12 @@ True
 `reverse_cuthill_mckee` reorders a symmetric sparse matrix to shrink its
 bandwidth, which is what makes a banded direct solve affordable.
 
+<figure markdown="span">
+  ![Sparsity pattern of a matrix before and after reverse Cuthill-McKee](../assets/figures/linalg-sparsity-rcm.svg#only-light)
+  ![Sparsity pattern of a matrix before and after reverse Cuthill-McKee](../assets/figures/linalg-sparsity-rcm-dark.svg#only-dark)
+  <figcaption>The same 120×120 matrix with its rows and columns permuted. Nothing about the linear system changes; the bandwidth falls by more than half, and with it the cost of a banded solve.</figcaption>
+</figure>
+
 ## Least squares
 
 Nine estimators, differing in what they assume about the data:
@@ -313,6 +361,12 @@ Nine estimators, differing in what they assume about the data:
 [1.0, 2.0, 3.0]
 
 ```
+
+<figure markdown="span">
+  ![Coefficient error and condition number against polynomial degree](../assets/figures/linalg-least-squares-conditioning.svg#only-light)
+  ![Coefficient error and condition number against polynomial degree](../assets/figures/linalg-least-squares-conditioning-dark.svg#only-dark)
+  <figcaption>Fitting a polynomial of rising degree to data generated by that same polynomial, so the right answer is known exactly. The normal equations work with κ(V)², which reaches 1/ε — no digits left — around degree 12, where Cholesky then refuses the Gram matrix outright.</figcaption>
+</figure>
 
 Non-negativity is a real constraint, not a projection of the unconstrained
 answer:
@@ -377,6 +431,12 @@ within a small factor of the optimal approximation for a fraction of the work:
 True
 
 ```
+
+<figure markdown="span">
+  ![Randomized SVD singular values and approximation error](../assets/figures/linalg-randomized-svd.svg#only-light)
+  ![Randomized SVD singular values and approximation error](../assets/figures/linalg-randomized-svd-dark.svg#only-dark)
+  <figcaption>A 200×160 matrix of numerical rank 40. The sampled singular values sit on the exact ones, and the rank-k approximation lands within a few percent of the Eckart-Young optimum — the best any rank-k matrix can do — for a fraction of a full SVD's work.</figcaption>
+</figure>
 
 `randomized_range_finder`, `randomized_eigh`, `nystrom_approximation`,
 `interpolative_decomposition`, and `cur_decomposition` complete the family.

@@ -40,6 +40,18 @@ Coefficients come back highest degree first, so `numpy.polyval` evaluates them.
 | periodic data | `trigonometric_fit`, `fourier_series` |
 | smooth curve through noisy data | `spline_fit` |
 
+```mermaid
+flowchart TD
+    A["a function, or data"] --> B{"what is being minimised?"}
+    B -- "average error" --> C{"data or function?"}
+    C -- "noisy data" --> D["polyfit<br/>weighted_polyfit"]
+    C -- "a function" --> E["chebyshev_fit<br/>orthogonal_series_fit"]
+    B -- "worst error" --> F["remez<br/>chebyshev_economization"]
+    B -- "a Taylor series at a point" --> G["pade"]
+    B -- "poles or steep gradients" --> H["aaa, rational_fit"]
+    B -- "periodic structure" --> I["fourier_series<br/>trigonometric_fit"]
+```
+
 Above degree six or so, fitting in the monomial basis loses digits to
 conditioning — the Vandermonde matrix of a fine grid has a condition number
 that grows exponentially in the degree. Fitting in an orthogonal basis does
@@ -67,6 +79,12 @@ an explicit formula:
 True
 
 ```
+
+<figure markdown="span">
+  ![Legendre and Chebyshev polynomials of the first six degrees](../assets/figures/approx-orthogonal-families.svg#only-light)
+  ![Legendre and Chebyshev polynomials of the first six degrees](../assets/figures/approx-orthogonal-families-dark.svg#only-dark)
+  <figcaption>Both families are evaluated by their three-term recurrence, not by an explicit formula: the recurrence is stable where the formula is not. Legendre polynomials are orthogonal against weight 1, Chebyshev against 1/√(1−x²), which is why their extrema crowd differently.</figcaption>
+</figure>
 
 Orthogonality is the property they are for, and it holds numerically:
 
@@ -97,6 +115,12 @@ symmetric tridiagonal eigenproblem — the algorithm behind every
 | `gauss_lobatto_nodes` | `1`, endpoints included | `[a, b]` |
 | `gauss_radau_nodes` | `1`, one endpoint included | `[a, b]` |
 
+<figure markdown="span">
+  ![Node positions and weights for five families of quadrature nodes](../assets/figures/approx-gauss-nodes.svg#only-light)
+  ![Node positions and weights for five families of quadrature nodes](../assets/figures/approx-gauss-nodes-dark.svg#only-dark)
+  <figcaption>Marker area is the weight the node carries. Every Gauss family clusters its nodes near the ends of the interval, which is the same clustering that cures Runge's phenomenon, and none of them is equally spaced.</figcaption>
+</figure>
+
 `orthogonal_series_fit` expands a function in any of these families directly.
 
 ## Minimax approximation
@@ -120,6 +144,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![The minimax error equioscillates; the least squares error does not](../assets/figures/approx-remez-equioscillation.svg#only-light)
+  ![The minimax error equioscillates; the least squares error does not](../assets/figures/approx-remez-equioscillation-dark.svg#only-dark)
+  <figcaption>Approximating exp on [−1, 1] by a degree-4 polynomial. The Remez error touches its maximum magnitude, with alternating sign, at degree + 2 points — the property that characterises the minimax polynomial and the one the exchange algorithm drives towards.</figcaption>
+</figure>
+
 `chebyshev_economization` is the cheap approximation to the same idea: expand
 in Chebyshev polynomials, drop the highest terms, and the error added is
 exactly the size of the dropped coefficients, spread evenly.
@@ -142,6 +172,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![A Pade approximant against the Taylor polynomial it was built from](../assets/figures/approx-pade.svg#only-light)
+  ![A Pade approximant against the Taylor polynomial it was built from](../assets/figures/approx-pade-dark.svg#only-dark)
+  <figcaption>Both use exactly the same five Taylor coefficients of exp. Writing them as a ratio rather than a sum extends the useful range by an order of magnitude in the error, at no extra information cost.</figcaption>
+</figure>
+
 Padé is a local approximation, built from derivatives at one point. For a
 global one from sampled values, AAA is the modern method: it places its support
 points greedily where the error is worst and keeps everything in barycentric
@@ -158,6 +194,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![Rational approximation against polynomial approximation of tan](../assets/figures/approx-rational-vs-polynomial.svg#only-light)
+  ![Rational approximation against polynomial approximation of tan](../assets/figures/approx-rational-vs-polynomial-dark.svg#only-dark)
+  <figcaption>tan has poles just outside the interval, and a polynomial has to spend its degree imitating them. AAA places poles where the function has them and reaches 1e-12 with sixteen coefficients, where the polynomial is still at 1e-4 with twenty-seven.</figcaption>
+</figure>
+
 ## Fourier approximation
 
 ```pycon
@@ -173,6 +215,12 @@ The Gibbs phenomenon is real and does not go away with more terms — the
 overshoot at a jump converges to about 9% of the jump height however many
 harmonics you add. `trigonometric_fit` fits harmonics to sampled data, and
 `fourier_coefficients` returns the coefficients themselves.
+
+<figure markdown="span">
+  ![Gibbs' phenomenon: the overshoot at a jump does not shrink](../assets/figures/approx-gibbs.svg#only-light)
+  ![Gibbs' phenomenon: the overshoot at a jump does not shrink](../assets/figures/approx-gibbs-dark.svg#only-dark)
+  <figcaption>Adding harmonics narrows the ringing but does not lower it: the first overshoot converges to 8.95% of the jump height. It is a property of the truncated series, not of the arithmetic.</figcaption>
+</figure>
 
 ## Pitfalls
 

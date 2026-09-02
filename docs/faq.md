@@ -82,6 +82,22 @@ Yes: `from quadrivium.linalg import householder_qr`. Importing `quadrivium`
 imports all thirteen subpackages, which takes a fraction of a second and no
 meaningful memory.
 
+## Where do the figures on this site come from?
+
+They are generated from the library. `tools/gen_figures.py` runs the method
+each figure describes and plots what it returns — the residual histories are
+real residual histories, the convergence orders are measured by refining a
+discretization and fitting the slope, the shock was captured by the solver the
+page is about. Nothing is illustrated by hand, and the test suite checks that
+every figure a page shows exists and that every figure that exists is shown.
+
+Regenerating them needs Matplotlib, which is not a dependency of the library:
+
+```bash
+python -m pip install -e ".[figures]"
+python tools/gen_figures.py
+```
+
 ## How do I cite this?
 
 There is no paper. Cite the repository and the version you used:

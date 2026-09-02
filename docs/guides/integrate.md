@@ -52,6 +52,21 @@ not. Reach past it when you know something it does not.
 | more dimensions than that | `monte_carlo_nd`, `quasi_monte_carlo` |
 | an awkward region | `monte_carlo_region` with an indicator |
 
+```mermaid
+flowchart TD
+    A["an integral"] --> B{"how many dimensions?"}
+    B -- "1" --> C{"what is difficult about it?"}
+    C -- nothing --> D["quad<br/>romberg, gauss_legendre"]
+    C -- "endpoint singularity" --> E["tanh_sinh"]
+    C -- "pole inside" --> F["cauchy_principal_value<br/>hadamard_finite_part"]
+    C -- "high frequency" --> G["filon"]
+    C -- "peak somewhere" --> H["adaptive_gauss_kronrod<br/>global_adaptive"]
+    C -- "infinite range with a weight" --> I["gauss_hermite<br/>gauss_laguerre"]
+    B -- "2 or 3" --> J["double_integral, triple_integral<br/>tensor_gauss"]
+    B -- "4 to 10" --> K["sparse_grid_quadrature"]
+    B -- "more" --> L["monte_carlo_nd<br/>quasi_monte_carlo"]
+```
+
 ## Newton-Cotes and its convergence orders
 
 The classical rules are all here, and their orders are exactly what the theory
@@ -70,6 +85,12 @@ simpson_rule     error ratio    16
 boole_rule       error ratio    64
 
 ```
+
+<figure markdown="span">
+  ![Measured convergence orders of the trapezoid, Simpson and Boole rules](../assets/figures/integrate-newton-cotes-orders.svg#only-light)
+  ![Measured convergence orders of the trapezoid, Simpson and Boole rules](../assets/figures/integrate-newton-cotes-orders-dark.svg#only-dark)
+  <figcaption>The slopes are the orders: 2, 4 and 6, measured rather than asserted. Each rule flattens out when its error reaches the rounding level, below which the plot is measuring floating-point arithmetic and not the rule.</figcaption>
+</figure>
 
 `newton_cotes_weights(n)` gives the weights for any degree, closed or open,
 and `newton_cotes` applies them. Above about degree 8 the weights change sign
@@ -112,6 +133,12 @@ True
 
 ```
 
+<figure markdown="span">
+  ![An n-point Gauss rule is exact through degree 2n − 1 and no further](../assets/figures/integrate-gauss-exactness.svg#only-light)
+  ![An n-point Gauss rule is exact through degree 2n − 1 and no further](../assets/figures/integrate-gauss-exactness-dark.svg#only-dark)
+  <figcaption>Integrating xᵈ over [0, 1] for rising d. The error sits at rounding level until the degree passes 2n − 1, then rises by orders of magnitude within one degree. The dashed lines mark where each rule's guarantee ends.</figcaption>
+</figure>
+
 The other weight functions integrate their own family of integrals without
 your having to transform anything:
 
@@ -151,6 +178,12 @@ almost entirely:
 
 ```
 
+<figure markdown="span">
+  ![Where an adaptive rule puts its evaluations, against a uniform rule](../assets/figures/integrate-adaptive-nodes.svg#only-light)
+  ![Where an adaptive rule puts its evaluations, against a uniform rule](../assets/figures/integrate-adaptive-nodes-dark.svg#only-dark)
+  <figcaption>Every abscissa the adaptive rule asked about, recorded by wrapping the integrand. Given the same number of evaluations spread evenly, the composite Simpson rule steps over the spike and returns an answer that is wrong by half.</figcaption>
+</figure>
+
 `adaptive_simpson` and `adaptive_trapezoid` bisect locally; `global_adaptive`
 keeps a queue of subintervals ordered by error estimate and always splits the
 worst one, which is more robust when the difficulty is concentrated in one
@@ -184,6 +217,12 @@ True
 `hadamard_finite_part` does the same for a double pole, where even the
 principal value diverges.
 
+<figure markdown="span">
+  ![The tanh-sinh transformation applied to an endpoint singularity](../assets/figures/integrate-singular.svg#only-light)
+  ![The tanh-sinh transformation applied to an endpoint singularity](../assets/figures/integrate-singular-dark.svg#only-dark)
+  <figcaption>The change of variable maps the singular endpoint to infinity and brings a weight that decays doubly exponentially, so the transformed integrand is one a trapezoid rule handles. Composite Simpson on the original integrand converges as √h: ten thousand evaluations for two digits.</figcaption>
+</figure>
+
 For `f(x)·sin(ωx)` with large ω, an ordinary rule needs points per wavelength;
 Filon's method integrates the oscillation analytically and only interpolates
 `f`, so its cost does not grow with ω:
@@ -196,6 +235,12 @@ Filon's method integrates the oscillation analytically and only interpolates
 True
 
 ```
+
+<figure markdown="span">
+  ![Filon quadrature against a general adaptive rule as the frequency rises](../assets/figures/integrate-oscillatory.svg#only-light)
+  ![Filon quadrature against a general adaptive rule as the frequency rises](../assets/figures/integrate-oscillatory-dark.svg#only-dark)
+  <figcaption>A general rule needs points per wavelength, so its cost grows linearly with ω. Filon integrates the oscillation analytically and interpolates only the slowly varying factor, so its cost does not grow at all.</figcaption>
+</figure>
 
 ## Monte Carlo
 
@@ -231,6 +276,12 @@ visible:
 True
 
 ```
+
+<figure markdown="span">
+  ![Monte Carlo, stratified sampling and quasi-Monte Carlo error against sample count](../assets/figures/integrate-monte-carlo.svg#only-light)
+  ![Monte Carlo, stratified sampling and quasi-Monte Carlo error against sample count](../assets/figures/integrate-monte-carlo-dark.svg#only-dark)
+  <figcaption>Each plain Monte Carlo point is the mean of ten seeds, so the line is a typical error rather than a lucky one. The n<sup>−1/2</sup> reference is the rate that dimension cannot change; better point sets beat it on smooth integrands in low dimension.</figcaption>
+</figure>
 
 Quasi-Monte Carlo replaces random points with a low-discrepancy sequence and
 converges nearly as `n^{-1}` on smooth integrands. It is deterministic, so

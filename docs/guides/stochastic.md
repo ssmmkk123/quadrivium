@@ -35,10 +35,22 @@ set, alongside `middle_square` — von Neumann's method, included because
 watching it collapse into a short cycle is the clearest argument for the
 theory that followed it.
 
+<figure markdown="span">
+  ![RANDU's triples lie on a lattice; a modern generator's do not](../assets/figures/stochastic-spectral-test.svg#only-light)
+  ![RANDU's triples lie on a lattice; a modern generator's do not](../assets/figures/stochastic-spectral-test-dark.svg#only-dark)
+  <figcaption>Successive triples from each generator, restricted to a thin slab of the unit cube so the structure is visible edge on. `spectral_test` finds the lattice on its own and reports the coefficients (9, −6, 1) — RANDU satisfies x[i+2] = 6x[i+1] − 9x[i] exactly.</figcaption>
+</figure>
+
 For quasi-random points, `halton`, `sobol`, `van_der_corput`, and
 `latin_hypercube_sample` produce low-discrepancy sequences that cover a space
 more evenly than random points, which is what makes quasi-Monte Carlo
 converge faster.
+
+<figure markdown="span">
+  ![Pseudorandom points against Halton and Sobol points](../assets/figures/stochastic-low-discrepancy.svg#only-light)
+  ![Pseudorandom points against Halton and Sobol points](../assets/figures/stochastic-low-discrepancy-dark.svg#only-dark)
+  <figcaption>Random points clump, and a clump is a region the integrand is not sampled in. Low-discrepancy sequences fill the square by construction, which is what makes quasi-Monte Carlo converge faster than n<sup>−1/2</sup> on a smooth integrand.</figcaption>
+</figure>
 
 **Use these for study, not as your source of randomness.** For real work pass
 `rng=` and let NumPy's PCG64 generate.
@@ -124,6 +136,12 @@ takes to forget where it was, `gelman_rubin` compares several chains for
 agreement (`R̂` near 1), and `acceptance_rate` catches a proposal that is far
 too wide or too narrow.
 
+<figure markdown="span">
+  ![Random-walk Metropolis against Hamiltonian Monte Carlo](../assets/figures/stochastic-mcmc-diagnostics.svg#only-light)
+  ![Random-walk Metropolis against Hamiltonian Monte Carlo](../assets/figures/stochastic-mcmc-diagnostics-dark.svg#only-dark)
+  <figcaption>The same ten-dimensional target and the same number of draws. The random walk explores in steps that undo each other, so six thousand draws are worth two hundred independent ones; HMC uses the gradient to propose distant states that are still accepted.</figcaption>
+</figure>
+
 ## Statistics
 
 ```pycon
@@ -158,6 +176,12 @@ Resampling and testing: `bootstrap` (percentile confidence intervals and a
 bias estimate), `jackknife`, `permutation_test`, `t_test`, `chi_square_test`,
 `ks_test`, `anova_one_way`, `confidence_interval`.
 
+<figure markdown="span">
+  ![The bootstrap distribution of a median, and the interval it gives](../assets/figures/stochastic-bootstrap.svg#only-light)
+  ![The bootstrap distribution of a median, and the interval it gives](../assets/figures/stochastic-bootstrap-dark.svg#only-dark)
+  <figcaption>Resampling the data with replacement four thousand times gives the sampling distribution of any statistic — here a median, which has no convenient closed form — and the 2.5% and 97.5% quantiles of that distribution are the interval.</figcaption>
+</figure>
+
 ```pycon
 >>> from quadrivium.stochastic import bootstrap
 >>> boot = bootstrap(np.arange(20.0), np.mean, n_resamples=2000, rng=0)
@@ -189,13 +213,26 @@ True
 | `implicit_milstein` | 1.0 | stable for stiff drift |
 | `stochastic_heun` | 1.0 | converges to the **Stratonovich** solution |
 | `stochastic_rk` | 1.0 | derivative-free Milstein |
+
 | `srk_strong_1_5` | 1.5 | additive noise only |
 | `tamed_euler` | 0.5 | for superlinearly growing drift, where Euler diverges |
+
+<figure markdown="span">
+  ![Geometric Brownian motion: paths, and the distribution they sample](../assets/figures/stochastic-sde-paths.svg#only-light)
+  ![Geometric Brownian motion: paths, and the distribution they sample](../assets/figures/stochastic-sde-paths-dark.svg#only-dark)
+  <figcaption>Each path is one realisation; the average over paths follows the deterministic exponential. The right panel is the answer to the question an SDE solver is usually asked — the law of the solution at a fixed time — against the exact lognormal density.</figcaption>
+</figure>
 
 Strong order 1/2 for Euler-Maruyama is not a weakness of the implementation:
 the Itô-Taylor expansion has a `b b′(ΔW² − Δt)/2` term that the method omits.
 Milstein keeps it. `strong_error` and `weak_error` measure both orders
 empirically against an exact solution.
+
+<figure markdown="span">
+  ![Measured strong convergence of Euler-Maruyama and Milstein](../assets/figures/stochastic-strong-order.svg#only-light)
+  ![Measured strong convergence of Euler-Maruyama and Milstein](../assets/figures/stochastic-strong-order-dark.svg#only-dark)
+  <figcaption>Both solvers are driven by the same Brownian increments as the exact solution, which is what makes this a pathwise (strong) comparison rather than a comparison of distributions. The measured slopes bracket the theoretical 1/2 and 1 within the Monte Carlo noise of 600 paths.</figcaption>
+</figure>
 
 `brownian_path` and `brownian_bridge` generate the driving noise;
 `geometric_brownian_motion`, `ornstein_uhlenbeck`, and `cox_ingersoll_ross`
