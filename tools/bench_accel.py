@@ -15,6 +15,7 @@ Usage::
     python tools/bench_accel.py               # the standard set
     python tools/bench_accel.py --repeat 7    # more samples per measurement
     python tools/bench_accel.py --markdown    # emit the README table
+    python tools/bench_accel.py --native      # compare against NumPy instead
 """
 
 from __future__ import annotations
@@ -27,6 +28,51 @@ from typing import Callable
 import numpy as np
 
 from quadrivium import _accel, linalg, ode, special, transforms
+
+
+def warm_blas(rng) -> None:
+    """Spin up NumPy's BLAS thread pool before anything is timed.
+
+    OpenBLAS pays its pool startup on first use. Without this the cost lands on
+    whichever measurement happens to run first, and NumPy reports as slower than
+    it really is -- an easy way to flatter these numbers by accident.
+    """
+    w = rng.standard_normal((1200, 1200))
+    spd = w @ w.T + 1200 * np.eye(1200)
+    small = w[:200, :200] + w[:200, :200].T
+    for _ in range(5):
+        w @ w
+        np.linalg.cholesky(spd)
+        np.linalg.qr(w, mode="complete")
+        np.fft.fft(w[0])
+        np.linalg.eigh(small)
+
+
+def native_cases(rng):
+    """Yield ``(label, size, ours, numpy)`` for routines NumPy also provides."""
+    mm = _accel.kernel("matmul")
+    for n in (200, 400, 800, 1600):
+        a = rng.standard_normal((n, n))
+        b = rng.standard_normal((n, n))
+        spd = a @ a.T + n * np.eye(n)
+        rhs = rng.standard_normal(n)
+        if mm is not None:
+            yield "matmul", n, (lambda x=a, y=b: mm(x, y)), (lambda x=a, y=b: x @ y)
+        yield ("linalg.cholesky", n, lambda s=spd: linalg.cholesky(s),
+               lambda s=spd: np.linalg.cholesky(s))
+        yield ("linalg.householder_qr", n, lambda m=a: linalg.householder_qr(m),
+               lambda m=a: np.linalg.qr(m, mode="complete"))
+        yield ("linalg.solve", n, lambda s=spd, v=rhs: linalg.solve(s, v),
+               lambda s=spd, v=rhs: np.linalg.solve(s, v))
+    for n in (1024, 4096, 65536, 262144, 1000, 10000, 100000):
+        v = rng.standard_normal(n) + 1j * rng.standard_normal(n)
+        yield ("transforms.fft", n, lambda x=v: transforms.fft(x),
+               lambda x=v: np.fft.fft(x))
+    for n in (40, 80, 160):
+        m = rng.standard_normal((n, n))
+        sym = m + m.T
+        yield ("linalg.jacobi_eigen", n, lambda s=sym: linalg.jacobi_eigen(s),
+               lambda s=sym: np.linalg.eigh(s))
 
 
 def measure(fn: Callable[[], object], repeat: int) -> float:
@@ -99,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0, help="RNG seed")
     parser.add_argument("--markdown", action="store_true",
                         help="print a Markdown table instead of aligned text")
+    parser.add_argument("--native", action="store_true",
+                        help="compare against NumPy's kernels instead of the "
+                             "pure-Python fallback")
     args = parser.parse_args(argv)
 
     print(_accel.show_config().splitlines()[0], file=sys.stderr)
@@ -107,6 +156,20 @@ def main(argv: list[str] | None = None) -> int:
               "against. Build it with `pip install -e .` and a Rust toolchain "
               "on PATH.", file=sys.stderr)
         return 1
+
+    if args.native:
+        rng = np.random.default_rng(args.seed)
+        warm_blas(rng)
+        print(f"{'operation':28s} {'quadrivium':>12s} {'numpy':>10s}  ratio")
+        print("-" * 68)
+        for label, size, ours, theirs in native_cases(rng):
+            a = measure(ours, args.repeat)
+            b = measure(theirs, args.repeat)
+            ratio = a / b
+            verdict = (f"{ratio:.2f}x slower" if ratio > 1.10
+                       else f"{1 / ratio:.2f}x FASTER" if ratio < 0.91 else "~parity")
+            print(f"{label + ' n=' + str(size):28s} {a:9.3f} ms {b:7.3f} ms  {verdict}")
+        return 0
 
     rows = []
     for label, size, fn in cases(np.random.default_rng(args.seed)):

@@ -151,50 +151,76 @@ with the compiled backend switched off):
 
 | routine | size | python | rust | speedup |
 |---|---|---|---|---|
-| `special.gamma` | 100 000 | 453.86 ms | 0.401 ms | **1132×** |
-| `special.log_gamma` | 100 000 | 280.80 ms | 0.263 ms | **1066×** |
-| `linalg.jacobi_eigen` | 80 | 1520.66 ms | 3.966 ms | **383×** |
-| `transforms.fft` | 1 024 | 1.38 ms | 0.012 ms | **112×** |
-| `transforms.fft` | 4 096 | 5.35 ms | 0.056 ms | **95×** |
-| `transforms.fft` | 10 000 | 131.36 ms | 1.405 ms | **94×** |
-| `linalg.cholesky` | 200 | 17.97 ms | 0.510 ms | **35×** |
-| `special.erfc` | 100 000 | 10.15 ms | 0.302 ms | **34×** |
-| `linalg.solve` | 200 | 18.13 ms | 0.809 ms | **22×** |
-| `linalg.plu_decomposition` | 200 | 5.75 ms | 0.835 ms | **6.9×** |
-| `ode.solve_ivp` (decay) | 1 | 6.29 ms | 1.072 ms | **5.9×** |
-| `ode.solve_ivp` (van der Pol) | 2 | 33.75 ms | 6.516 ms | **5.2×** |
-| `ode.solve_ivp` (Lorenz) | 3 | 129.02 ms | 28.792 ms | **4.5×** |
-| `linalg.forward_substitution` | 200 | 0.17 ms | 0.032 ms | **5.4×** |
-| `linalg.householder_qr` | 200 | 12.46 ms | 3.671 ms | **3.4×** |
+| `special.gamma` | 100 000 | 442.10 ms | 0.367 ms | **1203×** |
+| `special.log_gamma` | 100 000 | 277.77 ms | 0.238 ms | **1165×** |
+| `transforms.fft` | 10 000 | 130.51 ms | 0.279 ms | **468×** |
+| `linalg.jacobi_eigen` | 80 | 1508.29 ms | 3.882 ms | **389×** |
+| `transforms.fft` | 1 024 | 1.38 ms | 0.012 ms | **115×** |
+| `linalg.cholesky` | 200 | 17.10 ms | 0.275 ms | **62×** |
+| `linalg.solve` | 200 | 17.88 ms | 0.320 ms | **56×** |
+| `special.erfc` | 100 000 | 10.15 ms | 0.313 ms | **32×** |
+| `linalg.householder_qr` | 400 | 94.25 ms | 7.153 ms | **13×** |
+| `linalg.plu_decomposition` | 400 | 34.47 ms | 3.148 ms | **11×** |
+| `ode.solve_ivp` (Lorenz) | 3 | 128.66 ms | 29.73 ms | **4.3×** |
 
-Reproduce with `python tools/bench_accel.py`; the margins on the BLAS-bound
-rows depend on which BLAS NumPy was linked against, so they are not portable.
+Reproduce with `python tools/bench_accel.py`.
 
-The spread is not arbitrary. Where the Python version loops over *scalars* the
-compiled kernel wins by two or three orders of magnitude; `jacobi_eigen` gains
-most because the Rust rotation touches only the two rows and columns it changes,
-where the Python one formed a dense rotation matrix and multiplied it through.
-Where the Python version already hands its inner loop to NumPy — and so to BLAS
-— the margin is a small constant factor, because the arithmetic was never in the
-interpreter to begin with.
+### How this compares to NumPy's own kernels
 
-The adaptive ODE solvers are the interesting middle case. Their right-hand side
-is a Python callable and has to stay one, so the kernel calls back into Python
-on every stage. That sounds fatal until you measure it: on a scalar decay
-problem the callback is about 7% of the solve, and the other 93% is stage
-assembly, the embedded error estimate and the step controller — all of which
-move. `solve_ivp`, `dormand_prince`, `rkf45`, `cash_karp` and
-`bogacki_shampine` all run through the compiled driver, and because it is a
-faithful port they take *bit-identical* steps: same step count, same rejections,
-same number of right-hand-side evaluations, `t` and `y` equal to the last bit.
+The table above is quadrivium against itself. The harder question is how it
+compares to a library that has been binding LAPACK for thirty years. NumPy here
+is linked against a multithreaded OpenBLAS 0.3.31 on a 12-core machine.
 
-**The reverse case is real, and those routines were deliberately left alone.**
-`qr_algorithm` spends its time in `R @ Q`, which NumPy sends to a tuned BLAS.
-Moving its whole iteration into Rust measured 1.02–1.50× — inside the noise, and
-liable to invert on a machine with a better BLAS than this one. Leaving the loop
-in Python and letting it call the accelerated `householder_qr` measured
-1.33–2.08× on the same problems, so that kernel was deleted rather than shipped.
-A kernel is wired in only where it measurably wins.
+| operation | size | quadrivium | numpy (OpenBLAS / pocketfft) | |
+|---|---|---|---|---|
+| `householder_qr` | 1600 | 231.3 ms | 198.9 ms | 1.16× slower |
+| `matmul` | 1600 | 41.3 ms | 35.1 ms | 1.18× slower |
+| `householder_qr` | 800 | 32.0 ms | 26.9 ms | 1.19× slower |
+| `cholesky` | 1600 | 32.1 ms | 21.1 ms | 1.52× slower |
+| `fft` n=1024 (power of two) | | 0.017 ms | 0.011 ms | 1.54× slower |
+| `matmul` | 800 | 6.64 ms | 4.14 ms | 1.60× slower |
+| `cholesky` | 800 | 9.27 ms | 4.95 ms | 1.87× slower |
+| `solve` | 1600 | 38.1 ms | 19.6 ms | 1.94× slower |
+| `fft` n=262144 (power of two) | | 7.16 ms | 3.23 ms | 2.22× slower |
+| `cholesky` | 400 | 1.99 ms | 0.71 ms | 2.82× slower |
+| `fft` n=100000 (composite) | | 3.91 ms | 0.92 ms | 4.24× slower |
+| `jacobi_eigen` | 160 | 65.4 ms | 1.42 ms | 46× slower |
+
+Reproduce with `python tools/bench_accel.py --native`. Warm the BLAS thread pool
+before trusting any single row: OpenBLAS pays its pool startup on first use, and
+an unwarmed run reports NumPy as slower than it is.
+
+**Where the remaining gaps are, and why.**
+
+*Dense factorizations* run between parity and about 3× off LAPACK. They are
+built on a packed `gemm` in `rust/src/gemm.rs` with a hand-written AVX2/FMA
+micro-kernel holding a 6×8 tile of `C` in registers, cache blocking over all
+three dimensions, and rayon across row bands. Single-threaded it reaches about
+46 GFLOPS, roughly 82% of this core's peak, so the kernel itself is close to
+the machine; the shortfall against OpenBLAS is thread scaling and the fixed cost
+of packing at small `n`. Everything else follows from it: Cholesky is
+right-looking with two levels of blocking, LU is blocked with recursive panels,
+and QR uses the compact WY representation so the trailing update is a `gemm`
+rather than `nb` rank-1 updates.
+
+*The FFT* is within about 2× of pocketfft on power-of-two lengths and about 4×
+on composite ones, with agreement to 3 × 10⁻¹⁵ relative at every length tested.
+Composite lengths recurse with a shared twiddle table and closed-form radix
+2/3/4/5 butterflies; what is still missing against pocketfft is an iterative
+formulation with better locality than a strided recursion.
+
+*`jacobi_eigen` is the one large gap, and it is algorithmic rather than an
+implementation defect.* Cyclic Jacobi does roughly `6-10 n^3` of work; LAPACK's
+`eigh` reduces to tridiagonal form and costs about `4n^3/3` plus a cheap QL
+sweep. The library offers Jacobi because it is the more accurate method on
+graded matrices, and the ratio to `eigh` is close to the ratio of the two
+algorithms' work. Rewriting the rotation to exploit symmetry was tried and
+measured no faster -- the cost there is strided column access, not multiply
+count -- so the literal form was kept.
+
+**If you want the fastest possible dense linear algebra, call LAPACK.** What
+this library offers is the algorithm written out where you can read it, now
+running within a small multiple of the tuned version rather than a hundred.
 
 ### Switching backends
 
@@ -215,35 +241,6 @@ with accel.disabled():     # force the reference implementation
 `tests/test_accel.py` runs both paths over sizes that straddle the kernels'
 blocking thresholds and requires them to agree to floating-point noise, and to
 raise the same exceptions on singular and indefinite input.
-
-### How this compares to NumPy's own kernels
-
-The table above is quadrivium against itself. The other question — how it
-compares to a library that has been binding LAPACK for thirty years — has a
-less flattering answer, and it is worth stating plainly:
-
-| operation | quadrivium (rust) | numpy (LAPACK / pocketfft) | |
-|---|---|---|---|
-| `cholesky` n=400 | 6.18 ms | 1.18 ms | 5.3× slower |
-| `qr` n=400 | 28.69 ms | 6.15 ms | 4.7× slower |
-| `solve` n=400 | 7.79 ms | 0.71 ms | 11× slower |
-| symmetric eigen n=80 | 5.87 ms | 0.39 ms | 15× slower |
-| `fft` n=4096 (power of two) | 0.075 ms | 0.035 ms | 2.1× slower |
-| `fft` n=65536 (power of two) | 1.56 ms | 0.83 ms | 1.9× slower |
-| `fft` n=10000 (composite) | 2.17 ms | 0.09 ms | 24× slower |
-
-The compiled kernels here close most of the gap to native code, not all of it.
-The dense factorizations use a straightforward blocked `gemm` rather than a
-packed, hand-vectorized micro-kernel, so they land within a small multiple of a
-tuned BLAS instead of matching it. The power-of-two FFT is close to pocketfft;
-composite lengths are not, because the mixed-radix recursion still allocates per
-level and lacks dedicated radix-3/4/5 butterflies. Accuracy is not the
-compromise — the FFT agrees with `numpy.fft` to 3 × 10⁻¹⁵ relative at every
-length tested.
-
-**If you want the fastest possible dense linear algebra, call LAPACK.** What
-this library offers is the algorithm written out where you can read it, running
-within a few multiples of the tuned version rather than a hundred.
 
 ### Memory
 

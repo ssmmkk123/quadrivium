@@ -132,7 +132,17 @@ def check_square(A) -> np.ndarray:
 
 def is_symmetric(A, tol: float = 1e-12) -> bool:
     A = np.asarray(A, dtype=float)
-    return A.ndim == 2 and A.shape[0] == A.shape[1] and bool(np.allclose(A, A.T, atol=tol))
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        return False
+    from .. import _accel
+
+    fast = _accel.kernel("is_symmetric")
+    if fast is not None and A.shape[0]:
+        # Same predicate as ``np.allclose(A, A.T, atol=tol)`` -- including
+        # NumPy's default rtol of 1e-5 -- but streamed in one pass with an
+        # early exit, rather than materialising |A - A.T|.
+        return bool(fast(np.ascontiguousarray(A), tol, 1e-5))
+    return bool(np.allclose(A, A.T, atol=tol))
 
 
 def is_positive_definite(A, tol: float = 0.0) -> bool:

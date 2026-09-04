@@ -63,6 +63,10 @@ pub fn jacobi_eigen(
                 let c = 1.0 / (t * t + 1.0).sqrt();
                 let s = t * c;
                 // D := J' D J, touching only columns p,q then rows p,q.
+                // A symmetry-exploiting variant that writes both triangles in
+                // one pass was tried and measured no faster: the cost here is
+                // the strided column access, not the multiply count. This form
+                // is kept because it mirrors the Python routine step for step.
                 for i in 0..n {
                     let dip = d[i * n + p];
                     let diq = d[i * n + q];

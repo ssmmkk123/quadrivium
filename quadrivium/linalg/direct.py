@@ -95,8 +95,17 @@ def back_substitution(U, b, unit_diagonal: bool = False) -> np.ndarray:
         raise DimensionError(f"U is {n}x{n} but b has length {b.size}")
     fast = _accel.kernel("back_substitution")
     if fast is not None and n:
+        # ``cholesky_solve`` passes ``L.T``, which is a transposed view and so
+        # F-contiguous. Handing the kernel the underlying C-contiguous buffer
+        # with a transpose flag avoids copying the whole matrix for what is
+        # only an O(n^2) solve.
+        mat, transposed = U, False
+        if not U.flags.c_contiguous and U.flags.f_contiguous:
+            mat, transposed = U.T, True
         try:
-            return fast(np.ascontiguousarray(U, dtype=float), np.ascontiguousarray(b, dtype=float), unit_diagonal)
+            return fast(np.ascontiguousarray(mat, dtype=float),
+                        np.ascontiguousarray(b, dtype=float),
+                        unit_diagonal, transposed)
         except Exception as exc:  # noqa: BLE001
             err = _accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
             if err is None:
@@ -633,7 +642,11 @@ def solve(A, b, method: str = "auto") -> np.ndarray:
     A = check_square(A)
     if method == "auto":
         n = A.shape[0]
-        if n > 2 and np.count_nonzero(A - np.triu(np.tril(A, 1), -1)) == 0:
+        # A tridiagonal matrix has at most 3n-2 nonzeros, and counting them
+        # costs one streaming pass. The exact test below allocates three n x n
+        # temporaries, so it is worth guarding for the dense case.
+        if (n > 2 and np.count_nonzero(A) <= 3 * n - 2
+                and np.count_nonzero(A - np.triu(np.tril(A, 1), -1)) == 0):
             return thomas(np.diag(A, -1), np.diag(A), np.diag(A, 1), b)
         if is_symmetric(A):
             try:

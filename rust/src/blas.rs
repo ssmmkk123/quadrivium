@@ -5,12 +5,6 @@
 //! views: the hot loops then compile to straight-line code the autovectorizer
 //! can turn into SIMD without bounds checks in the middle.
 
-/// Block size for the register-level kernel. Chosen so one block of A, B and C
-/// stays inside L1 on typical x86-64 and aarch64 cores.
-pub const MC: usize = 96;
-pub const KC: usize = 128;
-pub const NC: usize = 256;
-
 /// Dot product with a 4-way split accumulator so the compiler can pipeline the
 /// FMAs instead of serialising on a single dependency chain.
 #[inline]
@@ -73,57 +67,6 @@ pub fn nrm2(x: &[f64]) -> f64 {
         s += t * t;
     }
     scale * s.sqrt()
-}
-
-/// `C := C + alpha * A * B`, blocked. This is the workhorse behind the
-/// right-looking blocked factorizations.
-///
-/// The argument list is the usual BLAS one -- three dimensions, a scalar, and a
-/// pointer/stride pair per operand -- and splitting it into a struct would only
-/// move the same information one level down.
-#[allow(clippy::too_many_arguments)]
-pub fn gemm_nn_acc(
-    m: usize,
-    n: usize,
-    k: usize,
-    alpha: f64,
-    a: &[f64],
-    lda: usize,
-    b: &[f64],
-    ldb: usize,
-    c: &mut [f64],
-    ldc: usize,
-) {
-    let mut jc = 0;
-    while jc < n {
-        let nb = NC.min(n - jc);
-        let mut pc = 0;
-        while pc < k {
-            let kb = KC.min(k - pc);
-            let mut ic = 0;
-            while ic < m {
-                let mb = MC.min(m - ic);
-                // Register-blocked micro kernel over one (mb x kb) x (kb x nb) tile.
-                for i in 0..mb {
-                    let arow = &a[(ic + i) * lda + pc..(ic + i) * lda + pc + kb];
-                    let crow = &mut c[(ic + i) * ldc + jc..(ic + i) * ldc + jc + nb];
-                    for p in 0..kb {
-                        let av = alpha * arow[p];
-                        if av == 0.0 {
-                            continue;
-                        }
-                        let brow = &b[(pc + p) * ldb + jc..(pc + p) * ldb + jc + nb];
-                        for j in 0..nb {
-                            crow[j] += av * brow[j];
-                        }
-                    }
-                }
-                ic += mb;
-            }
-            pc += kb;
-        }
-        jc += nb;
-    }
 }
 
 /// Swap two rows of a row-major matrix in place.

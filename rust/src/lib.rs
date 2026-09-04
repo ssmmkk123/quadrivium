@@ -23,6 +23,7 @@ mod direct;
 mod eigen;
 #[path = "fft.rs"]
 mod fft_mod;
+mod gemm;
 mod ode;
 mod special;
 
@@ -37,8 +38,22 @@ fn map_err(e: LinalgError) -> PyErr {
     }
 }
 
+/// Borrow a C-contiguous array's buffer directly, avoiding a copy. Returns
+/// `None` for any other layout, where the caller must pack it instead.
+fn as_rows<'a>(a: &'a PyReadonlyArray2<'_, f64>) -> Option<&'a [f64]> {
+    a.as_slice().ok()
+}
+
 /// Row-major copy of a possibly non-contiguous input, as a flat `Vec`.
+///
+/// The common case is a C-contiguous array, where this is a single `memcpy`.
+/// Walking the array with 2-D indexing instead costs an indexed load per
+/// element and showed up as milliseconds on the input path of every
+/// factorization.
 fn to_vec2(a: &PyReadonlyArray2<f64>) -> Vec<f64> {
+    if let Ok(s) = a.as_slice() {
+        return s.to_vec();
+    }
     let v = a.as_array();
     let (m, n) = (v.nrows(), v.ncols());
     let mut out = Vec::with_capacity(m * n);
@@ -118,27 +133,66 @@ fn forward_substitution<'py>(
     unit_diagonal: bool,
 ) -> PyResult<Arr1<'py>> {
     let n = l.as_array().nrows();
-    let lb = to_vec2(&l);
     let mut x = b.as_array().to_vec();
-    py.detach(|| direct::forward_substitution(n, &lb, n, &mut x, unit_diagonal))
+    let owned;
+    let lb: &[f64] = match as_rows(&l) {
+        Some(v) => v,
+        None => {
+            owned = to_vec2(&l);
+            &owned
+        }
+    };
+    py.detach(|| direct::forward_substitution(n, lb, n, &mut x, unit_diagonal))
         .map_err(map_err)?;
     Ok(x.into_pyarray(py))
 }
 
 #[pyfunction]
-#[pyo3(signature = (u, b, unit_diagonal=false))]
+#[pyo3(signature = (u, b, unit_diagonal=false, transposed=false))]
 fn back_substitution<'py>(
     py: Python<'py>,
     u: PyReadonlyArray2<'py, f64>,
     b: PyReadonlyArray1<'py, f64>,
     unit_diagonal: bool,
+    transposed: bool,
 ) -> PyResult<Arr1<'py>> {
     let n = u.as_array().nrows();
-    let ub = to_vec2(&u);
     let mut x = b.as_array().to_vec();
-    py.detach(|| direct::back_substitution(n, &ub, n, &mut x, unit_diagonal))
-        .map_err(map_err)?;
+    let owned;
+    let ub: &[f64] = match as_rows(&u) {
+        Some(v) => v,
+        None => {
+            owned = to_vec2(&u);
+            &owned
+        }
+    };
+    py.detach(|| {
+        if transposed {
+            // `u` is the lower-triangular L; solve L' x = b in place.
+            direct::back_substitution_trans(n, ub, n, &mut x, unit_diagonal)
+        } else {
+            direct::back_substitution(n, ub, n, &mut x, unit_diagonal)
+        }
+    })
+    .map_err(map_err)?;
     Ok(x.into_pyarray(py))
+}
+
+#[pyfunction]
+#[pyo3(signature = (a, atol=1e-12, rtol=1e-5))]
+fn is_symmetric(py: Python<'_>, a: PyReadonlyArray2<'_, f64>, atol: f64, rtol: f64) -> bool {
+    let arr = a.as_array();
+    let (m, n) = (arr.nrows(), arr.ncols());
+    if m != n {
+        return false;
+    }
+    match as_rows(&a) {
+        Some(v) => py.detach(|| direct::is_symmetric(n, v, atol, rtol)),
+        None => {
+            let owned = to_vec2(&a);
+            py.detach(|| direct::is_symmetric(n, &owned, atol, rtol))
+        }
+    }
 }
 
 #[pyfunction]
@@ -293,6 +347,48 @@ the problem is likely stiff -- try an implicit solver",
     ))
 }
 
+#[pyfunction]
+fn matmul<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<'py, f64>,
+    b: PyReadonlyArray2<'py, f64>,
+) -> PyResult<Arr2<'py>> {
+    let (m, k) = {
+        let v = a.as_array();
+        (v.nrows(), v.ncols())
+    };
+    let (k2, n) = {
+        let v = b.as_array();
+        (v.nrows(), v.ncols())
+    };
+    if k != k2 {
+        return Err(PyValueError::new_err(format!(
+            "shapes ({m},{k}) and ({k2},{n}) are not aligned"
+        )));
+    }
+    // Both operands are read-only here, so a contiguous input is used in
+    // place rather than copied.
+    let a_owned;
+    let av: &[f64] = match as_rows(&a) {
+        Some(v) => v,
+        None => {
+            a_owned = to_vec2(&a);
+            &a_owned
+        }
+    };
+    let b_owned;
+    let bv: &[f64] = match as_rows(&b) {
+        Some(v) => v,
+        None => {
+            b_owned = to_vec2(&b);
+            &b_owned
+        }
+    };
+    let mut c = vec![0.0f64; m * n];
+    py.detach(|| gemm::gemm(m, n, k, av, k, bv, n, &mut c, n));
+    c.into_pyarray(py).reshape([m, n])
+}
+
 /// Generate a `PyArray1 -> PyArray1` binding for a scalar special function.
 ///
 /// Every one of these releases the GIL for the duration of the map, so a
@@ -330,5 +426,7 @@ fn _quadrivium_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(erf, m)?)?;
     m.add_function(wrap_pyfunction!(erfc, m)?)?;
     m.add_function(wrap_pyfunction!(adaptive_rk, m)?)?;
+    m.add_function(wrap_pyfunction!(matmul, m)?)?;
+    m.add_function(wrap_pyfunction!(is_symmetric, m)?)?;
     Ok(())
 }

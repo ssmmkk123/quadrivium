@@ -107,7 +107,89 @@ fn bluestein(a: &[Complex64], inverse: bool) -> Vec<Complex64> {
     (0..n).map(|k| fa[k] * inv_m * chirp[k]).collect()
 }
 
+/// Radix-`p` butterfly on `c`, writing `p` outputs into `out`.
+///
+/// The small radices get closed forms rather than a `p x p` matrix product:
+/// radix 5 costs a handful of real multiplies where the generic form costs 25
+/// complex ones, and these are the radices that actually turn up (10000 is
+/// 2^4 * 5^4). Any other radix falls back to a direct DFT that indexes the
+/// shared twiddle table -- building a private matrix per call cost more than
+/// the whole transform for lengths like 30030 = 2*3*5*7*11*13.
+#[inline]
+fn butterfly(
+    p: usize,
+    sign: f64,
+    c: &[Complex64],
+    tw: &[Complex64],
+    pstep: usize,
+    out: &mut [Complex64],
+) {
+    match p {
+        2 => {
+            out[0] = c[0] + c[1];
+            out[1] = c[0] - c[1];
+        }
+        3 => {
+            const S3: f64 = 0.866_025_403_784_438_6; // sqrt(3)/2
+            let t1 = c[1] + c[2];
+            let t2 = c[0] - t1 * 0.5;
+            let d = c[1] - c[2];
+            let r = Complex64::new(-sign * S3 * d.im, sign * S3 * d.re);
+            out[0] = c[0] + t1;
+            out[1] = t2 + r;
+            out[2] = t2 - r;
+        }
+        4 => {
+            let t0 = c[0] + c[2];
+            let t1 = c[0] - c[2];
+            let t2 = c[1] + c[3];
+            let t3 = c[1] - c[3];
+            let r = Complex64::new(-sign * t3.im, sign * t3.re);
+            out[0] = t0 + t2;
+            out[1] = t1 + r;
+            out[2] = t0 - t2;
+            out[3] = t1 - r;
+        }
+        5 => {
+            const C1: f64 = 0.309_016_994_374_947_45; // cos(2pi/5)
+            const S1: f64 = 0.951_056_516_295_153_5; // sin(2pi/5)
+            const C2: f64 = -0.809_016_994_374_947_5; // cos(4pi/5)
+            const S2: f64 = 0.587_785_252_292_473_1; // sin(4pi/5)
+            let t1 = c[1] + c[4];
+            let t2 = c[2] + c[3];
+            let t3 = c[1] - c[4];
+            let t4 = c[2] - c[3];
+            out[0] = c[0] + t1 + t2;
+            let m1 = c[0] + t1 * C1 + t2 * C2;
+            let m2 = c[0] + t1 * C2 + t2 * C1;
+            let s1 = t3 * S1 + t4 * S2;
+            let s2 = t3 * S2 - t4 * S1;
+            let r1 = Complex64::new(-sign * s1.im, sign * s1.re);
+            let r2 = Complex64::new(-sign * s2.im, sign * s2.re);
+            out[1] = m1 + r1;
+            out[4] = m1 - r1;
+            out[2] = m2 + r2;
+            out[3] = m2 - r2;
+        }
+        _ => {
+            let big = tw.len();
+            for (q, o) in out.iter_mut().enumerate().take(p) {
+                let mut acc = Complex64::new(0.0, 0.0);
+                for r in 0..p {
+                    acc += c[r] * tw[(q * r * pstep) % big];
+                }
+                *o = acc;
+            }
+        }
+    }
+}
+
 fn smallest_factor(n: usize) -> Option<usize> {
+    // Radix 4 first: it halves the number of passes over the data compared
+    // with two radix-2 passes, for the same arithmetic.
+    if n % 4 == 0 {
+        return Some(4);
+    }
     let mut q = 2usize;
     while q * q <= n {
         if n % q == 0 {
@@ -118,73 +200,106 @@ fn smallest_factor(n: usize) -> Option<usize> {
     None
 }
 
+/// Recursive Cooley-Tukey working out-of-place between two caller-owned
+/// buffers, with no allocation of its own.
+///
+/// `x` is read with `stride`, so the decimation never has to gather into a
+/// temporary. `out` and `scratch` are disjoint length-`n` regions: the `p`
+/// sub-transforms write into slices of `scratch` while using the matching
+/// slices of `out` as their own scratch, then the combine step reads `scratch`
+/// and writes `out`.
+///
+/// `tw` holds `w_N^t` for the top-level `N`; a sub-problem of length `n` uses
+/// the same table with its exponents scaled by `step = N / n`.
+#[allow(clippy::too_many_arguments)]
+fn rec(
+    x: &[Complex64],
+    stride: usize,
+    n: usize,
+    out: &mut [Complex64],
+    scratch: &mut [Complex64],
+    tw: &[Complex64],
+    step: usize,
+    sign: f64,
+) {
+    if n == 1 {
+        out[0] = x[0];
+        return;
+    }
+    let big = tw.len();
+    let p = match smallest_factor(n) {
+        Some(p) if p <= 32 => p,
+        // A short prime length is its own base case: one direct DFT is far
+        // cheaper than setting up a chirp-z transform.
+        None if n <= 64 => n,
+        // A long prime factor: chirp-z is the only O(n log n) route, and it is
+        // rare enough to afford its own allocation.
+        _ => {
+            let gathered: Vec<Complex64> = (0..n).map(|j| x[j * stride]).collect();
+            out[..n].copy_from_slice(&bluestein(&gathered, sign > 0.0));
+            return;
+        }
+    };
+    // `w_p^t == tw[t * (N / p)]`, so the generic radix needs no table of its own.
+    let pstep = big / p;
+    let mut col = [Complex64::new(0.0, 0.0); 64];
+    let mut bfly = [Complex64::new(0.0, 0.0); 64];
+    if n == p {
+        // Base case: a single butterfly over the strided input. Terminating
+        // here rather than recursing to length 1 removes one call per input
+        // element -- about 200k calls at n = 100000, which dominated.
+        for r in 0..p {
+            col[r] = x[r * stride];
+        }
+        butterfly(p, sign, &col[..p], tw, pstep, &mut bfly[..p]);
+        out[..p].copy_from_slice(&bfly[..p]);
+        return;
+    }
+    let m = n / p;
+    for r in 0..p {
+        let (o, sc) = (
+            &mut scratch[r * m..(r + 1) * m],
+            &mut out[r * m..(r + 1) * m],
+        );
+        rec(&x[r * stride..], stride * p, m, o, sc, tw, step * p, sign);
+    }
+    for k in 0..m {
+        for r in 0..p {
+            let idx = (r * k * step) % big;
+            col[r] = scratch[r * m + k] * tw[idx];
+        }
+        butterfly(p, sign, &col[..p], tw, pstep, &mut bfly[..p]);
+        for q in 0..p {
+            out[q * m + k] = bfly[q];
+        }
+    }
+}
+
 /// Unscaled forward/inverse transform for any length.
 fn transform(a: &[Complex64], inverse: bool) -> Vec<Complex64> {
     let n = a.len();
     if n <= 1 {
         return a.to_vec();
     }
+    let sign = if inverse { 1.0 } else { -1.0 };
     if is_pow2(n) {
         let mut buf = a.to_vec();
         radix2(&mut buf, inverse);
         return buf;
     }
-    match smallest_factor(n) {
-        // Prime length: chirp-z is the only O(n log n) route.
-        None => bluestein(a, inverse),
-        Some(p) if p > 32 => bluestein(a, inverse),
-        Some(p) => {
-            // Cooley-Tukey: p sub-transforms of length n/p, recombined with
-            // twiddles and a length-p DFT across the sub-results.
-            let m = n / p;
-            let sign = if inverse { 1.0 } else { -1.0 };
-            let mut subs: Vec<Vec<Complex64>> = Vec::with_capacity(p);
-            for r in 0..p {
-                let part: Vec<Complex64> = (0..m).map(|j| a[j * p + r]).collect();
-                subs.push(transform(&part, inverse));
-            }
-            // The p-point DFT matrix is the same for all m columns, so it is
-            // built once here rather than re-deriving p^2 sines and cosines
-            // inside the loop below.
-            let mut dft_p = vec![Complex64::new(0.0, 0.0); p * p];
-            for q in 0..p {
-                for r in 0..p {
-                    let ang = sign * 2.0 * PI * ((q * r) % p) as f64 / p as f64;
-                    dft_p[q * p + r] = Complex64::new(ang.cos(), ang.sin());
-                }
-            }
-            // Twiddles advance by one rotation per column; re-seeding from
-            // sin/cos periodically stops the running product from drifting.
-            let mut w = vec![Complex64::new(1.0, 0.0); p];
-            let mut wstep = vec![Complex64::new(1.0, 0.0); p];
-            for (r, ws) in wstep.iter_mut().enumerate() {
-                let ang = sign * 2.0 * PI * r as f64 / n as f64;
-                *ws = Complex64::new(ang.cos(), ang.sin());
-            }
-            let mut out = vec![Complex64::new(0.0, 0.0); n];
-            let mut col = vec![Complex64::new(0.0, 0.0); p];
-            for k in 0..m {
-                for r in 0..p {
-                    col[r] = subs[r][k] * w[r];
-                    w[r] = if k % 64 == 63 {
-                        let ang = sign * 2.0 * PI * ((r * (k + 1)) % n) as f64 / n as f64;
-                        Complex64::new(ang.cos(), ang.sin())
-                    } else {
-                        w[r] * wstep[r]
-                    };
-                }
-                for q in 0..p {
-                    let row = &dft_p[q * p..q * p + p];
-                    let mut acc = Complex64::new(0.0, 0.0);
-                    for r in 0..p {
-                        acc += col[r] * row[r];
-                    }
-                    out[q * m + k] = acc;
-                }
-            }
-            out
-        }
+    if smallest_factor(n).is_none() {
+        return bluestein(a, inverse);
     }
+    // One twiddle table serves every level of the recursion.
+    let mut tw = Vec::with_capacity(n);
+    for t in 0..n {
+        let ang = sign * 2.0 * PI * t as f64 / n as f64;
+        tw.push(Complex64::new(ang.cos(), ang.sin()));
+    }
+    let mut out = vec![Complex64::new(0.0, 0.0); n];
+    let mut scratch = vec![Complex64::new(0.0, 0.0); n];
+    rec(a, 1, n, &mut out, &mut scratch, &tw, 1, sign);
+    out
 }
 
 /// Forward DFT.
