@@ -15,6 +15,72 @@ that could break an existing call.
 
 ### Added
 
+- **Optional compiled backend.** A Rust extension (`quadrivium._quadrivium_rs`)
+  now provides compiled versions of the kernels that dominate runtime. It is
+  built automatically when a Rust toolchain is available and is entirely
+  optional: without it every routine falls back to the pure-Python
+  implementation, which stays in the tree and stays tested.
+- `quadrivium.accel` for backend introspection and control — `available()`,
+  `backend()`, `version()`, `kernels()`, `show_config()`, and a `disabled()`
+  context manager that forces the reference implementation. The environment
+  variable `QUADRIVIUM_NO_ACCEL=1` does the same process-wide, and
+  `QUADRIVIUM_NO_RUST=1` skips the compiled build at install time.
+- `tests/test_accel.py`: 18 tests and 71 subtests requiring the two backends to
+  agree to floating-point noise and to raise the same exceptions, over sizes
+  that straddle the kernels' 64-wide blocking thresholds.
+
+### Changed
+
+- `ode.adaptive_rk` — and so `solve_ivp`, `dormand_prince`, `rkf45`,
+  `cash_karp` and `bogacki_shampine` — runs its stage assembly, error estimate
+  and PI step controller in the compiled kernel, calling back into Python for
+  the right-hand side. The port is faithful rather than merely equivalent: both
+  backends take bit-identical steps, down to the step count, the rejection
+  count and the number of right-hand-side evaluations. Measured 4.5–5.9×.
+- `linalg.cholesky`, `linalg.plu_decomposition`, `linalg.householder_qr`,
+  `linalg.forward_substitution`, `linalg.back_substitution`,
+  `linalg.jacobi_eigen`, `transforms.fft`, `transforms.ifft`, `special.gamma`,
+  `special.log_gamma`, `special.erf` and `special.erfc` dispatch to the compiled
+  kernel when one is present. Results, signatures and exception types are
+  unchanged.
+- `linalg.jacobi_eigen` is asymptotically faster even before the language
+  change: the compiled rotation updates only the two rows and columns it
+  touches, where the Python implementation formed a dense rotation matrix and
+  multiplied it through — `O(n^3)` per sweep rather than `O(n^5)`. Measured
+  381× at n = 80.
+
+### Performance
+
+Measured against the same routine with the backend switched off: `special.gamma`
+1225× at 100 000 points, `special.log_gamma` 619×, `linalg.jacobi_eigen` 381× at
+n = 80, `transforms.fft` 115× at n = 1024 and 94× at n = 10 000, `linalg.cholesky` 62× at n = 100,
+`linalg.solve` 19× at n = 200, `ode.solve_ivp` 4.5–5.9×. Routines whose inner loop was already NumPy — and
+so already BLAS — gain a small constant factor instead; `linalg.householder_qr`
+is 3.7× at n = 200. The full test suite runs in 27 s rather than 59 s.
+
+### Notes
+
+Against NumPy's own kernels rather than against the Python fallback, the
+compiled backend closes most of the gap but does not match native code: the
+dense factorizations run 4–15× slower than LAPACK, and the power-of-two FFT is
+within 2× of pocketfft while composite lengths are ~24× off. Accuracy is not
+the tradeoff — the FFT matches `numpy.fft` to 3e-15 relative at every length
+tested. Memory behaves better than speed: the kernels allocate their working
+space once, so the compiled path adds no peak RSS over a warm-up call where the
+Python path needs a further 0.9-7.7 MB of scratch, and allocates 100-35000x
+fewer objects.
+
+### Notes
+
+Kernels were wired in only where they measurably win. `qr_algorithm` was
+implemented in Rust, measured at 1.02–1.50× against a NumPy `R @ Q` backed by a
+tuned BLAS, and removed again; it keeps its Python loop and reaches 1.33–2.08×
+through the accelerated `householder_qr` underneath. The scalar-only special
+functions (`digamma`, `erfcx`, the Bessel family) have no Python loop to
+eliminate and were left alone.
+
+### Added
+
 - **83 generated figures across the documentation site**, one to seven per
   page: convergence histories, stability regions, sparsity patterns, node
   distributions, spectra, shocks, sampling diagnostics, and the rest. Every one

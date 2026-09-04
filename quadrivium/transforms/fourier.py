@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+
 from ..core.utils import as_vector
 
 __all__ = [
@@ -169,6 +171,9 @@ def fft(x):
     n = x.size
     if n == 0:
         return x.copy()
+    fast = _accel.kernel("fft")
+    if fast is not None:
+        return fast(np.ascontiguousarray(x))
     if n & (n - 1) == 0:
         return fft_radix2(x)
     return fft_bluestein(x)
@@ -180,6 +185,9 @@ def ifft(X):
     n = X.size
     if n == 0:
         return X.copy()
+    fast = _accel.kernel("ifft")
+    if fast is not None:
+        return fast(np.ascontiguousarray(X))
     if n & (n - 1) == 0:
         return fft_radix2(X, inverse=True)
     return fft_bluestein(X, inverse=True)

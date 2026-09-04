@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 *.so
 
+# Rust build artifacts
+rust/target/
+
 # Packaging artifacts
 build/
 dist/

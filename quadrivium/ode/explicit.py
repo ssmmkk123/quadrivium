@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+
 from ..core.exceptions import StepSizeError
 from ..core.types import ODESolution
 from ..core.utils import CountedFunction, as_vector
@@ -221,6 +223,35 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
     fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     y = as_vector(y0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
+
+    fast = _accel.kernel("adaptive_rk")
+    if fast is not None:
+        # The stage assembly and the controller move to the compiled kernel;
+        # ``f`` stays a Python callable and is called back per stage.
+        a_flat = np.zeros((s, s))
+        for i, row in enumerate(A):
+            a_flat[i, : row.size] = row
+        try:
+            ts, ys, dys, accepted, rejected, calls = fast(
+                fc, np.asarray(c, dtype=float), a_flat.ravel(),
+                np.asarray(b_hi, dtype=float), np.asarray(b_lo, dtype=float),
+                float(order), t0, tf, y, float(rtol), float(atol),
+                None if h0 is None else float(h0), float(max_step),
+                float(min_step), int(max_steps),
+            )
+        except RuntimeError as exc:
+            if not str(exc).startswith("stepsize:"):
+                raise
+            raise StepSizeError(str(exc)[len("stepsize:"):]) from None
+        interp = None
+        if dense_output:
+            from ..interpolate.spline import pchip
+
+            splines = [pchip(ts, ys[:, j]) for j in range(ys.shape[1])]
+            interp = lambda q: np.column_stack([sp(q) for sp in splines])
+        return ODESolution(ts, ys, tableau, accepted + rejected, accepted,
+                           rejected, calls, True, "completed", interp, dys)
+
     direction = 1.0 if tf >= t0 else -1.0
     t = t0
     h = (abs(tf - t0) / 100.0 if h0 is None else abs(h0)) * direction

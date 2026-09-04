@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+
 from ..core.exceptions import ConvergenceError, SingularMatrixError
 from ..core.types import EigenResult
 from ..core.utils import as_matrix, as_vector, check_square, is_symmetric
@@ -260,6 +262,11 @@ def jacobi_eigen(A, tol: float = 1e-12, max_sweeps: int = 100):
     if not is_symmetric(A, tol=1e-8):
         raise ValueError("Jacobi eigenvalue method requires a symmetric matrix")
     n = A.shape[0]
+    fast = _accel.kernel("jacobi_eigen")
+    if fast is not None and n:
+        vals, vecs, sweep, conv = fast(np.ascontiguousarray(A, dtype=float), tol, max_sweeps)
+        idx = np.argsort(vals)
+        return EigenResult(vals[idx].copy(), vecs[:, idx], sweep, conv, "jacobi")
     D = A.astype(float).copy()
     V = np.eye(n)
     for sweep in range(1, max_sweeps + 1):

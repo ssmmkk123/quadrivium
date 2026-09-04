@@ -10,6 +10,15 @@ import math
 
 import numpy as np
 
+from .. import _accel
+
+# The array-valued functions below evaluate their scalar kernel through a
+# Python loop, which is where nearly all of their runtime goes. Each one first
+# offers the work to the compiled backend, which runs the identical
+# approximation -- the same Lanczos table, the same reflection -- over the whole
+# array at once. `_accel.kernel` returns None when no extension is loaded, and
+# the loop underneath runs instead.
+
 from ..core.exceptions import DomainError
 
 __all__ = [
@@ -77,6 +86,13 @@ _LANCZOS_COEF = np.array([
 
 def log_gamma(x):
     """Log-gamma by the Lanczos approximation (accurate to ~15 digits)."""
+    fast = _accel.kernel("log_gamma")
+    if fast is not None:
+        xa = np.asarray(x, dtype=float)
+        # The kernel takes a flat array; ravel/reshape restores the caller's
+        # shape, and a 0-d input keeps returning a plain float.
+        out = fast(np.ascontiguousarray(xa).ravel()).reshape(xa.shape)
+        return float(out) if xa.ndim == 0 else out
     x = np.asarray(x, dtype=float)
     scalar = x.ndim == 0
     x = np.atleast_1d(x).astype(float)
@@ -95,6 +111,13 @@ def log_gamma(x):
 
 def gamma(x):
     """Gamma function for real arguments."""
+    fast = _accel.kernel("gamma")
+    if fast is not None:
+        xa = np.asarray(x, dtype=float)
+        # The kernel takes a flat array; ravel/reshape restores the caller's
+        # shape, and a 0-d input keeps returning a plain float.
+        out = fast(np.ascontiguousarray(xa).ravel()).reshape(xa.shape)
+        return float(out) if xa.ndim == 0 else out
     x = np.asarray(x, dtype=float)
     scalar = x.ndim == 0
     xa = np.atleast_1d(x).astype(float)
@@ -151,6 +174,13 @@ def digamma(x):
 
 def erf(x):
     """Error function via its relation to the incomplete gamma function."""
+    fast = _accel.kernel("erf")
+    if fast is not None:
+        xa = np.asarray(x, dtype=float)
+        # The kernel takes a flat array; ravel/reshape restores the caller's
+        # shape, and a 0-d input keeps returning a plain float.
+        out = fast(np.ascontiguousarray(xa).ravel()).reshape(xa.shape)
+        return float(out) if xa.ndim == 0 else out
     x = np.asarray(x, dtype=float)
     scalar = x.ndim == 0
     xa = np.atleast_1d(x)
@@ -160,6 +190,13 @@ def erf(x):
 
 def erfc(x):
     """Complementary error function ``1 - erf(x)``, accurate in the tail."""
+    fast = _accel.kernel("erfc")
+    if fast is not None:
+        xa = np.asarray(x, dtype=float)
+        # The kernel takes a flat array; ravel/reshape restores the caller's
+        # shape, and a 0-d input keeps returning a plain float.
+        out = fast(np.ascontiguousarray(xa).ravel()).reshape(xa.shape)
+        return float(out) if xa.ndim == 0 else out
     x = np.asarray(x, dtype=float)
     scalar = x.ndim == 0
     xa = np.atleast_1d(x)

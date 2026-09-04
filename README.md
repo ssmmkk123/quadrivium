@@ -31,9 +31,13 @@ It abbreviates to **quad**.*
 pip install quadrivium
 ```
 
-Python 3.9 or newer, NumPy 1.20 or newer, and nothing else. The distribution is
-a pure-Python wheel, so there is no compiler and no platform-specific build
-involved.
+Python 3.9 or newer, NumPy 1.20 or newer, and nothing else at runtime.
+
+Wheels bundle an optional compiled backend (see
+[Performance](#performance)). It is genuinely optional: if no wheel matches your
+platform, `pip` builds from source, and if a Rust toolchain is not present the
+install still succeeds and every routine runs its pure-Python implementation.
+Set `QUADRIVIUM_NO_RUST=1` to skip the compiled build deliberately.
 
 For an editable development installation with the test and documentation
 dependencies:
@@ -124,6 +128,143 @@ drift from the code. The figures are generated the same way, by
 `tools/gen_figures.py`, which runs the method being illustrated and plots what
 it returns — a stability region is measured by taking one step of the method,
 a convergence order by refining the grid, a shock by capturing it.
+
+## Performance
+
+The algorithms are written out in Python so they can be read. That makes the
+hot ones slow: a Cholesky factorization that loops over its own pivots in the
+interpreter is two orders of magnitude off a compiled one. So the kernels that
+dominate runtime also exist as compiled Rust, and the Python routine calls
+whichever backend is present.
+
+```python
+>>> import quadrivium as qd
+>>> print(qd.accel.show_config())
+quadrivium acceleration: rust (extension 1.2.0)
+  compiled kernels (13): adaptive_rk, back_substitution, cholesky, erf, erfc,
+  fft, forward_substitution, gamma, householder_qr, ifft, jacobi_eigen,
+  log_gamma, plu
+```
+
+Measured on this machine (n is the problem size; "python" is the same routine
+with the compiled backend switched off):
+
+| routine | size | python | rust | speedup |
+|---|---|---|---|---|
+| `special.gamma` | 100 000 | 453.86 ms | 0.401 ms | **1132×** |
+| `special.log_gamma` | 100 000 | 280.80 ms | 0.263 ms | **1066×** |
+| `linalg.jacobi_eigen` | 80 | 1520.66 ms | 3.966 ms | **383×** |
+| `transforms.fft` | 1 024 | 1.38 ms | 0.012 ms | **112×** |
+| `transforms.fft` | 4 096 | 5.35 ms | 0.056 ms | **95×** |
+| `transforms.fft` | 10 000 | 131.36 ms | 1.405 ms | **94×** |
+| `linalg.cholesky` | 200 | 17.97 ms | 0.510 ms | **35×** |
+| `special.erfc` | 100 000 | 10.15 ms | 0.302 ms | **34×** |
+| `linalg.solve` | 200 | 18.13 ms | 0.809 ms | **22×** |
+| `linalg.plu_decomposition` | 200 | 5.75 ms | 0.835 ms | **6.9×** |
+| `ode.solve_ivp` (decay) | 1 | 6.29 ms | 1.072 ms | **5.9×** |
+| `ode.solve_ivp` (van der Pol) | 2 | 33.75 ms | 6.516 ms | **5.2×** |
+| `ode.solve_ivp` (Lorenz) | 3 | 129.02 ms | 28.792 ms | **4.5×** |
+| `linalg.forward_substitution` | 200 | 0.17 ms | 0.032 ms | **5.4×** |
+| `linalg.householder_qr` | 200 | 12.46 ms | 3.671 ms | **3.4×** |
+
+Reproduce with `python tools/bench_accel.py`; the margins on the BLAS-bound
+rows depend on which BLAS NumPy was linked against, so they are not portable.
+
+The spread is not arbitrary. Where the Python version loops over *scalars* the
+compiled kernel wins by two or three orders of magnitude; `jacobi_eigen` gains
+most because the Rust rotation touches only the two rows and columns it changes,
+where the Python one formed a dense rotation matrix and multiplied it through.
+Where the Python version already hands its inner loop to NumPy — and so to BLAS
+— the margin is a small constant factor, because the arithmetic was never in the
+interpreter to begin with.
+
+The adaptive ODE solvers are the interesting middle case. Their right-hand side
+is a Python callable and has to stay one, so the kernel calls back into Python
+on every stage. That sounds fatal until you measure it: on a scalar decay
+problem the callback is about 7% of the solve, and the other 93% is stage
+assembly, the embedded error estimate and the step controller — all of which
+move. `solve_ivp`, `dormand_prince`, `rkf45`, `cash_karp` and
+`bogacki_shampine` all run through the compiled driver, and because it is a
+faithful port they take *bit-identical* steps: same step count, same rejections,
+same number of right-hand-side evaluations, `t` and `y` equal to the last bit.
+
+**The reverse case is real, and those routines were deliberately left alone.**
+`qr_algorithm` spends its time in `R @ Q`, which NumPy sends to a tuned BLAS.
+Moving its whole iteration into Rust measured 1.02–1.50× — inside the noise, and
+liable to invert on a machine with a better BLAS than this one. Leaving the loop
+in Python and letting it call the accelerated `householder_qr` measured
+1.33–2.08× on the same problems, so that kernel was deleted rather than shipped.
+A kernel is wired in only where it measurably wins.
+
+### Switching backends
+
+Both implementations stay in the tree and are tested against each other, so the
+readable version is never stale:
+
+```python
+from quadrivium import accel
+
+accel.available()          # True when the compiled backend is active
+accel.backend()            # 'rust' or 'python'
+
+with accel.disabled():     # force the reference implementation
+    L = qd.cholesky(A)     # ... same answer, more slowly
+```
+
+`QUADRIVIUM_NO_ACCEL=1` in the environment does the same thing process-wide.
+`tests/test_accel.py` runs both paths over sizes that straddle the kernels'
+blocking thresholds and requires them to agree to floating-point noise, and to
+raise the same exceptions on singular and indefinite input.
+
+### How this compares to NumPy's own kernels
+
+The table above is quadrivium against itself. The other question — how it
+compares to a library that has been binding LAPACK for thirty years — has a
+less flattering answer, and it is worth stating plainly:
+
+| operation | quadrivium (rust) | numpy (LAPACK / pocketfft) | |
+|---|---|---|---|
+| `cholesky` n=400 | 6.18 ms | 1.18 ms | 5.3× slower |
+| `qr` n=400 | 28.69 ms | 6.15 ms | 4.7× slower |
+| `solve` n=400 | 7.79 ms | 0.71 ms | 11× slower |
+| symmetric eigen n=80 | 5.87 ms | 0.39 ms | 15× slower |
+| `fft` n=4096 (power of two) | 0.075 ms | 0.035 ms | 2.1× slower |
+| `fft` n=65536 (power of two) | 1.56 ms | 0.83 ms | 1.9× slower |
+| `fft` n=10000 (composite) | 2.17 ms | 0.09 ms | 24× slower |
+
+The compiled kernels here close most of the gap to native code, not all of it.
+The dense factorizations use a straightforward blocked `gemm` rather than a
+packed, hand-vectorized micro-kernel, so they land within a small multiple of a
+tuned BLAS instead of matching it. The power-of-two FFT is close to pocketfft;
+composite lengths are not, because the mixed-radix recursion still allocates per
+level and lacks dedicated radix-3/4/5 butterflies. Accuracy is not the
+compromise — the FFT agrees with `numpy.fft` to 3 × 10⁻¹⁵ relative at every
+length tested.
+
+**If you want the fastest possible dense linear algebra, call LAPACK.** What
+this library offers is the algorithm written out where you can read it, running
+within a few multiples of the tuned version rather than a hundred.
+
+### Memory
+
+The compiled kernels allocate their working space once and reuse it. The Python
+implementations allocate inside their loops — `np.outer(v, v @ R[k:, k:])`
+builds a fresh matrix on every QR step; the Jacobi sweep built a whole n × n
+rotation matrix per rotation. Peak resident memory over three runs, and the
+Python heap traffic underneath it:
+
+| case | peak RSS growth: rust / python | Python heap allocated: rust / python |
+|---|---|---|
+| `cholesky` n=1000 | 0 KB / 0 KB | 480 B / 8.0 MB |
+| `householder_qr` n=1000 | 0 KB / 7.7 MB | 696 B / 24.1 MB |
+| `fft` n=262144 | 0 KB / 2.2 MB | 288 B / 12.6 MB |
+| `solve_ivp` (van der Pol) | 0 KB / 0.9 MB | 4.6 KB / 320 KB |
+
+The result arrays are the same size either way, so this is not a smaller
+footprint for the answer — it is the disappearance of the transient working set.
+The compiled path never grew peak RSS beyond what the warm-up call had already
+reached; the Python path needed another 0.9–7.7 MB of scratch on top, and
+allocated between 100× and 35 000× more objects to get there.
 
 ## Design
 

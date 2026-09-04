@@ -55,16 +55,18 @@ jobs:
       - name: Run the test suite
         run: python -m unittest discover -s tests
 
-      - name: Build the sdist and wheel
+      # Only the sdist is built here; the binary wheels come from the
+      # `wheels` job, which has one runner per platform.
+      - name: Build the sdist
         run: |
-          python -m build
+          QUADRIVIUM_NO_RUST=1 python -m build --sdist
           python -m twine check --strict dist/*
 
-      - name: Smoke-test the wheel outside the source tree
+      - name: Smoke-test the sdist outside the source tree
         run: |
           python -m venv /tmp/relcheck
           /tmp/relcheck/bin/python -m pip install --upgrade pip
-          /tmp/relcheck/bin/python -m pip install dist/*.whl
+          /tmp/relcheck/bin/python -m pip install dist/*.tar.gz
           cd /tmp
           /tmp/relcheck/bin/python -c "
           import quadrivium as qd, numpy as np
@@ -73,16 +75,54 @@ jobs:
           assert abs(float(qd.quad(lambda x: np.exp(-x*x), -np.inf, np.inf)) - np.sqrt(np.pi)) < 1e-10
           "
 
-      - name: Upload the distributions
+      - name: Upload the sdist
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: distributions
+          name: dist-sdist
           path: dist/
+          if-no-files-found: error
+
+  wheels:
+    name: Wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-13, macos-14, windows-latest]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # One abi3 wheel per platform covers every supported interpreter, so the
+      # matrix is over operating systems rather than Python versions.
+      - name: Build the wheel
+        uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+        env:
+          # A wheel that quietly fell back to pure Python would be published as
+          # a binary wheel that is not one; fail the build instead.
+          CIBW_ENVIRONMENT: QUADRIVIUM_REQUIRE_RUST=1
+          CIBW_BUILD: cp39-*
+          CIBW_SKIP: "*-musllinux_i686 *_i686 *-win32"
+          CIBW_BEFORE_ALL_LINUX: curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH" QUADRIVIUM_REQUIRE_RUST=1'
+          CIBW_ARCHS_MACOS: auto
+          CIBW_TEST_REQUIRES: pytest
+          CIBW_TEST_COMMAND: >
+            python -c "import quadrivium; assert quadrivium.accel.available(),
+            'wheel was built without the compiled backend'" &&
+            python -m pytest {project}/tests -q
+
+      - name: Upload the wheel
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-wheel-${{ matrix.os }}
+          path: wheelhouse/*.whl
           if-no-files-found: error
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: build
+    needs: [build, wheels]
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
     runs-on: ubuntu-latest
     environment:
@@ -95,7 +135,8 @@ jobs:
       - name: Download the distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: distributions
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Publish
@@ -105,7 +146,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [build, wheels]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
     runs-on: ubuntu-latest
     environment:
@@ -120,7 +161,8 @@ jobs:
       - name: Download the distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: distributions
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Attest the build provenance

@@ -57,6 +57,7 @@ __version__ = "1.1.0"
 
 from . import (approx, core, diff, integrate, interpolate, linalg, ode,
                optimize, pde, rootfind, special, stochastic, transforms)
+from . import _accel as accel  # noqa: F401  (public: backend introspection)
 from .core import *  # noqa: F401,F403
 
 # Curated top-level namespace: the routines most often reached for. Anything

@@ -37,8 +37,43 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[test]"
 
-      - name: Run tests
+      # The compiled backend is built by the install above when a Rust
+      # toolchain is present. Both paths are exercised: a wheel that silently
+      # fell back to pure Python, or a fallback that has quietly rotted, are
+      # both defects and both show up here.
+      - name: Report which backend is active
+        run: python -c "import quadrivium; print(quadrivium.accel.show_config())"
+
+      - name: Run tests (compiled backend)
         run: python -m unittest discover -s tests
+
+      - name: Run tests (pure-Python fallback)
+        env:
+          QUADRIVIUM_NO_ACCEL: "1"
+        run: python -m unittest discover -s tests
+
+  rust:
+    name: Rust kernels
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path rust/Cargo.toml --check
+
+      - name: Lint
+        run: cargo clippy --manifest-path rust/Cargo.toml --release --all-targets -- -D warnings
+
+      # The kernels are checked against the definitions they implement --
+      # P A = L U, Q'Q = I, A V = V diag(lambda), the naive DFT -- so a
+      # regression is caught here before it reaches the Python layer.
+      - name: Test the kernels
+        run: cargo test --manifest-path rust/Cargo.toml --release
 
   docs:
     name: Documentation

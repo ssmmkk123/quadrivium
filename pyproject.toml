@@ -70,6 +70,10 @@ dev = [
 [tool.setuptools.dynamic]
 version = { attr = "quadrivium.__version__" }
 
+[tool.setuptools.package-data]
+# The compiled backend, when one was built for this platform.
+quadrivium = ["*.so", "*.pyd", "*.dylib"]
+
 [tool.setuptools.packages.find]
 include = ["quadrivium*"]
 namespaces = false

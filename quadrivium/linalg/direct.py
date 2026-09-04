@@ -10,6 +10,12 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+
+# Several routines here offer their work to the compiled backend first. The
+# Python implementation underneath is the definition of what the kernel must
+# compute, stays under test, and runs whenever no extension is loaded --
+# see `quadrivium.accel` and `tests/test_accel.py`.
 from ..core.exceptions import DimensionError, SingularMatrixError
 from ..core.utils import as_matrix, as_vector, check_square, is_symmetric
 
@@ -59,6 +65,15 @@ def forward_substitution(L, b, unit_diagonal: bool = False) -> np.ndarray:
     n = L.shape[0]
     if b.size != n:
         raise DimensionError(f"L is {n}x{n} but b has length {b.size}")
+    fast = _accel.kernel("forward_substitution")
+    if fast is not None and n:
+        try:
+            return fast(np.ascontiguousarray(L, dtype=float), np.ascontiguousarray(b, dtype=float), unit_diagonal)
+        except Exception as exc:  # noqa: BLE001
+            err = _accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
+            if err is None:
+                raise
+            raise err from None
     x = np.zeros(n)
     for i in range(n):
         s = b[i] - L[i, :i] @ x[:i]
@@ -78,6 +93,15 @@ def back_substitution(U, b, unit_diagonal: bool = False) -> np.ndarray:
     n = U.shape[0]
     if b.size != n:
         raise DimensionError(f"U is {n}x{n} but b has length {b.size}")
+    fast = _accel.kernel("back_substitution")
+    if fast is not None and n:
+        try:
+            return fast(np.ascontiguousarray(U, dtype=float), np.ascontiguousarray(b, dtype=float), unit_diagonal)
+        except Exception as exc:  # noqa: BLE001
+            err = _accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
+            if err is None:
+                raise
+            raise err from None
     x = np.zeros(n)
     for i in range(n - 1, -1, -1):
         s = b[i] - U[i, i + 1 :] @ x[i + 1 :]
@@ -189,6 +213,12 @@ def plu_decomposition(A):
     """Partially pivoted ``P A = L U``; returns ``(P, L, U)``."""
     A = check_square(A)
     n = A.shape[0]
+    fast = _accel.kernel("plu")
+    if fast is not None and n:
+        perm, LU = fast(np.ascontiguousarray(A, dtype=float))
+        L = np.tril(LU, -1) + np.eye(n)
+        U = np.triu(LU)
+        return np.eye(n)[perm], L, U
     U = A.astype(float).copy()
     L = np.eye(n)
     perm = np.arange(n)
@@ -288,6 +318,16 @@ def cholesky(A, lower: bool = True) -> np.ndarray:
     """Cholesky factor of a symmetric positive definite matrix."""
     A = check_square(A)
     n = A.shape[0]
+    fast = _accel.kernel("cholesky")
+    if fast is not None and n:
+        try:
+            L = fast(np.ascontiguousarray(A, dtype=float))
+        except Exception as exc:  # noqa: BLE001 - re-raised as our own type below
+            err = _accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
+            if err is None:
+                raise
+            raise err from None
+        return L if lower else L.T
     L = np.zeros((n, n))
     for i in range(n):
         for j in range(i + 1):
@@ -375,6 +415,12 @@ def householder_qr(A, reduced: bool = True):
     """Householder reflections ``A = Q R`` (backward stable)."""
     A = as_matrix(A)
     m, n = A.shape
+    fast = _accel.kernel("householder_qr")
+    if fast is not None and m and n:
+        Q, R = fast(np.ascontiguousarray(A, dtype=float), True)
+        if reduced and m > n:
+            return Q[:, :n].copy(), R[:n, :].copy()
+        return Q, R
     R = A.astype(float).copy()
     Q = np.eye(m)
     for k in range(min(m - 1, n)):
