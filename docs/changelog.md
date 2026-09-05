@@ -15,6 +15,48 @@ that could break an existing call.
 
 ### Fixed
 
+- **`jacobi_eigen` and `qr_algorithm` could not converge on a matrix of any
+  appreciable size.** Both compared the off-diagonal mass against `tol`
+  outright, and rounding holds that mass near `eps*||A||`: for `||A||` of a
+  few hundred the default `1e-12` is unreachable, so the iteration spent its
+  whole budget and returned `converged=False` on an answer it had found in the
+  first few sweeps. `jacobi_eigen` on a 120x120 SPD matrix ran all 100 sweeps
+  in 94 ms and reported failure; it now converges in 14 sweeps and 19 ms with
+  a relative residual of 1.4e-15. Jacobi's `tol` is now an absolute bound,
+  tightened to a relative one below unit norm, plus a stagnation test -- its
+  off-diagonal mass falls monotonically, so a sweep that fails to reduce it has
+  reached the floor rounding imposes. `qr_algorithm` uses the relative
+  per-subdiagonal deflation test its siblings `shifted_qr_algorithm` and
+  `francis_qr` already used, which makes it scale-invariant: the same symmetric
+  problem now takes the same 1607 iterations to the same accuracy whether it is
+  scaled by `1e-4`, `1`, or `1e4`.
+- **`barycentric` returned `nan` for node sets that were merely placed
+  differently.** The weights are a product of `n` node differences, which runs
+  like `capacity^n`: 400 Chebyshev nodes give weights of `1e117` on `[-1, 1]`
+  and overflow to `inf` on `[0, 1]`, so the same interpolation problem worked
+  or failed depending on an affine change of variable. The differences are now
+  divided by the interval's logarithmic capacity first. Barycentric
+  interpolation is invariant under a common factor on the weights, so no result
+  changes -- but 400-node interpolation now reaches 1e-15 on `[-1, 1]`,
+  `[0, 1]` and `[0, 0.01]` alike.
+- **`lobpcg` paired eigenvalues from one iteration with eigenvectors from the
+  next** when it ran out of iterations, and returned the `inf` placeholder if
+  the search basis collapsed on the first pass. It now projects onto the final
+  block before returning. On a 60x60 problem stopped early, the residual of the
+  returned pair falls from 1.7e-2 to 1.7e-7.
+- **`sine_integral` and `cosine_integral` lost up to ten digits at large
+  arguments.** The ascending series has terms of size `e^x/sqrt(x)` summing to
+  an `O(1)` answer, so `Ci(20)` was accurate only to 6.7e-10 and `Si(20)` to
+  3.6e-10. Past `x = 4` both now use the continued fraction for `E_1(ix)`,
+  whose real and imaginary parts they are: 3e-16 there, and in fewer iterations
+  than the series needed.
+- `gamma` and `factorial` return `+inf` past the double range instead of
+  raising `OverflowError`, so one out-of-range element no longer fails a whole
+  array. `expint_n(1, x)` no longer evaluates `1/(n-1)`.
+- `linalg.thomas` copies a 2-D right-hand side before solving; the compiled
+  kernel works in place, and an already-contiguous input would otherwise be
+  overwritten in the caller's hands.
+
 - Native kernels preserve Fortran, strided, and unaligned input layouts and
   reject malformed dimensions before entering numerical loops. In-place
   kernels require aligned C-contiguous buffers. NaN Poisson updates no
@@ -51,6 +93,38 @@ that could break an existing call.
   allocation drops from 1.6 MB to 3.4 KB.
 
 ### Added
+
+- **Every function in `quadrivium.special` now evaluates arrays.** Forty-three
+  of the fifty-one accepted only scalars -- `bessel_j0([1.0, 2.0])` raised
+  `TypeError` -- so array work meant a Python loop at the call site. Each
+  series, continued fraction, recurrence and AGM iteration now advances the
+  whole input at once, with a mask retiring elements as they converge and each
+  asymptotic series truncated per element at its own smallest term. Scalar
+  arguments still return Python scalars, and the values are unchanged: all 51
+  functions were replayed over their domains against the previous
+  implementation and agree to 1e-12 relative or better. Against the Python loop
+  a caller previously had to write, at 5 000-20 000 points: `fresnel_c` 734x,
+  `airy_ai` 54x, `associated_legendre` 40x, `erfcx` and `bessel_i0` 24x,
+  `dawson` 22x, `bessel_j0` 21x, `beta` and `struve_h0` 20x, `elliptic_k` 18x,
+  `bessel_k0` and `hyp1f1` 15x, `elliptic_e` 14x, `hyp2f1` and `polygamma` 11x,
+  `lambert_w` 10x, `digamma` and `zeta` 8-9x, `erfinv` and `sine_integral` 5x.
+- `linalg.thomas` accepts a 2-D right-hand side, solving one tridiagonal matrix
+  against every column. The elimination coefficients depend only on the matrix,
+  so a block of systems costs barely more than one -- which is what
+  line-relaxation and alternating-direction schemes need. Backed by a new
+  `thomas_batch` kernel; `pde.heat_2d_adi` was making one boundary crossing per
+  grid line and now makes one per half-step.
+- **Three compiled kernels**: `svd_jacobi` (one-sided Jacobi SVD, 53x at
+  n = 80), `givens_qr` (62x at n = 120) and `thomas_batch`. The first two are
+  sequences of `O(n^2)` plane rotations driven from Python -- seven NumPy calls
+  per rotation on `n^2/2` rotations per sweep, each doing a few microseconds of
+  arithmetic. Both match their Python twins to machine precision.
+- `tests/test_vectorization.py`: 29 tests and 163 subtests covering
+  array-native evaluation for every special function, scale invariance of the
+  eigenvalue iterations and of barycentric interpolation, the batched
+  tridiagonal solve including its aliasing contract, and exact agreement
+  between the blocked low-discrepancy sequences and the scalar recurrences they
+  replaced.
 
 - Compact Householder least squares in Python and Rust, applying reflectors
   to the right-hand side with `O(m*n)` workspace instead of forming full Q.
@@ -177,6 +251,41 @@ that could break an existing call.
   381× at n = 80.
 
 ### Performance
+
+Thirteen routines whose inner loop ran in Python now do that work in NumPy or
+in a compiled kernel. Single-threaded, best of twenty runs, same machine:
+
+| Routine | Workload | Before | After | |
+|---|---|---:|---:|---:|
+| `linalg.ilu0` | 200x200 | 691 ms | 6.2 ms | 111x |
+| `linalg.givens_qr` | 120x120 | 52.6 ms | 0.84 ms | 62x |
+| `linalg.ldl_decomposition` | 200x200 | 43.5 ms | 0.72 ms | 61x |
+| `linalg.svd_jacobi` | 80x80 | 201 ms | 3.8 ms | 53x |
+| `linalg.doolittle`, `crout` | 200x200 | 34 ms | 0.94 ms | 36x |
+| `linalg.gauss_jordan` | 150x150 | 13.0 ms | 1.6 ms | 8.2x |
+| `stochastic.ks_test` | 20 000 samples | 29.3 ms | 0.23 ms | 127x |
+| `stochastic.sobol`, `halton` | 4 096 x 8 | 11.2 ms | 0.69 ms | 16x |
+| `transforms.dct` III/IV, `dst` II, `idct` | 2 048 | 37 ms | 0.09 ms | 395x |
+| `transforms.dwt2` | 256x256, db4 | 17.7 ms | 2.0 ms | 8.9x |
+| `interpolate.bezier` | 40 points, 2 000 samples | 90.1 ms | 5.4 ms | 17x |
+| `interpolate.barycentric` | 400 nodes, 5 000 points | 28.4 ms | 4.6 ms | 6.2x |
+| `pde.heat_2d_adi` | 48x48, 100 steps | 39.5 ms | 3.8 ms | 10.5x |
+| `pde.fem_2d_triangular` | n = 32, assembly only | 22.9 ms | 1.25 ms | 18x |
+
+`dct` types III and IV, `dst` type II and `idct` were transcriptions of their
+defining sums: an `O(n^2)` double loop with the outer one in Python, growing
+quadratically to 37 ms at n = 2 048 and about 600 ms at n = 8 192. Each is now
+one length-`2n` inverse FFT with a twiddle on one or both ends.
+
+Two more follow from the convergence fixes above rather than from any change to
+the arithmetic: `jacobi_eigen` 5.0x at n = 120 (14 sweeps rather than 100), and
+`svd_golub_kahan` 6.2x through it.
+
+Across a 187-case sweep of the public API the aggregate is 1.60x. Routines
+dominated by a user callback -- the ODE and SDE integrators, the optimizers --
+are unchanged, because their cost is the caller's function rather than the
+framework around it.
+
 
 The dense factorizations are now built on that `gemm`: Cholesky is right-looking
 with two levels of blocking, LU is blocked with recursive panels, and QR uses
