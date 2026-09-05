@@ -12,7 +12,7 @@ factorization loops over its pivots, the FFT does its own bit reversal, the
 Hungarian algorithm walks its own augmenting paths — so the method itself is
 readable rather than hidden behind a compiled call.
 
-**836 public functions and classes across 13 subpackages. 376 tests, all passing.
+**836 public functions and classes across 13 subpackages.
 Depends only on NumPy.**
 
 *The quadrivium was the medieval curriculum of the four mathematical arts —
@@ -46,7 +46,7 @@ dependencies:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
-python -m unittest discover -s tests
+python -m pytest -q
 ```
 
 ## Quick start
@@ -131,6 +131,10 @@ a convergence order by refining the grid, a shock by capturing it.
 
 ## Performance
 
+The latest [performance and reliability report](PERFORMANCE.md) records
+reproducible timing and memory measurements for compact least squares,
+sparse operations, density estimation, and transforms.
+
 The algorithms are written out in Python so they can be read. That makes the
 hot ones slow: a Cholesky factorization that loops over its own pivots in the
 interpreter is two orders of magnitude off a compiled one. So the kernels that
@@ -139,11 +143,12 @@ whichever backend is present.
 
 ```python
 >>> import quadrivium as qd
->>> print(qd.accel.show_config())
+>>> print(qd.accel.show_config())  # doctest: +SKIP
 quadrivium acceleration: rust (extension 1.2.0)
-  compiled kernels (13): adaptive_rk, back_substitution, cholesky, erf, erfc,
-  fft, forward_substitution, gamma, householder_qr, ifft, jacobi_eigen,
-  log_gamma, plu
+  compiled kernels (20): adaptive_rk, back_substitution, cholesky, erf, erfc,
+  fft, forward_substitution, gamma, hessenberg_qr_iterate, householder_qr,
+  ifft, is_symmetric, jacobi_eigen, lid_driven_cavity, log_gamma, matmul,
+  plu, qr_least_squares, sor_poisson, thomas
 ```
 
 Measured on this machine (n is the problem size; "python" is the same routine
@@ -163,7 +168,48 @@ with the compiled backend switched off):
 | `linalg.plu_decomposition` | 400 | 34.47 ms | 3.148 ms | **11×** |
 | `ode.solve_ivp` (Lorenz) | 3 | 128.66 ms | 29.73 ms | **4.3×** |
 
+The kernels above replace a loop over array *elements*. A second group replaces
+a loop over *iterations* — the sweep, the step, the relaxation — where the
+whole solve moves across the boundary once instead of thousands of times:
+
+| routine | size | python | rust | speedup |
+|---|---|---|---|---|
+| `pde.poisson_2d_iterative` (Gauss-Seidel) | 30 | 783.94 ms | 6.897 ms | **114×** |
+| `linalg.qr_algorithm` | 40 | 1226.99 ms | 12.062 ms | **102×** |
+| `pde.poisson_2d_iterative` (SOR) | 40 | 142.36 ms | 1.522 ms | **94×** |
+| `linalg.thomas` | 50 000 | 33.11 ms | 0.520 ms | **64×** |
+| `pde.heat_crank_nicolson` | 800 x 400 | 224.95 ms | 6.148 ms | **37×** |
+| `pde.lid_driven_cavity` | 21 | 238.19 ms | 14.554 ms | **16×** |
+
+`thomas` carries the implicit PDE solvers with it, since they all reduce to a
+tridiagonal solve per step: `heat_btcs` 42×, `heat_crank_nicolson` 29×,
+`wave_implicit` 23×, `heat_2d_adi` 9.6×.
+
 Reproduce with `python tools/bench_accel.py`.
+
+### Speedups that are not the backend
+
+Some of the cost was the algorithm rather than the language, and those wins
+apply with the extension switched off as well.
+
+| routine | size | before | after | |
+|---|---|---|---|---|
+| `interpolate.cubic_spline` | 3 200 | 365 ms, 80.6 MB | 0.81 ms, 1.1 MB | **453×**, 75× less memory |
+| `interpolate.natural_cubic_spline` | 2 000 | 113.98 ms, 31.6 MB | 0.53 ms, 0.6 MB | **217×**, 53× less memory |
+| `pde.poisson_2d_direct` | 60 x 60 | 233.78 ms, 94.8 MB | 10.74 ms, 11.3 MB | **22×**, 8× less memory |
+| `PiecewisePolynomial.__call__` | 100 000 points | 56.47 ms | 2.02 ms | **28×** |
+| `ode.radau_iia` | 100 steps | 42.8 ms | 19.7 ms | **2.2×** |
+| `optimize.lbfgs` (Rosenbrock, no gradient) | 6 | 114 619 evaluations | 1 107 | **104× fewer** |
+
+The pattern in most of these is a matrix that was denser than the problem. The
+splines were building a dense `(n+1)²` matrix and factorizing it for a system
+that is tridiagonal; they now solve it in `O(n)` time and memory, which is what
+takes a 12 800-point spline from unusable to 14 ms. `poisson_2d_direct` was
+doing the same to a system that is block-tridiagonal. `PiecewisePolynomial` was
+evaluating one query point per Python iteration, and `radau_iia` wrote its
+stage coupling `A K` as a Python sum over the stage index. L-BFGS was
+recomputing `f` and `grad f` at a point it had just left — and then failing to
+notice it had converged, which is the next section.
 
 ### How this compares to NumPy's own kernels
 
@@ -262,6 +308,35 @@ footprint for the answer — it is the disappearance of the transient working se
 The compiled path never grew peak RSS beyond what the warm-up call had already
 reached; the Python path needed another 0.9–7.7 MB of scratch on top, and
 allocated between 100× and 35 000× more objects to get there.
+
+The larger memory wins came from choosing a smaller problem to solve. A cubic
+spline through *n* points assembles a system that couples each knot only to its
+two neighbours; building that as a dense `(n+1)²` matrix costs `O(n²)` memory
+for an `O(n)` problem, and at 12 800 points it wanted 1.3 GB. Storing the three
+bands instead brings it to 3 MB, and a 50 000-point spline — previously out of
+reach on any ordinary machine — builds in 47 ms.
+
+### Reporting convergence
+
+A solver that finds the answer and reports failure is worse than a slow one,
+because nothing downstream can tell the difference. Two cases were fixed:
+
+- **The quasi-Newton family** (`bfgs`, `lbfgs`, `dfp`, `sr1`) tested only
+  `‖grad f‖ < tol`, with `tol = 1e-10` by default. When the gradient is a
+  central difference — which it is whenever the caller does not supply one —
+  the gradient is only resolved to about `eps^(2/3)`, so that test sits *below*
+  the noise floor and can never be met. L-BFGS on a 6-dimensional Rosenbrock
+  sat on the minimizer for all 1 000 iterations, spent 114 619 function
+  evaluations, and returned `converged=False` at `f = 1.3e-16`. The methods now
+  also stop when a full step no longer changes the objective to relative
+  precision `ftol` (new argument, default `1e-12`): 41 iterations, 1 107
+  evaluations, `converged=True`, the same minimizer.
+- **`gradient_descent` and the adaptive first-order methods** (`adam`,
+  `rmsprop`, `adagrad`, `momentum`, `nesterov`) ran to `max_iter` after
+  overflowing to NaN, appending a NaN iterate to `history` each time, and
+  reported "maximum iterations reached" — which reads like a tolerance nearly
+  met rather than a step size that has to be reduced. They now stop at the
+  overflow and say so, naming the step size.
 
 ## Design
 

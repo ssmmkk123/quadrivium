@@ -26,6 +26,10 @@ import quadrivium
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 FIGURES = DOCS / "assets" / "figures"
+# MANIFEST.in deliberately omits generated SVGs from source distributions.
+# A checkout must still contain every image; PKG-INFO identifies an unpacked
+# sdist, where only checks requiring those omitted files are skipped.
+SDIST_WITHOUT_FIGURES = (ROOT / "PKG-INFO").is_file() and not FIGURES.exists()
 
 # ``assets/figures/<name>.svg`` or ``<name>-dark.svg``, wherever it appears.
 FIGURE_REFERENCE = re.compile(r"assets/figures/([\w-]+)\.svg")
@@ -49,6 +53,14 @@ def documentation_files():
              if not GENERATED_DIRS.intersection(p.relative_to(DOCS).parts)
              and p.name != "changelog.md"]
     return [ROOT / "README.md"] + pages
+
+
+def test_documentation_examples():
+    """Run documentation examples under pytest as well as unittest."""
+    result = unittest.TestResult()
+    load_tests(None, unittest.TestSuite(), None).run(result)
+    assert result.wasSuccessful(), "\n".join(
+        detail for _, detail in result.failures + result.errors)
 
 
 def load_tests(loader, tests, ignore):
@@ -93,6 +105,8 @@ class TestFigures(unittest.TestCase):
 
     def test_every_referenced_figure_exists(self):
         """A page must not point at a picture that was never generated."""
+        if SDIST_WITHOUT_FIGURES:
+            self.skipTest("generated figures are intentionally omitted from the sdist")
         for stem, pages in referenced_figures().items():
             with self.subTest(figure=stem):
                 self.assertTrue((FIGURES / f"{stem}.svg").is_file(),
@@ -132,6 +146,8 @@ class TestFigures(unittest.TestCase):
 
     def test_the_catalogue_matches_the_directory(self):
         """Every registered figure is on disk, and nothing else is."""
+        if SDIST_WITHOUT_FIGURES:
+            self.skipTest("generated figures are intentionally omitted from the sdist")
         catalogue = figure_catalogue()
         if catalogue is None:
             self.skipTest("Matplotlib is not installed")
@@ -189,6 +205,8 @@ class TestDocumentationIsCurrent(unittest.TestCase):
             for target in link.findall(text):
                 path = target.split("#", 1)[0]
                 if not path:
+                    continue
+                if SDIST_WITHOUT_FIGURES and FIGURES in (page.parent / path).resolve().parents:
                     continue
                 with self.subTest(page=page.name, link=target):
                     self.assertTrue((page.parent / path).resolve().exists(),

@@ -37,7 +37,7 @@ The direct DFT costs ``O(n^2)``; the Cooley-Tukey factorization brings that to `
 | `ifft` | `(X)` | Inverse fast Fourier transform for any length. |
 | `fft_radix2` | `(x, inverse: bool = False)` | Iterative radix-2 Cooley-Tukey FFT. Length must be a power of two. |
 | `fft_bluestein` | `(x, inverse: bool = False)` | Bluestein's chirp-z algorithm: an FFT for any length. |
-| `fft_mixed_radix` | `(x, inverse: bool = False)` | Recursive mixed-radix FFT: splits on the smallest prime factor. |
+| `fft_mixed_radix` | `(x, inverse: bool = False)` | Recursive mixed-radix FFT with a radix-2 base case. |
 | `rfft` | `(x)` | FFT of real input, returning the non-redundant half spectrum. |
 | `irfft` | `(X, n=None)` | Inverse of ``rfft`` for a real signal of length ``n``. |
 | `fft2` | `(A)` | Two-dimensional FFT: transform the rows, then the columns. |

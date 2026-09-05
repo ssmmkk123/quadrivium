@@ -643,16 +643,24 @@ def ilu0(A):
     n = A.shape[0]
     M = A.astype(float).copy()
     mask = A != 0.0
+    # Zero-fill ILU is Gaussian elimination restricted to the sparsity pattern
+    # of A: a rank-1 update per pivot, masked down to the entries that were
+    # already nonzero. Entries outside the pattern stay zero, so multipliers
+    # for those rows stay zero too and contribute nothing to the update --
+    # which is what lets the whole trailing block be updated at once instead
+    # of entry by entry.
+    keep = mask.astype(float)
+    work = np.empty((n, n))
     for k in range(n - 1):
-        if M[k, k] == 0.0:
+        pivot = M[k, k]
+        if pivot == 0.0:
             continue
-        for i in range(k + 1, n):
-            if not mask[i, k]:
-                continue
-            M[i, k] /= M[k, k]
-            for j in range(k + 1, n):
-                if mask[i, j]:
-                    M[i, j] -= M[i, k] * M[k, j]
+        col = M[k + 1:, k]
+        np.divide(col, pivot, out=col, where=mask[k + 1:, k])
+        block = work[k + 1:, k + 1:]
+        np.outer(col, M[k, k + 1:], out=block)
+        block *= keep[k + 1:, k + 1:]
+        M[k + 1:, k + 1:] -= block
     L = np.tril(M, -1) + np.eye(n)
     U = np.triu(M)
     return L, U

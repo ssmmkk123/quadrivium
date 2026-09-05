@@ -155,18 +155,91 @@ def deflation_power(A, k=None, tol: float = 1e-10, max_iter: int = 1000):
 # --------------------------------------------------------------------------
 # QR algorithm
 # --------------------------------------------------------------------------
+def _hessenberg_qr_sweep(H, V=None):
+    """One unshifted QR step on an upper Hessenberg ``H``, in place.
+
+    Overwrites ``H`` with ``R Q`` for ``H = Q R``, using the ``n-1`` Givens
+    rotations that clear the subdiagonal. Hessenberg form is preserved by the
+    step, so the whole iteration stays ``O(n^2)`` rather than the ``O(n^3)`` a
+    dense factorization would cost. When ``V`` is given it is post-multiplied
+    by the same ``Q``.
+    """
+    n = H.shape[0]
+    cs = np.empty(n - 1)
+    sn = np.empty(n - 1)
+    for k in range(n - 1):
+        a, b = H[k, k], H[k + 1, k]
+        r = np.hypot(a, b)
+        c, sg = (1.0, 0.0) if r == 0.0 else (a / r, b / r)
+        cs[k], sn[k] = c, sg
+        row0 = H[k, k:].copy()
+        row1 = H[k + 1, k:]
+        H[k, k:] = c * row0 + sg * row1
+        H[k + 1, k:] = c * row1 - sg * row0
+    for k in range(n - 1):
+        c, sg = cs[k], sn[k]
+        # R is upper triangular, so the rotation on columns (k, k+1) only
+        # reaches row k+1 -- which is exactly the entry that restores the
+        # Hessenberg subdiagonal.
+        col0 = H[: k + 2, k].copy()
+        col1 = H[: k + 2, k + 1]
+        H[: k + 2, k] = c * col0 + sg * col1
+        H[: k + 2, k + 1] = c * col1 - sg * col0
+        if V is not None:
+            v0 = V[:, k].copy()
+            v1 = V[:, k + 1]
+            V[:, k] = c * v0 + sg * v1
+            V[:, k + 1] = c * v1 - sg * v0
+
+
 def qr_algorithm(A, tol: float = 1e-12, max_iter: int = 5000, compute_vectors: bool = False):
-    """Unshifted QR iteration ``A_{k+1} = R_k Q_k``."""
+    """Unshifted QR iteration ``A_{k+1} = R_k Q_k``.
+
+    The iteration is preceded by a Householder reduction to upper Hessenberg
+    form. That is an orthogonal similarity, so it changes no eigenvalue, and
+    Hessenberg form is invariant under a QR step -- which drops the cost of a
+    sweep from ``O(n^3)`` to ``O(n^2)`` and lets the convergence test read the
+    subdiagonal alone instead of the whole lower triangle.
+
+    Being unshifted, this still converges only linearly, at a rate set by the
+    ratios of successive eigenvalue magnitudes, and does not converge at all
+    for a matrix with complex-conjugate pairs. :func:`shifted_qr_algorithm` and
+    :func:`francis_qr` exist for those cases.
+    """
     A = check_square(A)
-    Ak = A.astype(float).copy()
-    V = np.eye(A.shape[0])
+    n = A.shape[0]
+    if n == 0:
+        return EigenResult(np.zeros(0), np.zeros((0, 0)) if compute_vectors else None,
+                           0, True, "qr")
+    if compute_vectors:
+        Ak, V = hessenberg(A, compute_q=True)
+        Ak = np.ascontiguousarray(Ak)
+    else:
+        Ak = np.ascontiguousarray(hessenberg(A, compute_q=False))
+        V = None
+    if n == 1:
+        return EigenResult(np.diag(Ak).copy(), V if compute_vectors else None,
+                           0, True, "qr")
+
+    # A subdiagonal entry is negligible when it is small next to the diagonal
+    # entries it sits between -- the same deflation test
+    # :func:`shifted_qr_algorithm` and :func:`francis_qr` use below. Comparing
+    # the subdiagonal against an unscaled ``tol`` instead cannot succeed at
+    # all once ``||A||`` is large, because rounding holds a converged
+    # subdiagonal near eps*||A||: the iteration then spends its entire budget
+    # and reports failure on an answer it found in the first few sweeps.
+    fast = _accel.kernel("hessenberg_qr_iterate")
+    if fast is not None:
+        iters, converged = fast(Ak, V, tol, max_iter)
+        return EigenResult(np.diag(Ak).copy(), V if compute_vectors else None,
+                           iters, converged, "qr")
+
+    sub = np.arange(n - 1)
     for k in range(1, max_iter + 1):
-        Q, R = householder_qr(Ak, reduced=False)
-        Ak = R @ Q
-        if compute_vectors:
-            V = V @ Q
-        off = np.sqrt(np.sum(np.tril(Ak, -1) ** 2))
-        if off < tol:
+        _hessenberg_qr_sweep(Ak, V)
+        diag = np.abs(np.diag(Ak))
+        if np.all(np.abs(Ak[sub + 1, sub])
+                  <= tol * (diag[:-1] + diag[1:] + 1e-300)):
             return EigenResult(np.diag(Ak).copy(), V if compute_vectors else None,
                                k, True, "qr")
     return EigenResult(np.diag(Ak).copy(), V if compute_vectors else None,
@@ -262,17 +335,34 @@ def jacobi_eigen(A, tol: float = 1e-12, max_sweeps: int = 100):
     if not is_symmetric(A, tol=1e-8):
         raise ValueError("Jacobi eigenvalue method requires a symmetric matrix")
     n = A.shape[0]
+    # ``tol`` is an absolute bound on the off-diagonal mass, tightened to a
+    # relative one for a matrix that is small to begin with: below unit norm,
+    # an absolute 1e-12 would stop while the off-diagonal was still a sizeable
+    # fraction of the matrix. Above unit norm the absolute bound stands, and
+    # the stagnation test below is what ends the iteration once rounding
+    # holds ``off`` near eps*||A||_F -- an absolute ``tol`` is unreachable
+    # there, and testing it alone spends every sweep and then reports failure
+    # on an answer found in the first few.
+    threshold = tol * min(1.0, float(np.linalg.norm(A)) or 1.0)
     fast = _accel.kernel("jacobi_eigen")
     if fast is not None and n:
-        vals, vecs, sweep, conv = fast(np.ascontiguousarray(A, dtype=float), tol, max_sweeps)
+        vals, vecs, sweep, conv = fast(np.ascontiguousarray(A, dtype=float),
+                                       threshold, max_sweeps)
         idx = np.argsort(vals)
         return EigenResult(vals[idx].copy(), vecs[:, idx], sweep, conv, "jacobi")
     D = A.astype(float).copy()
     V = np.eye(n)
+    # Each rotation moves mass from the off-diagonal to the diagonal without
+    # changing the Frobenius norm, so ``off`` decreases monotonically until
+    # rounding stops it, near eps*||A||_F. A sweep that fails to reduce it has
+    # reached that floor and the decomposition is as converged as double
+    # precision allows.
+    prev_off = np.inf
     for sweep in range(1, max_sweeps + 1):
         off = np.sqrt(2.0 * np.sum(np.tril(D, -1) ** 2))
-        if off < tol:
+        if off < threshold or off >= prev_off:
             break
+        prev_off = off
         for p in range(n - 1):
             for q in range(p + 1, n):
                 if abs(D[p, q]) < 1e-300:
@@ -396,6 +486,10 @@ def svd_jacobi(A, tol: float = 1e-13, max_sweeps: int = 60):
     transposed = m < n
     W = A.T.copy() if transposed else A.astype(float).copy()
     m, n = W.shape
+    fast = _accel.kernel("svd_jacobi")
+    if fast is not None and m and n:
+        W, V, _sweeps = fast(np.ascontiguousarray(W), tol, max_sweeps)
+        return _svd_assemble(W, V, m, n, transposed)
     V = np.eye(n)
     for _ in range(max_sweeps):
         off = 0.0
@@ -419,12 +513,22 @@ def svd_jacobi(A, tol: float = 1e-13, max_sweeps: int = 60):
                 V[:, p], V[:, q] = Vp, Vq
         if off == 0.0:
             break
+    return _svd_assemble(W, V, m, n, transposed)
+
+
+def _svd_assemble(W, V, m, n, transposed):
+    """Read the singular values off the rotated columns and order the factors.
+
+    One-sided Jacobi leaves ``W = U S``, so the singular values are the column
+    norms and ``U`` is ``W`` with those divided out. A zero column has no
+    determined direction; it is left at zero rather than dividing by it.
+    """
     s = np.linalg.norm(W, axis=0)
     idx = np.argsort(-s)
     s, V, W = s[idx], V[:, idx], W[:, idx]
+    nonzero = s > 1e-300
     U = np.zeros((m, n))
-    for j in range(n):
-        U[:, j] = W[:, j] / s[j] if s[j] > 1e-300 else 0.0
+    np.divide(W, s, out=U, where=nonzero)
     if transposed:
         return V, s, U.T
     return U, s, V.T

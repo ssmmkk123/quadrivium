@@ -37,6 +37,15 @@ pub fn jacobi_eigen(
     }
     let mut sweep = 0usize;
     let mut converged = false;
+    // Each rotation moves mass from the off-diagonal to the diagonal without
+    // changing the Frobenius norm, so `off` falls monotonically until rounding
+    // stops it near eps*||A||_F. A sweep that fails to reduce it has reached
+    // that floor and the decomposition is as converged as double precision
+    // allows -- which is the only outcome available whenever `tol` sits below
+    // the floor, as it does for any matrix of norm much above one. Testing
+    // `off < tol` alone burns every sweep and then reports failure on an exact
+    // answer. This mirrors the pure-Python routine step for step.
+    let mut prev_off = f64::INFINITY;
     while sweep < max_sweeps {
         sweep += 1;
         // Off-diagonal Frobenius norm, matching the Python convergence test.
@@ -48,10 +57,11 @@ pub fn jacobi_eigen(
             }
         }
         off = (2.0 * off).sqrt();
-        if off < tol {
+        if off < tol || off >= prev_off {
             converged = true;
             break;
         }
+        prev_off = off;
         for p in 0..n.saturating_sub(1) {
             for q in p + 1..n {
                 let dpq = d[p * n + q];
@@ -90,6 +100,91 @@ pub fn jacobi_eigen(
         }
     }
     (sweep, converged)
+}
+
+/// Unshifted QR iteration on an upper Hessenberg matrix, in place.
+///
+/// `h` is a row-major `n x n` upper Hessenberg matrix, overwritten with the
+/// (ideally quasi-triangular) iterate; `v`, when present, is post-multiplied
+/// by the accumulated orthogonal factor so `A = V H V'` is maintained.
+/// Returns the sweep count and whether the subdiagonal fell below `tol`.
+///
+/// A sweep is `n-1` Givens rotations applied to rows, then the same rotations
+/// applied from the right. Hessenberg form is invariant under that step, so
+/// each sweep is `O(n^2)`. The whole iteration lives here rather than in the
+/// caller because the loop is thousands of `O(n^2)` sweeps: crossing back into
+/// Python once per sweep would cost more than the arithmetic does.
+pub fn hessenberg_qr_iterate(
+    n: usize,
+    h: &mut [f64],
+    mut v: Option<&mut [f64]>,
+    tol: f64,
+    max_iter: usize,
+) -> (usize, bool) {
+    if n < 2 {
+        return (0, true);
+    }
+    let mut cs = vec![0.0f64; n - 1];
+    let mut sn = vec![0.0f64; n - 1];
+
+    for iter in 1..=max_iter {
+        // --- H = Q R: clear the subdiagonal, rotating rows (k, k+1).
+        for k in 0..n - 1 {
+            let a = h[k * n + k];
+            let b = h[(k + 1) * n + k];
+            let r = a.hypot(b);
+            let (c, s) = if r == 0.0 { (1.0, 0.0) } else { (a / r, b / r) };
+            cs[k] = c;
+            sn[k] = s;
+            if s != 0.0 {
+                let (top, bot) = h.split_at_mut((k + 1) * n);
+                let row0 = &mut top[k * n + k..k * n + n];
+                let row1 = &mut bot[k..n];
+                for (x, y) in row0.iter_mut().zip(row1.iter_mut()) {
+                    let (u, w) = (*x, *y);
+                    *x = c * u + s * w;
+                    *y = c * w - s * u;
+                }
+            }
+        }
+        // --- H <- R Q: the same rotations from the right. R is upper
+        // triangular, so rotation k only reaches row k+1 -- the entry that
+        // restores the Hessenberg subdiagonal.
+        for k in 0..n - 1 {
+            let (c, s) = (cs[k], sn[k]);
+            if s != 0.0 {
+                for row in h.chunks_exact_mut(n).take(k + 2) {
+                    let (u, w) = (row[k], row[k + 1]);
+                    row[k] = c * u + s * w;
+                    row[k + 1] = c * w - s * u;
+                }
+                if let Some(vv) = v.as_deref_mut() {
+                    for row in vv.chunks_exact_mut(n) {
+                        let (u, w) = (row[k], row[k + 1]);
+                        row[k] = c * u + s * w;
+                        row[k + 1] = c * w - s * u;
+                    }
+                }
+            }
+        }
+        // A subdiagonal entry is negligible when it is small next to the two
+        // diagonal entries it sits between. Comparing it against an unscaled
+        // `tol` instead cannot succeed once ||A|| is large, since rounding
+        // holds a converged subdiagonal near eps*||A||.
+        let mut deflated = true;
+        for k in 0..n - 1 {
+            let e = h[(k + 1) * n + k].abs();
+            let d = h[k * n + k].abs() + h[(k + 1) * n + k + 1].abs();
+            if e > tol * (d + 1e-300) {
+                deflated = false;
+                break;
+            }
+        }
+        if deflated {
+            return (iter, true);
+        }
+    }
+    (max_iter, false)
 }
 
 #[cfg(test)]

@@ -118,25 +118,35 @@ def hamiltonian_mc(log_target, grad_log_target, x0, step: float = 0.1,
     x = as_vector(x0).copy()
     d = x.size
     M = np.ones(d) if mass is None else as_vector(mass)
+    sqrt_M = np.sqrt(M)
     out = []
     accepted = 0
     total = n + burn
+    # The current state's log-density is part of every acceptance ratio but
+    # only changes when a proposal is accepted, so it is carried between
+    # iterations rather than recomputed -- one fewer call to the user's
+    # `log_target` per sample.
+    logp_x = float(log_target(x))
+    half_step = 0.5 * step
     for i in range(total):
-        p = rng.standard_normal(d) * np.sqrt(M)
+        p = rng.standard_normal(d) * sqrt_M
         x_new = x.copy()
-        p_new = p.copy()
-        H0 = -float(log_target(x)) + 0.5 * float(np.sum(p * p / M))
+        H0 = -logp_x + 0.5 * float(np.sum(p * p / M))
         # leapfrog: half kick, full drifts, half kick
-        p_new = p_new + 0.5 * step * as_vector(grad_log_target(x_new))
+        p_new = p + half_step * as_vector(grad_log_target(x_new))
         for _ in range(n_leapfrog):
-            x_new = x_new + step * p_new / M
+            drift = step * p_new
+            drift /= M
+            x_new = x_new + drift
             if _ < n_leapfrog - 1:
-                p_new = p_new + step * as_vector(grad_log_target(x_new))
-        p_new = p_new + 0.5 * step * as_vector(grad_log_target(x_new))
+                p_new += step * as_vector(grad_log_target(x_new))
+        p_new += half_step * as_vector(grad_log_target(x_new))
         p_new = -p_new                       # reversibility
-        H1 = -float(log_target(x_new)) + 0.5 * float(np.sum(p_new * p_new / M))
+        logp_new = float(log_target(x_new))
+        H1 = -logp_new + 0.5 * float(np.sum(p_new * p_new / M))
         if np.log(max(rng.random(), 1e-300)) < H0 - H1:
             x = x_new
+            logp_x = logp_new
             accepted += 1
         if i >= burn:
             out.append(x.copy())

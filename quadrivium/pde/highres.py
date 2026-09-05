@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+
 from ..core.types import PDESolution
 
 __all__ = [
@@ -291,6 +293,12 @@ def lid_driven_cavity(re: float = 100.0, n: int = 41, tol: float = 1e-6,
     w = np.zeros((n, n))
     nu = 1.0 / re
     dt = 0.5 * min(0.25 * h * h / nu, h) if dt is None else dt
+
+    fast = _accel.kernel("lid_driven_cavity")
+    if fast is not None and n >= 3:
+        fast(psi, w, h, nu, dt, tol, max_iter)
+        return psi, w, x
+
     for it in range(1, max_iter + 1):
         # Stream function from vorticity: lap psi = -omega (SOR sweep).
         for _ in range(30):

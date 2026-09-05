@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+from ..core.exceptions import DimensionError, SingularMatrixError
 from ..core.utils import as_matrix, as_vector
-from .direct import back_substitution, cholesky_solve, householder_qr
+from .direct import back_substitution, cholesky_solve
 from .iterative import lsqr
 
 __all__ = [
@@ -40,11 +42,41 @@ def normal_equations(A, b) -> np.ndarray:
 
 
 def qr_least_squares(A, b) -> np.ndarray:
-    """Least squares by Householder QR -- the numerically preferred default."""
+    """Least squares by Householder QR -- the numerically preferred default.
+
+    Applies the reflectors directly to ``b``, using ``O(m*n)`` workspace for
+    an ``m`` by ``n`` matrix instead of forming an ``m`` by ``m`` Q. Requires
+    at least as many observations as columns and full column rank.
+    """
     A, b = as_matrix(A), as_vector(b)
-    n = A.shape[1]
-    Q, R = householder_qr(A)
-    return back_substitution(R[:n, :n], (Q.T @ b)[:n])
+    m, n = A.shape
+    if b.size != m:
+        raise DimensionError(f"A has {m} rows but b has length {b.size}")
+    if m < n:
+        raise DimensionError("QR least squares requires at least as many rows as columns")
+    fast = _accel.kernel("qr_least_squares")
+    if fast is not None and n:
+        try:
+            return fast(A, b)
+        except (ValueError, RuntimeError) as exc:
+            err = _accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
+            if err is None:
+                raise
+            raise err from None
+    R, rhs = A.copy(), b.copy()
+    for k in range(min(m - 1, n)):
+        v = R[k:, k].copy()
+        normv = np.linalg.norm(v)
+        if normv < 1e-300:
+            continue
+        v[0] += np.copysign(normv, v[0]) if v[0] != 0 else normv
+        vn = np.linalg.norm(v)
+        if vn < 1e-300:
+            continue
+        v /= vn
+        R[k:, k:] -= 2.0 * np.outer(v, v @ R[k:, k:])
+        rhs[k:] -= (2.0 * (v @ rhs[k:])) * v
+    return back_substitution(R[:n, :n], rhs[:n])
 
 
 def svd_least_squares(A, b, rcond: float = 1e-15):
@@ -62,21 +94,23 @@ def pseudoinverse(A, rcond: float = 1e-15) -> np.ndarray:
     U, s, Vt = np.linalg.svd(A, full_matrices=False)
     cutoff = rcond * (s[0] if s.size else 0.0)
     s_inv = np.where(s > cutoff, 1.0 / np.where(s > cutoff, s, 1.0), 0.0)
-    return Vt.T @ np.diag(s_inv) @ U.T
+    return (Vt.T * s_inv) @ U.T
 
 
 def ridge_regression(A, b, alpha: float = 1.0) -> np.ndarray:
     """L2-regularized solution ``(A'A + alpha I)^-1 A'b``."""
     A, b = as_matrix(A), as_vector(b)
-    n = A.shape[1]
-    return np.linalg.solve(A.T @ A + alpha * np.eye(n), A.T @ b)
+    gram = A.T @ A
+    gram.flat[::gram.shape[0] + 1] += alpha
+    return np.linalg.solve(gram, A.T @ b)
 
 
 def tikhonov(A, b, alpha: float = 1.0, L=None) -> np.ndarray:
     """General Tikhonov regularization ``min ||Ax-b||^2 + alpha ||L x||^2``."""
     A, b = as_matrix(A), as_vector(b)
-    n = A.shape[1]
-    L = np.eye(n) if L is None else as_matrix(L)
+    if L is None:
+        return ridge_regression(A, b, alpha)
+    L = as_matrix(L)
     return np.linalg.solve(A.T @ A + alpha * (L.T @ L), A.T @ b)
 
 

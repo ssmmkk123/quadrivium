@@ -21,9 +21,9 @@ together.
 ## Running the tests
 
 ```bash
-python -m unittest discover -s tests      # the whole suite
-python -m unittest tests.test_calculus    # one module
-python -m pytest                          # same suite under pytest
+python -m pytest -q      # the whole suite
+python -m pytest -q tests/test_calculus.py    # one module
+QUADRIVIUM_NO_ACCEL=1 python -m pytest -q # Python fallback
 ```
 
 CI runs the suite on Python 3.9 through 3.14 and must pass on every version.
@@ -35,7 +35,7 @@ flowchart TD
     B -- "bug fix" --> D["a regression test that fails first"]
     B -- "documentation" --> E["doctests, and figures if the point is visual"]
     C --> F["a property test:<br/>order, exactness, identity,<br/>conservation, or a known failure"]
-    D --> G["python -m unittest discover -s tests"]
+    D --> G["python -m pytest -q"]
     F --> G
     E --> H["python tools/gen_docs.py<br/>python tools/gen_figures.py"]
     H --> G

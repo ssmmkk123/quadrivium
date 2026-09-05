@@ -35,19 +35,19 @@ Implemented from scratch (Lanczos, continued fractions, series/asymptotic switch
 | `log_beta` | `(a, b)` | Logarithm of the beta function. |
 | `factorial` | `(n)` | Factorial via the gamma function (exact for small integers). |
 | `binomial` | `(n, k)` | Binomial coefficient, computed in log space for large arguments. |
-| `erf` | `(x)` | Error function via its relation to the incomplete gamma function. |
+| `erf` | `(x)` | Error function, correctly rounded over the whole real line. |
 | `erfc` | `(x)` | Complementary error function ``1 - erf(x)``, accurate in the tail. |
 | `erfinv` | `(y, tol: float = 1e-14, max_iter: int = 100)` | Inverse error function by Newton iteration on a rational initial guess. |
-| `incomplete_gamma_lower` | `(a: float, x: float)` | Unregularized lower incomplete gamma ``gamma(a, x)``. |
-| `incomplete_gamma_upper` | `(a: float, x: float)` | Unregularized upper incomplete gamma ``Gamma(a, x)``. |
-| `regularized_gamma_p` | `(a: float, x: float, tol: float = 1e-15, max_iter: int = 300)` | Regularized lower incomplete gamma ``P(a, x)``. |
-| `regularized_gamma_q` | `(a: float, x: float, tol: float = 1e-15, max_iter: int = 300)` | Regularized upper incomplete gamma ``Q(a, x) = 1 - P(a, x)``. |
-| `incomplete_beta` | `(a: float, b: float, x: float, tol: float = 1e-15, max_iter: int = 300)` | Regularized incomplete beta ``I_x(a, b)`` by continued fraction. |
+| `incomplete_gamma_lower` | `(a, x)` | Unregularized lower incomplete gamma ``gamma(a, x)``. |
+| `incomplete_gamma_upper` | `(a, x)` | Unregularized upper incomplete gamma ``Gamma(a, x)``. |
+| `regularized_gamma_p` | `(a, x, tol: float = 1e-15, max_iter: int = 300)` | Regularized lower incomplete gamma ``P(a, x)``. |
+| `regularized_gamma_q` | `(a, x, tol: float = 1e-15, max_iter: int = 300)` | Regularized upper incomplete gamma ``Q(a, x) = 1 - P(a, x)``. |
+| `incomplete_beta` | `(a, b, x, tol: float = 1e-15, max_iter: int = 300)` | Regularized incomplete beta ``I_x(a, b)`` by continued fraction. |
 | `bessel_j0` | `(x)` | Bessel function of the first kind, order 0. |
 | `bessel_j1` | `(x)` | Bessel function of the first kind, order 1. |
 | `bessel_jn` | `(n: int, x)` | Bessel ``J_n`` by upward or downward recurrence as stability requires. |
-| `bessel_y0` | `(x)` |  |
-| `bessel_y1` | `(x)` |  |
+| `bessel_y0` | `(x)` | Bessel function of the second kind, order 0 (requires ``x > 0``). |
+| `bessel_y1` | `(x)` | Bessel function of the second kind, order 1 (requires ``x > 0``). |
 | `bessel_yn` | `(n: int, x)` | Bessel ``Y_n`` by upward recurrence (stable for ``Y``). |
 | `bessel_i0` | `(x)` | Modified Bessel function of the first kind, order 0. |
 | `bessel_i1` | `(x)` | Modified Bessel function of the first kind, order 1 (odd in ``x``). |
@@ -57,12 +57,12 @@ Implemented from scratch (Lanczos, continued fractions, series/asymptotic switch
 | `bessel_kn` | `(n: int, x)` | Modified Bessel ``K_n`` for integer order. |
 | `airy_ai` | `(x, terms: int = 60)` | Airy function ``Ai(x)`` from its Maclaurin series (moderate ``\|x\|``). |
 | `airy_bi` | `(x, terms: int = 60)` | Airy function ``Bi(x)`` from its Maclaurin series (moderate ``\|x\|``). |
-| `elliptic_k` | `(m: float, tol: float = 1e-15)` | Complete elliptic integral of the first kind by the AGM. |
-| `elliptic_e` | `(m: float, tol: float = 1e-15)` | Complete elliptic integral of the second kind by the AGM. |
-| `exponential_integral` | `(x: float, max_iter: int = 200, tol: float = 1e-15)` | Exponential integral ``Ei(x)`` for ``x != 0``. |
-| `sine_integral` | `(x: float, terms: int = 200, tol: float = 1e-16)` | Sine integral ``Si(x)``. |
-| `cosine_integral` | `(x: float, terms: int = 200, tol: float = 1e-16)` | Cosine integral ``Ci(x)`` for ``x > 0``. |
-| `zeta` | `(s: float, terms: int = 100000, tol: float = 1e-15)` | Riemann zeta function, for any real ``s != 1``. |
+| `elliptic_k` | `(m, tol: float = 1e-15)` | Complete elliptic integral of the first kind by the AGM. |
+| `elliptic_e` | `(m, tol: float = 1e-15)` | Complete elliptic integral of the second kind by the AGM. |
+| `exponential_integral` | `(x, max_iter: int = 200, tol: float = 1e-15)` | Exponential integral ``Ei(x)`` for ``x != 0``. |
+| `sine_integral` | `(x, terms: int = 200, tol: float = 1e-16)` | Sine integral ``Si(x)``. |
+| `cosine_integral` | `(x, terms: int = 200, tol: float = 1e-16)` | Cosine integral ``Ci(x)`` for ``x > 0``. |
+| `zeta` | `(s, terms: int = 100000, tol: float = 1e-15)` | Riemann zeta function, for any real ``s != 1``. |
 | `lambert_w` | `(x, branch: int = 0, tol: float = 1e-14, max_iter: int = 100)` | Lambert W: the solution of ``W e^W = x``. |
 | `dawson` | `(x, h: float = 0.2, terms: int = 60)` | Dawson's function ``F(x) = e^{-x^2} int_0^x e^{t^2} dt``. |
 | `fresnel_s` | `(x, tol: float = 1e-15)` | Fresnel sine integral ``S(x) = int_0^x sin(pi t^2 / 2) dt``. |

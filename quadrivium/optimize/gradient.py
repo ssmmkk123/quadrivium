@@ -34,6 +34,18 @@ def _grad(grad_f, f):
     return lambda x: numerical_gradient(f, x)
 
 
+def _diverged(x) -> bool:
+    """True once an iterate stops being finite.
+
+    A fixed-step method with too large a step does not fail gracefully: it
+    overflows, and every later iterate is NaN. Without this check the loop
+    still runs to ``max_iter``, appending a NaN to ``history`` each time, and
+    reports "maximum iterations reached" -- which reads like a tolerance that
+    was nearly met rather than a step size that has to be reduced.
+    """
+    return not np.all(np.isfinite(x))
+
+
 def gradient_descent(f, x0, grad_f=None, lr: float = 0.01, tol: float = 1e-8,
                      max_iter: int = 10000, line_search: bool = False):
     """Steepest descent, with a fixed step or an Armijo line search."""
@@ -50,6 +62,12 @@ def gradient_descent(f, x0, grad_f=None, lr: float = 0.01, tol: float = 1e-8,
         step = backtracking(fc, x, -gk, gk, alpha0=1.0) if line_search else lr
         x = x - step * gk
         history.append(x.copy())
+        if _diverged(x):
+            return OptimizeResult(x, float(fc(x)), gk, None, k, False, fc.calls,
+                                  k, "gradient_descent", history,
+                                  f"diverged: the iterate left the finite range at "
+                                  f"step {k}; reduce lr (currently {lr:g}) or pass "
+                                  f"line_search=True")
     return OptimizeResult(x, float(fc(x)), g(x), None, max_iter, False, fc.calls,
                           max_iter, "gradient_descent", history,
                           "maximum iterations reached")
@@ -76,6 +94,11 @@ def _adaptive(f, x0, grad_f, update, name, lr, tol, max_iter):
                                   k, name, history, "converged")
         x = update(x, gk, state, lr, k)
         history.append(x.copy())
+        if _diverged(x):
+            return OptimizeResult(x, float(fc(x)), gk, None, k, False, fc.calls,
+                                  k, name, history,
+                                  f"diverged: the iterate left the finite range at "
+                                  f"step {k}; reduce lr (currently {lr:g})")
     return OptimizeResult(x, float(fc(x)), g(x), None, max_iter, False, fc.calls,
                           max_iter, name, history, "maximum iterations reached")
 

@@ -28,17 +28,17 @@ On Windows PowerShell, activate the environment with
 Run the complete test suite before submitting a pull request:
 
 ```bash
-python -m unittest discover -s tests
+python -m pytest -q
 ```
 
-That is 376 tests -- 341 covering the numerics, the rest checking that the
-documentation and its figures still match the code -- and takes about half a
-minute.
+The suite covers numerical identities, native-backend equivalence, sparse
+storage, bounded workspace, concurrent backend selection, packaging, and the
+documentation examples. Use pytest so parametrized regressions also run.
 
 You can run a single module while developing:
 
 ```bash
-python -m unittest tests.test_calculus
+python -m pytest -q tests/test_calculus.py
 ```
 
 ## Numerical changes

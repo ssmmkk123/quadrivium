@@ -81,18 +81,23 @@ _GK15_WG = np.array([
 ])
 
 
+# The tabulated arrays above hold one half of each symmetric rule. Mirroring
+# them is the same work on every panel, so it is done once here: the adaptive
+# drivers call the panel thousands of times per integral.
+_GK15_NODES = np.concatenate([-_GK15_X[:-1], [0.0], _GK15_X[-2::-1]])
+_GK15_W = np.concatenate([_GK15_WK[:-1], [_GK15_WK[-1]], _GK15_WK[-2::-1]])
+_GK7_W = np.concatenate([_GK15_WG[:-1], [_GK15_WG[-1]], _GK15_WG[-2::-1]])
+
+
 def _gauss_kronrod_panel(f, a, b):
     """One 7/15 Gauss-Kronrod panel; returns ``(kronrod, |kronrod - gauss|)``."""
     c = 0.5 * (a + b)
     h = 0.5 * (b - a)
-    nodes = np.concatenate([c - h * _GK15_X[:-1], [c], c + h * _GK15_X[-2::-1]])
+    nodes = c + h * _GK15_NODES
     vals = np.array([f(x) for x in nodes])
-    wk = np.concatenate([_GK15_WK[:-1], [_GK15_WK[-1]], _GK15_WK[-2::-1]])
-    kron = h * float(wk @ vals)
+    kron = h * float(_GK15_W @ vals)
     # the Gauss nodes are every second Kronrod node, starting at index 1
-    gvals = vals[1::2]
-    wg = np.concatenate([_GK15_WG[:-1], [_GK15_WG[-1]], _GK15_WG[-2::-1]])
-    gauss = h * float(wg @ gvals)
+    gauss = h * float(_GK7_W @ vals[1::2])
     return kron, abs(kron - gauss)
 
 

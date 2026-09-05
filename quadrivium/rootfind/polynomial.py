@@ -39,10 +39,21 @@ def horner(coeffs, x):
     c = np.asarray(coeffs)
     xa = np.asarray(x)
     dtype = np.result_type(c.dtype, xa.dtype, np.float64)
+    if xa.ndim == 0:
+        # A scalar argument runs the recurrence in Python numbers, which are
+        # the same IEEE doubles and give the same result. The array path
+        # allocates a 0-d array per coefficient and pays full NumPy dispatch
+        # for each multiply-add, and a NumPy scalar is barely cheaper.
+        terms = c.astype(dtype).tolist()
+        val = dtype.type(xa).item()
+        acc = terms[0]
+        for a in terms[1:]:
+            acc = acc * val + a
+        return dtype.type(acc)
     result = np.full(xa.shape, c[0], dtype=dtype)
     for a in c[1:]:
         result = result * xa + a
-    return result[()] if xa.ndim == 0 else result
+    return result
 
 
 def horner_derivative(coeffs, x):
@@ -109,7 +120,11 @@ def durand_kerner(coeffs, tol: float = 1e-14, max_iter: int = 500):
     for k in range(max_iter):
         z_old = z.copy()
         for i in range(n):
-            denom = np.prod([z[i] - z[j] for j in range(n) if j != i]) if n > 1 else 1.0
+            # prod_{j != i} (z_i - z_j), with the self term set to one rather
+            # than built by a comprehension that skips it.
+            diff = z[i] - z
+            diff[i] = 1.0
+            denom = np.prod(diff) if n > 1 else 1.0
             if abs(denom) < 1e-300:
                 continue
             z[i] = z[i] - horner(c, z[i]) / denom

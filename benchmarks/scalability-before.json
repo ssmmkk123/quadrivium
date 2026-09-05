@@ -1,0 +1,107 @@
+{
+  "python": "3.14.4 (main, Jun 18 2026, 14:25:02) [GCC 15.2.0]",
+  "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.43",
+  "root": "starting working tree (including existing local edits)",
+  "repeat": 3,
+  "blas_threads": 1,
+  "results": [
+    {
+      "case": "least_squares",
+      "size": "1500 x 12",
+      "backend": "rust",
+      "median_ms": 6.512244999612449,
+      "samples_ms": [
+        8.532175001164433,
+        6.512244999612449,
+        5.637455000396585
+      ],
+      "traced_peak_mib": 0.13957977294921875,
+      "process_peak_rss_mib": 62.8671875,
+      "numpy": "2.4.4"
+    },
+    {
+      "case": "least_squares_python",
+      "size": "1500 x 12",
+      "backend": "python",
+      "median_ms": 87.50336099910783,
+      "samples_ms": [
+        85.74756799862371,
+        87.50336099910783,
+        90.2016759973776
+      ],
+      "traced_peak_mib": 34.609375,
+      "process_peak_rss_mib": 77.6015625,
+      "numpy": "2.4.4"
+    },
+    {
+      "case": "kernel_density",
+      "size": "20000 samples x 400 points",
+      "backend": "rust",
+      "median_ms": 89.55676500045229,
+      "samples_ms": [
+        104.50631999992765,
+        83.39696799885132,
+        89.55676500045229
+      ],
+      "traced_peak_mib": 183.10588836669922,
+      "process_peak_rss_mib": 225.74609375,
+      "numpy": "2.4.4"
+    },
+    {
+      "case": "identity_sparse",
+      "size": "2000 x 2000",
+      "backend": "rust",
+      "median_ms": 15.665360999264522,
+      "samples_ms": [
+        15.898690002359217,
+        15.506528001424158,
+        15.665360999264522
+      ],
+      "traced_peak_mib": 64.85044860839844,
+      "process_peak_rss_mib": 106.58984375,
+      "numpy": "2.4.4"
+    },
+    {
+      "case": "csr_matvec",
+      "size": "100000 nonzeros",
+      "backend": "rust",
+      "median_ms": 90.82844799922896,
+      "samples_ms": [
+        88.41686599771492,
+        96.7299069998262,
+        90.82844799922896
+      ],
+      "traced_peak_mib": 0.7640228271484375,
+      "process_peak_rss_mib": 45.60546875,
+      "numpy": "2.4.4"
+    },
+    {
+      "case": "fft_python",
+      "size": "8192 samples",
+      "backend": "python",
+      "median_ms": 11.615216000791406,
+      "samples_ms": [
+        11.615216000791406,
+        11.642097000731155,
+        11.490323002362857
+      ],
+      "traced_peak_mib": 0.501373291015625,
+      "process_peak_rss_mib": 42.828125,
+      "numpy": "2.4.4"
+    },
+    {
+      "case": "welch_python",
+      "size": "65536 samples; 256 per segment",
+      "backend": "python",
+      "median_ms": 209.1824750023079,
+      "samples_ms": [
+        209.1824750023079,
+        203.46648399936385,
+        209.73833899915917
+      ],
+      "traced_peak_mib": 0.0858612060546875,
+      "process_peak_rss_mib": 43.0390625,
+      "numpy": "2.4.4"
+    }
+  ]
+}

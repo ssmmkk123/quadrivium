@@ -9,7 +9,7 @@
 ## Checklist
 
 - [ ] I added or updated tests for the change.
-- [ ] I ran `python -m unittest discover -s tests` locally.
+- [ ] I ran `python -m pytest -q` locally.
 - [ ] I updated relevant docstrings, examples, or README content.
 - [ ] I kept the change focused and backward compatible, or documented why an
       API change is necessary.

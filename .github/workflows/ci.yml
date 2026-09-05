@@ -33,6 +33,8 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install the package and test dependencies
+        env:
+          QUADRIVIUM_REQUIRE_RUST: "1"
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[test]"
@@ -42,15 +44,15 @@ jobs:
       # fell back to pure Python, or a fallback that has quietly rotted, are
       # both defects and both show up here.
       - name: Report which backend is active
-        run: python -c "import quadrivium; print(quadrivium.accel.show_config())"
+        run: python -c "import quadrivium; print(quadrivium.accel.show_config()); assert quadrivium.accel.available()"
 
       - name: Run tests (compiled backend)
-        run: python -m unittest discover -s tests
+        run: python -m pytest -q
 
       - name: Run tests (pure-Python fallback)
         env:
           QUADRIVIUM_NO_ACCEL: "1"
-        run: python -m unittest discover -s tests
+        run: python -m pytest -q
 
   rust:
     name: Rust kernels
@@ -120,7 +122,7 @@ jobs:
 
       - name: Build and check distributions
         run: |
-          python -m pip install --upgrade pip build twine
+          python -m pip install --upgrade pip build twine "pytest>=7.0"
           python -m build
           python -m twine check dist/*
 
@@ -133,4 +135,4 @@ jobs:
       - name: Check the sdist carries the tests and can run them
         run: |
           mkdir -p /tmp/sdist && tar xzf dist/*.tar.gz -C /tmp/sdist --strip-components=1
-          cd /tmp/sdist && python -m unittest discover -s tests
+          cd /tmp/sdist && python -m pytest -q

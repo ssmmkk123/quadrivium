@@ -101,13 +101,24 @@ pub fn back_substitution_trans(
 #[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn is_symmetric(n: usize, a: &[f64], atol: f64, rtol: f64) -> bool {
     for i in 0..n {
+        let d = a[i * n + i];
+        if d.is_nan() {
+            return false;
+        }
         for j in 0..i {
             let x = a[i * n + j];
             let y = a[j * n + i];
-            // The comparison is negated rather than reversed on purpose: a NaN
-            // entry must report "not symmetric", which is what `np.allclose`
-            // does, and `>` would silently accept it.
-            if !((x - y).abs() <= atol + rtol * y.abs()) {
+            // np.allclose checks both triangles: its relative tolerance is
+            // asymmetric. Equal signed infinities compare equal; finite vs
+            // infinity and every NaN comparison must fail.
+            if x == y {
+                continue;
+            }
+            if !x.is_finite() || !y.is_finite() {
+                return false;
+            }
+            let delta = (x - y).abs();
+            if !(delta <= atol + rtol * y.abs()) || !(delta <= atol + rtol * x.abs()) {
                 return false;
             }
         }
@@ -559,6 +570,53 @@ pub fn householder_qr(m: usize, n: usize, a: &mut [f64], q: &mut [f64], want_q: 
     }
 }
 
+/// Least squares by Householder transformations of A and the right-hand side.
+/// Applying reflectors directly to b avoids ever allocating the m x m Q.
+pub fn qr_least_squares(
+    m: usize,
+    n: usize,
+    a: &mut [f64],
+    rhs: &mut [f64],
+) -> Result<(), LinalgError> {
+    let mut x = vec![0.0; m];
+    let mut projection = vec![0.0; n];
+    for col in 0..n.min(m.saturating_sub(1)) {
+        let len = m - col;
+        for i in 0..len {
+            x[i] = a[(col + i) * n + col];
+        }
+        let magnitude = nrm2(&x[..len]);
+        if magnitude == 0.0 {
+            continue;
+        }
+        let alpha = if x[0] >= 0.0 { -magnitude } else { magnitude };
+        x[0] -= alpha;
+        let vn = nrm2(&x[..len]);
+        if vn == 0.0 {
+            continue;
+        }
+        for value in &mut x[..len] {
+            *value /= vn;
+        }
+        projection[col..].fill(0.0);
+        for i in 0..len {
+            let row = &a[(col + i) * n + col..(col + i + 1) * n];
+            for (acc, &value) in projection[col..].iter_mut().zip(row) {
+                *acc += x[i] * value;
+            }
+        }
+        for i in 0..len {
+            let row = &mut a[(col + i) * n + col..(col + i + 1) * n];
+            for (value, &acc) in row.iter_mut().zip(&projection[col..]) {
+                *value -= 2.0 * x[i] * acc;
+            }
+        }
+        let rhs_projection = dot(&x[..len], &rhs[col..]);
+        axpy(-2.0 * rhs_projection, &x[..len], &mut rhs[col..]);
+    }
+    back_substitution(n, a, n, &mut rhs[..n], false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,5 +756,211 @@ mod tests {
         forward_substitution(n, &l, n, &mut b, false).unwrap();
         let err = (0..n).map(|i| (b[i] - x0[i]).abs()).fold(0.0f64, f64::max);
         assert!(err < 1e-9, "forward substitution error {err:e}");
+    }
+}
+
+/// Givens rotation `(c, s)` zeroing `b` in `[a, b]`, in the safe form the
+/// pure-Python `givens_rotation` uses -- dividing by the larger of the two so
+/// the intermediate `tau` cannot overflow.
+#[inline]
+fn givens(a: f64, b: f64) -> (f64, f64) {
+    if b == 0.0 {
+        return (1.0, 0.0);
+    }
+    if b.abs() > a.abs() {
+        let tau = -a / b;
+        let s = 1.0 / (1.0 + tau * tau).sqrt();
+        (s * tau, s)
+    } else {
+        let tau = -b / a;
+        let c = 1.0 / (1.0 + tau * tau).sqrt();
+        (c, c * tau)
+    }
+}
+
+/// QR by Givens rotations. `r` is the `m x n` matrix, overwritten with `R`;
+/// `q` is the `m x m` accumulator, which the caller seeds with the identity.
+///
+/// Rotations are applied bottom-up within each column, exactly as the Python
+/// routine walks them, so both backends produce the same signs. Each rotation
+/// touches two rows of `R` from column `j` on and two columns of `Q`; doing
+/// that with a 2x2 matrix product per rotation -- the readable transcription
+/// -- allocates `m*n` small matrices and is what makes the Python version slow.
+pub fn givens_qr(m: usize, n: usize, r: &mut [f64], q: &mut [f64]) {
+    for j in 0..n.min(m) {
+        for i in (j + 1..m).rev() {
+            if r[i * n + j] == 0.0 {
+                continue;
+            }
+            let (c, s) = givens(r[(i - 1) * n + j], r[i * n + j]);
+            // R[[i-1, i], j:] = [[c, -s], [s, c]] @ R[[i-1, i], j:]
+            let (top, bot) = r.split_at_mut(i * n);
+            let row0 = &mut top[(i - 1) * n + j..(i - 1) * n + n];
+            let row1 = &mut bot[j..n];
+            for (x, y) in row0.iter_mut().zip(row1.iter_mut()) {
+                let (u, w) = (*x, *y);
+                *x = c * u - s * w;
+                *y = s * u + c * w;
+            }
+            // Q[:, [i-1, i]] = Q[:, [i-1, i]] @ G' with G = [[c, -s], [s, c]]
+            for row in q.chunks_exact_mut(m) {
+                let (u, w) = (row[i - 1], row[i]);
+                row[i - 1] = c * u - s * w;
+                row[i] = s * u + c * w;
+            }
+        }
+    }
+}
+
+/// One-sided Jacobi SVD of an `m x n` matrix with `m >= n`.
+///
+/// `w` holds the matrix on entry and `U * S` on exit; `v` receives the right
+/// singular vectors, seeded here with the identity. Returns the sweep count.
+///
+/// Each rotation needs three inner products of two columns, and the columns
+/// are `m` apart in memory. Running the sweep from Python costs seven NumPy
+/// calls per rotation on `n^2/2` rotations per sweep, which is where the time
+/// went; the arithmetic itself is `O(m n^2)` per sweep either way.
+pub fn svd_jacobi(
+    m: usize,
+    n: usize,
+    w: &mut [f64],
+    v: &mut [f64],
+    tol: f64,
+    max_sweeps: usize,
+) -> usize {
+    debug_assert_eq!(w.len(), m * n);
+    for i in 0..n {
+        for j in 0..n {
+            v[i * n + j] = if i == j { 1.0 } else { 0.0 };
+        }
+    }
+    let mut sweeps = 0usize;
+    for _ in 0..max_sweeps {
+        sweeps += 1;
+        let mut rotated = false;
+        for p in 0..n.saturating_sub(1) {
+            for q in p + 1..n {
+                let (mut app, mut aqq, mut apq) = (0.0f64, 0.0f64, 0.0f64);
+                for row in w.chunks_exact(n) {
+                    let (xp, xq) = (row[p], row[q]);
+                    app += xp * xp;
+                    aqq += xq * xq;
+                    apq += xp * xq;
+                }
+                if apq.abs() < tol * (app * aqq + 1e-300).sqrt() {
+                    continue;
+                }
+                rotated = true;
+                let zeta = (aqq - app) / (2.0 * apq);
+                let t = safe_tangent(zeta);
+                let cs = 1.0 / (1.0 + t * t).sqrt();
+                let sn = cs * t;
+                for row in w.chunks_exact_mut(n) {
+                    let (xp, xq) = (row[p], row[q]);
+                    row[p] = cs * xp - sn * xq;
+                    row[q] = sn * xp + cs * xq;
+                }
+                for row in v.chunks_exact_mut(n) {
+                    let (xp, xq) = (row[p], row[q]);
+                    row[p] = cs * xp - sn * xq;
+                    row[q] = sn * xp + cs * xq;
+                }
+            }
+        }
+        if !rotated {
+            break;
+        }
+    }
+    sweeps
+}
+
+/// Same guarded tangent as the Jacobi eigensolver uses, kept here so the two
+/// backends pick identical rotations.
+#[inline]
+fn safe_tangent(theta: f64) -> f64 {
+    if theta == 0.0 {
+        return 1.0;
+    }
+    if theta.abs() > 1e8 {
+        return 1.0 / (2.0 * theta);
+    }
+    theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt())
+}
+
+#[cfg(test)]
+mod svd_tests {
+    use super::*;
+
+    fn mat(m: usize, n: usize, seed: u64) -> Vec<f64> {
+        let mut s = seed;
+        (0..m * n)
+            .map(|_| {
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                ((s >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    /// A = U S V' is the definition; reassemble it and compare.
+    #[test]
+    fn svd_jacobi_reconstructs_its_input() {
+        for &(m, n) in &[(4usize, 3usize), (10, 10), (30, 12)] {
+            let a0 = mat(m, n, 7 + m as u64);
+            let mut w = a0.clone();
+            let mut v = vec![0.0f64; n * n];
+            svd_jacobi(m, n, &mut w, &mut v, 1e-13, 60);
+            // column norms of W are the singular values; U = W / s
+            let mut err: f64 = 0.0;
+            for i in 0..m {
+                for j in 0..n {
+                    let mut acc = 0.0;
+                    for k in 0..n {
+                        acc += w[i * n + k] * v[j * n + k];
+                    }
+                    err = err.max((acc - a0[i * n + j]).abs());
+                }
+            }
+            assert!(err < 1e-12, "m={m} n={n} reconstruction error {err:e}");
+        }
+    }
+
+    /// Q R must reproduce the input and Q must be orthogonal.
+    #[test]
+    fn givens_qr_reconstructs_its_input() {
+        for &(m, n) in &[(5usize, 3usize), (12, 12), (20, 8)] {
+            let a0 = mat(m, n, 3 + n as u64);
+            let mut r = a0.clone();
+            let mut q = vec![0.0f64; m * m];
+            for i in 0..m {
+                q[i * m + i] = 1.0;
+            }
+            givens_qr(m, n, &mut r, &mut q);
+            let mut err: f64 = 0.0;
+            for i in 0..m {
+                for j in 0..n {
+                    let mut acc = 0.0;
+                    for k in 0..m {
+                        acc += q[i * m + k] * r[k * n + j];
+                    }
+                    err = err.max((acc - a0[i * n + j]).abs());
+                }
+            }
+            assert!(err < 1e-12, "m={m} n={n} QR reconstruction error {err:e}");
+            // Q'Q = I
+            let mut orth: f64 = 0.0;
+            for i in 0..m {
+                for j in 0..m {
+                    let mut acc = 0.0;
+                    for k in 0..m {
+                        acc += q[k * m + i] * q[k * m + j];
+                    }
+                    orth = orth.max((acc - if i == j { 1.0 } else { 0.0 }).abs());
+                }
+            }
+            assert!(orth < 1e-12, "m={m} Q orthogonality {orth:e}");
+        }
     }
 }

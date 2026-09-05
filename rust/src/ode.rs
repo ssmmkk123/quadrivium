@@ -13,7 +13,7 @@
 /// One embedded Runge-Kutta tableau in flattened form.
 pub struct Tableau<'a> {
     pub c: &'a [f64],
-    /// Row `i` of `A` occupies `a_flat[a_offsets[i]..a_offsets[i] + i]`.
+    /// Row `i` of `A` occupies `a_flat[i * stages..i * stages + i]`.
     pub a_flat: &'a [f64],
     pub b_hi: &'a [f64],
     pub b_lo: &'a [f64],
@@ -67,7 +67,10 @@ where
     let mut h = match ctl.h0 {
         Some(v) => v.abs(),
         None => (tf - t0).abs() / 100.0,
-    } * direction;
+    }
+    .max(ctl.min_step)
+    .min(ctl.max_step)
+        * direction;
 
     let mut ts = vec![t];
     let mut ys = y.clone();
@@ -87,6 +90,12 @@ where
         }
         if h.abs() > (tf - t).abs() {
             h = tf - t;
+        }
+        if t + h == t {
+            return Ok(Err(StepSizeUnderflow {
+                t,
+                min_step: ctl.min_step,
+            }));
         }
         // Stages. Row i of A has exactly i entries in every tableau here.
         for i in 0..s {
@@ -124,8 +133,14 @@ where
         }
         let err = (sum_sq / n as f64).sqrt();
 
+        if !err.is_finite() {
+            return Ok(Err(StepSizeUnderflow {
+                t,
+                min_step: ctl.min_step,
+            }));
+        }
         let fac;
-        if err <= 1.0 || h.abs() <= ctl.min_step {
+        if err <= 1.0 {
             // k[0] is the slope at the start of the accepted step, so it is
             // the derivative belonging to the point already recorded.
             dys.extend_from_slice(&k[..n]);
@@ -134,6 +149,9 @@ where
             ts.push(t);
             ys.extend_from_slice(&y);
             accepted += 1;
+            if (t - tf) * direction >= 0.0 {
+                break;
+            }
             fac = if err > 0.0 {
                 0.9 * err.powf(-0.7 / tab.order) * err_prev.powf(0.4 / tab.order)
             } else {
@@ -141,6 +159,12 @@ where
             };
             err_prev = err.max(1e-4);
         } else {
+            if h.abs() <= ctl.min_step {
+                return Ok(Err(StepSizeUnderflow {
+                    t,
+                    min_step: ctl.min_step,
+                }));
+            }
             rejected += 1;
             fac = 0.9 * err.powf(-1.0 / tab.order);
         }

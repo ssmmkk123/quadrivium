@@ -162,7 +162,7 @@ law, an identity, or agreement with an independent analytic solution. See
 [Contributing](contributing.md).
 
 ```bash
-python -m unittest discover -s tests      # 376 tests, about half a minute
+python -m pytest -q      # numerics, backend, memory and documentation checks
 python -m pytest                          # same suite under pytest
 ```
 

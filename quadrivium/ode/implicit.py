@@ -119,18 +119,25 @@ def _irk_stage_solver(fc, t, y, h, A, b, c, tol=1e-12, max_iter=60):
     s = len(b)
     m = y.size
     K = np.tile(fc(t, y), (s, 1))
+    # The stage combinations are the products A K and b K. Writing them as
+    # Python sums over the stage index costs s temporaries per stage and runs
+    # inside the Newton loop, which is the hot path of every fully implicit
+    # step; as array products the whole stage coupling is one call.
+    A_mat = np.asarray(A, dtype=float)
+    b_vec = np.asarray(b, dtype=float)
+    t_stage = t + np.asarray(c, dtype=float) * h
 
     def residual(Kflat):
         K = Kflat.reshape(s, m)
+        Y = y + h * (A_mat @ K)
         R = np.empty_like(K)
         for i in range(s):
-            yi = y + h * sum(A[i][j] * K[j] for j in range(s))
-            R[i] = K[i] - fc(t + c[i] * h, yi)
+            R[i] = K[i] - fc(t_stage[i], Y[i])
         return R.ravel()
 
     Kflat = _newton_solve(residual, K.ravel(), tol=tol, max_iter=max_iter)
     K = Kflat.reshape(s, m)
-    return y + h * sum(b[i] * K[i] for i in range(s))
+    return y + h * (b_vec @ K)
 
 
 def gauss_legendre_irk(f, t_span, y0, n: int = 100, stages: int = 2, jac=None):

@@ -30,22 +30,34 @@ def smooth(u, f, h: float, iterations: int = 2, omega: float = 1.0,
     ``omega = 2/3`` is the optimal damping for weighted Jacobi as a smoother.
     """
     u = u.copy()
-    for _ in range(iterations):
-        if method == "jacobi":
+    hh = h * h
+    if method == "jacobi":
+        for _ in range(iterations):
             u_old = u.copy()
             u[1:-1, 1:-1] = (1 - omega) * u_old[1:-1, 1:-1] + omega * 0.25 * (
                 u_old[2:, 1:-1] + u_old[:-2, 1:-1] + u_old[1:-1, 2:] + u_old[1:-1, :-2]
-                - h * h * f[1:-1, 1:-1])
-        else:
-            # red-black ordering: vectorized and a better smoother than lexicographic
-            for color in (0, 1):
-                idx = np.indices(u.shape)
-                mask = ((idx[0] + idx[1]) % 2 == color)
-                mask[0, :] = mask[-1, :] = mask[:, 0] = mask[:, -1] = False
-                nb = np.zeros_like(u)
-                nb[1:-1, 1:-1] = (u[2:, 1:-1] + u[:-2, 1:-1] + u[1:-1, 2:]
-                                  + u[1:-1, :-2] - h * h * f[1:-1, 1:-1])
-                u[mask] = (1 - omega) * u[mask] + omega * 0.25 * nb[mask]
+                - hh * f[1:-1, 1:-1])
+        return u
+    # Red-black ordering: vectorized, and a better smoother than lexicographic.
+    # Each colour is two strided sub-grids -- (odd, odd) and (even, even) rows
+    # and columns for one colour, the mixed pair for the other -- so a
+    # half-sweep is four slice reads and one slice write over exactly the
+    # points being updated. Selecting the colour with a boolean mask instead
+    # computes the stencil at every interior point and then gathers half of
+    # them back out through random access.
+    rows, cols = u.shape
+    for _ in range(iterations):
+        for color in (0, 1):
+            for a in (0, 1):
+                b = a ^ color
+                r = slice(1 + a, rows - 1, 2)
+                rm = slice(a, rows - 2, 2)
+                rp = slice(2 + a, rows, 2)
+                c = slice(1 + b, cols - 1, 2)
+                cm = slice(b, cols - 2, 2)
+                cp = slice(2 + b, cols, 2)
+                nb = (u[rp, c] + u[rm, c] + u[r, cp] + u[r, cm] - hh * f[r, c])
+                u[r, c] = (1 - omega) * u[r, c] + omega * 0.25 * nb
     return u
 
 

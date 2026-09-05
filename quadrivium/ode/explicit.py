@@ -6,11 +6,13 @@ solvers accept scalar or vector ``y`` and return an :class:`ODESolution`.
 
 from __future__ import annotations
 
+import operator
+
 import numpy as np
 
 from .. import _accel
 
-from ..core.exceptions import StepSizeError
+from ..core.exceptions import DimensionError, StepSizeError
 from ..core.types import ODESolution
 from ..core.utils import CountedFunction, as_vector
 
@@ -209,6 +211,22 @@ def rk_general(f, t_span, y0, A, b, c, n: int = 100):
     return _fixed_step(f, t_span, y0, n, step, "rk_general")
 
 
+def _rk_solution(ts, ys, dys, tableau, accepted, rejected, calls, tf, dense_output):
+    """Finalize either backend, converting the stored trajectory only once."""
+    ts, ys, dys = np.asarray(ts), np.asarray(ys), np.asarray(dys)
+    interp = None
+    if dense_output and ts.size > 1:
+        from ..interpolate.spline import pchip
+
+        ti, yi = (ts, ys) if ts[-1] > ts[0] else (ts[::-1], ys[::-1])
+        splines = [pchip(ti, yi[:, j]) for j in range(ys.shape[1])]
+        interp = lambda q: np.column_stack([sp(q) for sp in splines])
+    success = bool(ts[-1] >= tf if tf >= ts[0] else ts[-1] <= tf)
+    message = "completed" if success else "maximum number of steps reached before t_span endpoint"
+    return ODESolution(ts, ys, tableau, accepted + rejected, accepted,
+                       rejected, calls, success, message, interp, dys)
+
+
 def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e-8,
                 atol: float = 1e-10, h0=None, max_step=np.inf, min_step: float = 1e-14,
                 max_steps: int = 1000000, dense_output: bool = False):
@@ -216,13 +234,42 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
 
     The two embedded solutions give a local error estimate at no extra cost;
     the step size is then adjusted to keep that estimate at the tolerance.
+    Exhausting ``max_steps`` returns a partial solution with ``success=False``.
+    A step that cannot satisfy the tolerance at ``min_step`` raises
+    :class:`StepSizeError`.
     """
     c, A, b_hi, b_lo, order = BUTCHER_TABLEAUX[tableau]
     A = [np.asarray(r, dtype=float) for r in A]
     s = len(b_hi)
-    fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     y = as_vector(y0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
+    if not np.all(np.isfinite([t0, tf, tf - t0])):
+        raise ValueError("t_span must have finite endpoints and length")
+    if y.size == 0 or not np.all(np.isfinite(y)):
+        raise ValueError("y0 must be nonempty and finite")
+    rtol, atol = float(rtol), float(atol)
+    if not np.all(np.isfinite([rtol, atol])) or min(rtol, atol) < 0 or rtol + atol == 0:
+        raise ValueError("rtol and atol must be finite, nonnegative, and not both zero")
+    max_step, min_step = float(max_step), float(min_step)
+    if np.isnan(max_step) or max_step <= 0 or not np.isfinite(min_step) or min_step <= 0:
+        raise ValueError("step bounds must be positive; min_step must be finite")
+    if max_step < min_step:
+        raise ValueError("max_step must be at least min_step")
+    if h0 is not None:
+        h0 = float(h0)
+        if not np.isfinite(h0) or h0 == 0:
+            raise ValueError("h0 must be finite and nonzero")
+    max_steps = operator.index(max_steps)
+    if max_steps < 1:
+        raise ValueError("max_steps must be a positive integer")
+
+    def rhs(t, state):
+        value = as_vector(f(t, state))
+        if value.size != y.size:
+            raise DimensionError(f"right-hand side has length {value.size}; expected {y.size}")
+        return value
+
+    fc = CountedFunction(rhs)
 
     fast = _accel.kernel("adaptive_rk")
     if fast is not None:
@@ -243,38 +290,42 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             if not str(exc).startswith("stepsize:"):
                 raise
             raise StepSizeError(str(exc)[len("stepsize:"):]) from None
-        interp = None
-        if dense_output:
-            from ..interpolate.spline import pchip
-
-            splines = [pchip(ts, ys[:, j]) for j in range(ys.shape[1])]
-            interp = lambda q: np.column_stack([sp(q) for sp in splines])
-        return ODESolution(ts, ys, tableau, accepted + rejected, accepted,
-                           rejected, calls, True, "completed", interp, dys)
+        return _rk_solution(ts, ys, dys, tableau, accepted, rejected, calls,
+                            tf, dense_output)
 
     direction = 1.0 if tf >= t0 else -1.0
     t = t0
-    h = (abs(tf - t0) / 100.0 if h0 is None else abs(h0)) * direction
+    h = min(max(abs(tf - t0) / 100.0 if h0 is None else abs(h0), min_step), max_step) * direction
     ts, ys, dys = [t], [y.copy()], []
     accepted = rejected = 0
     err_prev = 1.0
+    k = np.empty((s, y.size))
+    acc_hi, acc_lo = np.empty_like(y), np.empty_like(y)
     for _ in range(max_steps):
         if (t - tf) * direction >= 0:
             break
         if abs(h) > abs(tf - t):
             h = tf - t
-        k = []
+        if t + h == t:
+            raise StepSizeError(f"step size cannot advance time at t={t:.6g}")
         for i in range(s):
             yi = y.copy()
             for j in range(len(A[i])):
                 if A[i][j] != 0.0:
-                    yi = yi + h * A[i][j] * k[j]
-            k.append(fc(t + c[i] * h, yi))
-        y_hi = y + h * sum(b_hi[i] * k[i] for i in range(s))
-        y_lo = y + h * sum(b_lo[i] * k[i] for i in range(s))
+                    yi += h * A[i][j] * k[j]
+            k[i] = fc(t + c[i] * h, yi)
+        acc_hi.fill(0.0)
+        acc_lo.fill(0.0)
+        for i in range(s):
+            acc_hi += b_hi[i] * k[i]
+            acc_lo += b_lo[i] * k[i]
+        y_hi = y + h * acc_hi
+        y_lo = y + h * acc_lo
         scale = atol + rtol * np.maximum(np.abs(y), np.abs(y_hi))
         err = float(np.sqrt(np.mean(((y_hi - y_lo) / scale) ** 2)))
-        if err <= 1.0 or abs(h) <= min_step:
+        if not np.isfinite(err) or (err > 1.0 and abs(h) <= min_step):
+            raise StepSizeError(f"error tolerance cannot be satisfied at t={t:.6g}")
+        if err <= 1.0:
             # k[0] is f at the *start* of this step, so it is the slope
             # belonging to the point already in ``ys``.  Recording it costs
             # nothing and lifts dense output from linear to cubic Hermite.
@@ -284,6 +335,8 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             ts.append(t)
             ys.append(y.copy())
             accepted += 1
+            if (t - tf) * direction >= 0:
+                break
             # PI controller: smoother than the pure elementary rule
             fac = 0.9 * err ** (-0.7 / order) * err_prev ** (0.4 / order) if err > 0 else 5.0
             err_prev = max(err, 1e-4)
@@ -299,16 +352,8 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
                 "the problem is likely stiff -- try an implicit solver"
             )
     dys.append(fc(t, y))  # slope at the final point (one extra evaluation)
-    interp = None
-    if dense_output:
-        from ..interpolate.spline import pchip
-
-        arr_t = np.array(ts)
-        splines = [pchip(arr_t, np.array(ys)[:, j]) for j in range(y.size)]
-        interp = lambda q: np.column_stack([sp(q) for sp in splines])
-    return ODESolution(np.array(ts), np.array(ys), tableau, accepted + rejected,
-                       accepted, rejected, fc.calls, True, "completed", interp,
-                       np.array(dys))
+    return _rk_solution(ts, ys, dys, tableau, accepted, rejected, fc.calls,
+                        tf, dense_output)
 
 
 def rkf45(f, t_span, y0, **kwargs):

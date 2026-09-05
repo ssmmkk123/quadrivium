@@ -556,6 +556,15 @@ def lobpcg(A, k: int = 1, B=None, X0=None, tol: float = 1e-10,
         P = Xn - X @ (X.T @ Bmul(Xn))
         X = _b_orthonormalize(Xn, Bmul)
         lam = lam_new
+    # The loop advances X one Rayleigh-Ritz step past the eigenvalues that go
+    # with it, so returning `lam` beside it would pair values from one
+    # iteration with vectors from the next -- and would report the `inf`
+    # placeholder if the basis collapsed on the very first pass. One more
+    # projection onto the final block pairs them up.
+    if X.shape[1]:
+        T = X.T @ (A @ X)
+        w, S = np.linalg.eigh(0.5 * (T + T.T))
+        lam, X = w[:k], X @ S
     return EigenResult(lam, X, max_iter, False, "lobpcg")
 
 

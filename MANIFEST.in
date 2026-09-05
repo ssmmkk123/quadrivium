@@ -3,6 +3,8 @@
 # a downstream packager can build and validate the release without a checkout.
 
 include CHANGELOG.md
+include PERFORMANCE.md
+recursive-include benchmarks *.json
 include CODE_OF_CONDUCT.md
 include CONTRIBUTING.md
 include SECURITY.md
@@ -30,8 +32,8 @@ recursive-exclude docs/assets/figures *
 
 # A compiled backend left in the working tree by a previous build must never
 # reach the sdist: it is one platform's binary, and shipping it would hand every
-# other platform an extension it cannot load. Wheels get the extension through
-# package-data at build time instead.
+# other platform an extension it cannot load. Wheels get only the artifact
+# reported by a successful Cargo invocation in setup.py.
 recursive-exclude quadrivium *.so *.pyd *.dylib
 
 # Never ship build, cache, or editor droppings.

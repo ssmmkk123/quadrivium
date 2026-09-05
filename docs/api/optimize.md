@@ -199,7 +199,7 @@ Quasi-Newton methods build curvature information from successive gradients, so t
 | `dfp` | `(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None, c2: float = 0.1)` | Davidon-Fletcher-Powell: the original quasi-Newton update. |
 | `sr1` | `(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None, r: float = 1e-08, c2: float = 0.1)` | Symmetric rank-one update. |
 | `broyden_class` | `(f, x0, grad_f=None, phi: float = 0.5, tol: float = 1e-10, max_iter: int = 1000, H0=None, c2: float = 0.1)` | Broyden family interpolating DFP (``phi=1``) and BFGS (``phi=0``). |
-| `lbfgs` | `(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1000)` | Limited-memory BFGS. |
+| `lbfgs` | `(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1000, ftol: float = 1e-12)` | Limited-memory BFGS. |
 | `quasi_newton` | `(f, x0, grad_f=None, method: str = 'bfgs', **kwargs)` | Dispatch to a quasi-Newton method by name. |
 | `newton_cg` | `(f, x0, grad_f=None, hess_vec=None, tol: float = 1e-08, max_iter: int = 500, cg_max: int = None, forcing: s, ...)` | Truncated (Hessian-free) Newton with conjugate-gradient inner solves. |
 | `lbfgsb` | `(f, x0, grad_f=None, bounds=None, m: int = 10, tol: float = 1e-08, max_iter: int = 1000)` | L-BFGS with simple bound constraints, by the projected-gradient approach. |

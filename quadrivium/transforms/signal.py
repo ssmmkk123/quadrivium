@@ -45,9 +45,22 @@ def convolve(a, b, mode: str = "full"):
     """
     a, b = as_vector(a), as_vector(b)
     n, m = a.size, b.size
+    if not n or not m:
+        raise ValueError("convolution inputs must be nonempty")
+    if mode not in ("full", "same", "valid"):
+        raise ValueError("mode must be 'full', 'same' or 'valid'")
     out = np.zeros(n + m - 1)
-    for i in range(n):
-        out[i : i + m] += a[i] * b
+    # Convolution is commutative: run the Python loop over the shorter input
+    # while NumPy handles the long slices (especially effective for FIRs).
+    short, long = (a, b) if n <= m else (b, a)
+    # Bound the multiplication workspace even for multi-million-sample data.
+    work = np.empty(min(long.size, 8192))
+    for i, sample in enumerate(short):
+        for start in range(0, long.size, work.size):
+            part = long[start : start + work.size]
+            buf = work[:part.size]
+            np.multiply(part, sample, out=buf)
+            out[i + start : i + start + part.size] += buf
     if mode == "full":
         return out
     if mode == "same":
@@ -68,6 +81,10 @@ def convolve_fft(a, b, mode: str = "full"):
     """
     a, b = as_vector(a), as_vector(b)
     n, m = a.size, b.size
+    if not n or not m:
+        raise ValueError("convolution inputs must be nonempty")
+    if mode not in ("full", "same", "valid"):
+        raise ValueError("mode must be 'full', 'same' or 'valid'")
     size = next_power_of_two(n + m - 1)
     A = fft(zero_pad(a, size))
     B = fft(zero_pad(b, size))
@@ -213,6 +230,39 @@ def window(n: int, kind: str = "hann", sym: bool = True, beta: float = 8.6,
     return w[:n]
 
 
+def _spectral_window(n, dt, win):
+    if n < 1:
+        raise ValueError("spectral estimation needs a nonempty signal")
+    if not np.isfinite(dt) or dt <= 0:
+        raise ValueError("dt must be finite and positive")
+    w = window(n, win)
+    energy = float(w @ w)
+    if not np.isfinite(energy) or energy <= 0:
+        raise ValueError("spectral window must have positive finite energy")
+    return w, dt / energy
+
+
+def _segment_psd(x, w, scale, detrend=True):
+    if detrend:
+        x = x - np.mean(x)
+    psd = np.abs(rfft(x * w))
+    np.square(psd, out=psd)
+    psd *= scale
+    if x.size % 2 == 0:
+        psd[1:-1] *= 2.0
+    else:
+        psd[1:] *= 2.0
+    return psd
+
+
+def _segment_step(segment, overlap):
+    if not isinstance(segment, (int, np.integer)) or segment < 1:
+        raise ValueError("segment must be a positive integer")
+    if not np.isfinite(overlap) or not 0 <= overlap < 1:
+        raise ValueError("overlap must be finite and in [0, 1)")
+    return max(int(segment * (1 - overlap)), 1)
+
+
 def power_spectrum(x, dt: float = 1.0, win: str = "hann", detrend: bool = True):
     """One-sided power spectral density estimate.
 
@@ -221,18 +271,10 @@ def power_spectrum(x, dt: float = 1.0, win: str = "hann", detrend: bool = True):
     """
     x = as_vector(x)
     n = x.size
-    if detrend:
-        x = x - np.mean(x)
-    w = window(n, win)
     # one-sided PSD scaling: integrating the result over frequency recovers
     # the signal variance (Parseval)
-    scale = dt / np.sum(w**2)
-    X = rfft(x * w)
-    psd = scale * np.abs(X) ** 2
-    if n % 2 == 0:
-        psd[1:-1] *= 2.0
-    else:
-        psd[1:] *= 2.0
+    w, scale = _spectral_window(n, dt, win)
+    psd = _segment_psd(x, w, scale, detrend)
     freqs = np.arange(psd.size) / (n * dt)
     return freqs, psd
 
@@ -249,15 +291,16 @@ def welch(x, segment: int = 256, overlap: float = 0.5, dt: float = 1.0,
     Trades frequency resolution for a large reduction in estimator variance.
     """
     x = as_vector(x)
-    step = max(int(segment * (1 - overlap)), 1)
-    segs = [x[i : i + segment] for i in range(0, x.size - segment + 1, step)]
-    if not segs:
+    step = _segment_step(segment, overlap)
+    starts = range(0, x.size - segment + 1, step)
+    if not starts:
         return power_spectrum(x, dt, win)
-    acc = None
-    for s in segs:
-        f, p = power_spectrum(s, dt, win)
-        acc = p if acc is None else acc + p
-    return f, acc / len(segs)
+    w, scale = _spectral_window(segment, dt, win)
+    acc = np.zeros(segment // 2 + 1)
+    for i in starts:
+        acc += _segment_psd(x[i : i + segment], w, scale)
+    acc /= len(starts)
+    return np.arange(acc.size) / (segment * dt), acc
 
 
 def spectrogram(x, segment: int = 128, overlap: float = 0.5, dt: float = 1.0,
@@ -265,16 +308,19 @@ def spectrogram(x, segment: int = 128, overlap: float = 0.5, dt: float = 1.0,
     """Short-time Fourier transform magnitudes.
 
     Returns ``(times, frequencies, S)`` with ``S`` of shape ``(n_freq, n_time)``.
+    A signal shorter than ``segment`` has no complete frames and returns an
+    empty time axis with ``S.shape == (segment // 2 + 1, 0)``.
     """
     x = as_vector(x)
-    step = max(int(segment * (1 - overlap)), 1)
-    starts = list(range(0, x.size - segment + 1, step))
-    cols = []
-    for i in starts:
-        f, p = power_spectrum(x[i : i + segment], dt, win)
-        cols.append(p)
-    times = (np.array(starts) + segment / 2) * dt
-    return times, f, np.array(cols).T
+    step = _segment_step(segment, overlap)
+    starts = range(0, x.size - segment + 1, step)
+    w, scale = _spectral_window(segment, dt, win)
+    spectrum = np.empty((segment // 2 + 1, len(starts)))
+    for j, i in enumerate(starts):
+        spectrum[:, j] = _segment_psd(x[i : i + segment], w, scale)
+    times = (np.arange(len(starts)) * step + segment / 2) * dt
+    f = np.arange(spectrum.shape[0]) / (segment * dt)
+    return times, f, spectrum
 
 
 def hilbert(x):
@@ -299,13 +345,26 @@ def resample(x, num: int):
     """Band-limited resampling by truncating or zero padding the spectrum."""
     x = as_vector(x)
     n = x.size
+    if not n:
+        raise ValueError("resampling needs a nonempty signal")
+    if not isinstance(num, (int, np.integer)) or num < 1:
+        raise ValueError("num must be a positive integer")
     X = fft(x)
     Y = np.zeros(num, dtype=complex)
     m = min(n, num)
-    half = m // 2
-    Y[: half + 1] = X[: half + 1]
-    if half > 0:
-        Y[-half:] = X[-half:]
+    positive = m // 2 + 1
+    negative = (m - 1) // 2
+    Y[:positive] = X[:positive]
+    if negative:
+        Y[-negative:] = X[-negative:]
+    # An even-length Nyquist bin represents both frequency signs. Split it
+    # when upsampling and merge the two bins when downsampling.
+    if m % 2 == 0:
+        if num > n:
+            Y[m // 2] *= 0.5
+            Y[-m // 2] = Y[m // 2]
+        elif num < n:
+            Y[m // 2] += X[-m // 2]
     return np.real(ifft(Y)) * (num / n)
 
 

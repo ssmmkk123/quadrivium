@@ -82,7 +82,8 @@ def wolfe(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 1e-4,
 
 
 def strong_wolfe(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 1e-4,
-                 c2: float = 0.9, alpha_max: float = 50.0, max_iter: int = 40):
+                 c2: float = 0.9, alpha_max: float = 50.0, max_iter: int = 40,
+                 phi0=None, dphi0=None):
     """Strong Wolfe line search with bracketing and an interpolating zoom.
 
     Guarantees ``|g(alpha)'d| <= c2 |g(0)'d|``, which keeps quasi-Newton
@@ -90,10 +91,22 @@ def strong_wolfe(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 1e-4,
     quadratic interpolation rather than bisection: for a quadratic objective
     that lands on the exact minimizer immediately, which is what preserves the
     conjugacy that nonlinear CG depends on.
+
+    Every caller in the package already holds ``f(x)`` and ``grad f(x)`` from
+    the step that chose ``direction``; pass them as ``phi0`` and ``dphi0`` to
+    skip re-deriving them. That matters most when ``grad_f`` is a finite
+    difference, where recomputing the gradient at ``x`` costs another ``2n``
+    evaluations of ``f`` per line search.
     """
     x, direction = as_vector(x), as_vector(direction)
-    phi0 = float(f(x))
-    dphi0 = float(as_vector(grad_f(x)) @ direction)
+    if phi0 is None:
+        phi0 = float(f(x))
+    else:
+        phi0 = float(phi0)
+    if dphi0 is None:
+        dphi0 = float(as_vector(grad_f(x)) @ direction)
+    else:
+        dphi0 = float(dphi0)
     if dphi0 >= 0:
         return 1e-8  # not a descent direction; take a negligible step
 
@@ -103,12 +116,14 @@ def strong_wolfe(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 1e-4,
     def dphi(a):
         return float(as_vector(grad_f(x + a * direction)) @ direction)
 
-    def zoom(lo, hi, phi_lo, dphi_lo):
+    def zoom(lo, hi, phi_lo, dphi_lo, phi_hi):
+        # phi_hi travels with the bracket: every value that lands on an
+        # endpoint was evaluated when the endpoint was chosen, so the interval
+        # never needs a second evaluation of its own endpoint.
         for _ in range(max_iter):
             dx = hi - lo
             if dx == 0.0:
                 return lo
-            phi_hi = phi(hi)
             # minimizer of the quadratic matching phi(lo), phi'(lo), phi(hi)
             denom = 2.0 * (phi_hi - phi_lo - dphi_lo * dx)
             a = lo - dphi_lo * dx * dx / denom if abs(denom) > 1e-300 else lo + 0.5 * dx
@@ -118,13 +133,13 @@ def strong_wolfe(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 1e-4,
                 a = lo + 0.5 * dx          # safeguard back to bisection
             pa = phi(a)
             if pa > phi0 + c1 * a * dphi0 or pa >= phi_lo:
-                hi = a
+                hi, phi_hi = a, pa
             else:
                 da = dphi(a)
                 if abs(da) <= -c2 * dphi0:
                     return a
                 if da * (hi - lo) >= 0:
-                    hi = lo
+                    hi, phi_hi = lo, phi_lo
                 lo, phi_lo, dphi_lo = a, pa, da
             if abs(hi - lo) < 1e-16 * max(1.0, abs(lo)):
                 return lo
@@ -135,12 +150,12 @@ def strong_wolfe(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 1e-4,
     for i in range(max_iter):
         pa = phi(a)
         if pa > phi0 + c1 * a * dphi0 or (i > 0 and pa >= phi_prev):
-            return zoom(a_prev, a, phi_prev, dphi_prev)
+            return zoom(a_prev, a, phi_prev, dphi_prev, pa)
         da = dphi(a)
         if abs(da) <= -c2 * dphi0:
             return a
         if da >= 0:
-            return zoom(a, a_prev, pa, da)
+            return zoom(a, a_prev, pa, da, phi_prev)
         a_prev, phi_prev, dphi_prev = a, pa, da
         a = min(2 * a, alpha_max)
     return a

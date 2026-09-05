@@ -46,16 +46,34 @@ def lagrange(x, y):
     """
     x, y = _check_nodes(x, y)
     n = x.size
+    # The node differences do not depend on the evaluation point, so the table
+    # is built once here instead of n times inside every basis function. The
+    # inner loop divides by these rather than multiplying by stored
+    # reciprocals: for closely spaced nodes the partial products reach the
+    # edge of the double range, and there the two are not the same number.
+    den = x[:, None] - x[None, :]
 
     def p(t):
         t = np.asarray(t, dtype=float)
-        total = np.zeros_like(t, dtype=float)
+        total = np.zeros(t.shape)
+        # Three scratch arrays the size of the query, reused by every one of
+        # the n^2 factors. The arithmetic is the textbook product; what the
+        # buffers remove is the three temporaries each factor would otherwise
+        # allocate, which is most of the cost at this size.
+        term = np.empty(t.shape)
+        shifted = np.empty(t.shape)
         for i in range(n):
-            term = np.full_like(t, y[i], dtype=float)
+            term.fill(y[i])
             for j in range(n):
                 if j != i:
-                    term = term * (t - x[j]) / (x[i] - x[j])
-            total = total + term
+                    # Numerator and denominator stay interleaved: each factor
+                    # is O(1), where accumulating the two products separately
+                    # would underflow one and overflow the other long before
+                    # their ratio left the double range.
+                    np.subtract(t, x[j], out=shifted)
+                    term *= shifted
+                    term /= den[i, j]
+            total += term
         return total[()] if total.ndim == 0 else total
 
     return p
@@ -80,9 +98,12 @@ def divided_difference_table(x, y):
     n = x.size
     table = np.zeros((n, n))
     table[:, 0] = y
+    # Column j depends only on column j-1, and every entry within a column is
+    # independent, so each column is one vector operation.
     for j in range(1, n):
-        for i in range(n - j):
-            table[i, j] = (table[i + 1, j - 1] - table[i, j - 1]) / (x[i + j] - x[i])
+        k = n - j
+        table[:k, j] = ((table[1:k + 1, j - 1] - table[:k, j - 1])
+                        / (x[j:j + k] - x[:k]))
     return table
 
 
@@ -172,13 +193,32 @@ def neville(x, y, t):
 
 
 def barycentric_weights(x):
-    """Barycentric weights ``w_j = 1 / prod_{k != j}(x_j - x_k)``."""
+    """Barycentric weights ``w_j = 1 / prod_{k != j}(x_j - x_k)``.
+
+    The differences are divided by the interval's logarithmic capacity before
+    the product is taken. Barycentric interpolation is invariant under a common
+    factor on the weights, so this changes no result -- but the raw product
+    runs like ``capacity^n``, which reaches 1e117 for 400 Chebyshev nodes on
+    ``[-1, 1]`` and overflows outright on ``[0, 1]``, where every weight comes
+    back ``inf`` and every interpolated value ``nan``. Scaling makes the same
+    problem behave the same way under any affine change of variable.
+    """
     x = as_vector(x)
     n = x.size
-    w = np.ones(n)
-    for j in range(n):
-        diff = x[j] - np.delete(x, j)
-        w[j] = 1.0 / np.prod(diff)
+    if n <= 1:
+        return np.ones(n)
+    span = float(x.max() - x.min())
+    scale = 0.25 * span if span > 0.0 and np.isfinite(span) else 1.0
+    w = np.empty(n)
+    # Blocked so the (nodes x nodes) difference table never has to exist all
+    # at once for a large node set.
+    block = max(1, (1 << 18) // n)
+    for start in range(0, n, block):
+        stop = min(start + block, n)
+        D = (x[start:stop, None] - x[None, :]) / scale
+        # The k == j factor is omitted from the product, not set to zero.
+        D[np.arange(stop - start), np.arange(start, stop)] = 1.0
+        w[start:stop] = 1.0 / np.prod(D, axis=1)
     return w
 
 
@@ -188,16 +228,28 @@ def barycentric(x, y, weights=None):
     w = barycentric_weights(x) if weights is None else as_vector(weights)
 
     def p(t):
-        t_arr = np.atleast_1d(np.asarray(t, dtype=float))
-        out = np.empty_like(t_arr)
-        for i, ti in enumerate(t_arr):
-            diff = ti - x
-            hit = np.flatnonzero(diff == 0.0)
-            if hit.size:
-                out[i] = y[hit[0]]
-                continue
-            terms = w / diff
-            out[i] = (terms @ y) / np.sum(terms)
+        t_arr = np.atleast_1d(np.asarray(t, dtype=float)).ravel()
+        out = np.empty(t_arr.size)
+        # All evaluation points share one formula, so they are handled as a
+        # block: the two barycentric sums become a matrix-vector product and a
+        # row sum. Blocking keeps the (points x nodes) table bounded no matter
+        # how many points are asked for at once.
+        block = max(1, (1 << 18) // max(x.size, 1))
+        for start in range(0, t_arr.size, block):
+            ts = t_arr[start:start + block]
+            diff = ts[:, None] - x
+            with np.errstate(divide="ignore", invalid="ignore"):
+                terms = w / diff
+                chunk = (terms @ y) / terms.sum(axis=1)
+            # A point sitting exactly on a node divides by zero and shows up
+            # as a non-finite result; its limit is that node's value. Testing
+            # the n results is O(points), where scanning the difference table
+            # for exact zeros would be O(points x nodes).
+            bad = np.flatnonzero(~np.isfinite(chunk))
+            for i in bad:
+                hit = np.flatnonzero(diff[i] == 0.0)
+                chunk[i] = y[hit[0]] if hit.size else chunk[i]
+            out[start:start + block] = chunk
         return out[0] if np.ndim(t) == 0 else out.reshape(np.shape(t))
 
     p.weights = w

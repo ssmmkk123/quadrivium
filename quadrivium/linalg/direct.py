@@ -194,9 +194,13 @@ def gauss_jordan(A, b=None):
         if p != k:
             M[[k, p]] = M[[p, k]]
         M[k] /= M[k, k]
-        for i in range(n):
-            if i != k and M[i, k] != 0.0:
-                M[i] -= M[i, k] * M[k]
+        # Eliminate column k from every other row at once. Row by row this is
+        # the same arithmetic -- a row with a zero in column k subtracts zero
+        # either way -- but as one rank-1 update it is a single BLAS call
+        # instead of n Python iterations.
+        col = M[:, k].copy()
+        col[k] = 0.0
+        M -= np.outer(col, M[k])
     return M[:, n:] if b is None else M[:, n]
 
 
@@ -296,12 +300,13 @@ def doolittle(A):
     n = A.shape[0]
     L, U = np.eye(n), np.zeros((n, n))
     for i in range(n):
-        for j in range(i, n):
-            U[i, j] = A[i, j] - L[i, :i] @ U[:i, j]
-        for j in range(i + 1, n):
+        # Both inner loops are inner products against the already-computed
+        # leading block, so each becomes one matrix-vector product.
+        U[i, i:] = A[i, i:] - L[i, :i] @ U[:i, i:]
+        if i + 1 < n:
             if U[i, i] == 0.0:
                 raise SingularMatrixError(f"zero pivot at step {i}")
-            L[j, i] = (A[j, i] - L[j, :i] @ U[:i, i]) / U[i, i]
+            L[i + 1:, i] = (A[i + 1:, i] - L[i + 1:, :i] @ U[:i, i]) / U[i, i]
     return L, U
 
 
@@ -311,12 +316,11 @@ def crout(A):
     n = A.shape[0]
     L, U = np.zeros((n, n)), np.eye(n)
     for j in range(n):
-        for i in range(j, n):
-            L[i, j] = A[i, j] - L[i, :j] @ U[:j, j]
+        L[j:, j] = A[j:, j] - L[j:, :j] @ U[:j, j]
         if L[j, j] == 0.0:
             raise SingularMatrixError(f"zero pivot at step {j}")
-        for i in range(j + 1, n):
-            U[j, i] = (A[j, i] - L[j, :j] @ U[:j, i]) / L[j, j]
+        if j + 1 < n:
+            U[j, j + 1:] = (A[j, j + 1:] - L[j, :j] @ U[:j, j + 1:]) / L[j, j]
     return L, U
 
 
@@ -369,11 +373,15 @@ def ldl_decomposition(A):
     L = np.eye(n)
     d = np.zeros(n)
     for j in range(n):
-        d[j] = A[j, j] - np.sum(L[j, :j] ** 2 * d[:j])
+        # w = L[j, :j] * d[:j] appears in both the pivot and every entry of
+        # the column below it, so it is formed once and the column becomes a
+        # single matrix-vector product.
+        w = L[j, :j] * d[:j]
+        d[j] = A[j, j] - L[j, :j] @ w
         if d[j] == 0.0:
             raise SingularMatrixError(f"zero pivot at step {j}")
-        for i in range(j + 1, n):
-            L[i, j] = (A[i, j] - np.sum(L[i, :j] * L[j, :j] * d[:j])) / d[j]
+        if j + 1 < n:
+            L[j + 1:, j] = (A[j + 1:, j] - L[j + 1:, :j] @ w) / d[j]
     return L, d
 
 
@@ -395,10 +403,11 @@ def gram_schmidt_qr(A):
     Q = np.zeros((m, n))
     R = np.zeros((n, n))
     for j in range(n):
-        v = A[:, j].copy()
-        for i in range(j):
-            R[i, j] = Q[:, i] @ A[:, j]
-            v -= R[i, j] * Q[:, i]
+        # Classical Gram-Schmidt projects against the *original* column, so
+        # every coefficient is known before any subtraction: the projection is
+        # one matrix-vector product and the subtraction one more.
+        R[:j, j] = Q[:, :j].T @ A[:, j]
+        v = A[:, j] - Q[:, :j] @ R[:j, j]
         R[j, j] = np.linalg.norm(v)
         Q[:, j] = v / R[j, j] if R[j, j] > 1e-300 else 0.0
     return Q, R
@@ -414,9 +423,12 @@ def modified_gram_schmidt_qr(A):
     for j in range(n):
         R[j, j] = np.linalg.norm(V[:, j])
         Q[:, j] = V[:, j] / R[j, j] if R[j, j] > 1e-300 else 0.0
-        for k in range(j + 1, n):
-            R[j, k] = Q[:, j] @ V[:, k]
-            V[:, k] -= R[j, k] * Q[:, j]
+        # The remaining columns are orthogonalized against q_j independently of
+        # one another, so the whole trailing block is one rank-1 update. This
+        # is still MGS -- the update uses the *current* V, re-read at each j.
+        if j + 1 < n:
+            R[j, j + 1:] = Q[:, j] @ V[:, j + 1:]
+            V[:, j + 1:] -= np.outer(Q[:, j], R[j, j + 1:])
     return Q, R
 
 
@@ -467,6 +479,9 @@ def givens_qr(A):
     """QR by Givens rotations; ideal for sparse or nearly-triangular matrices."""
     A = as_matrix(A)
     m, n = A.shape
+    fast = _accel.kernel("givens_qr")
+    if fast is not None and m and n:
+        return fast(np.ascontiguousarray(A, dtype=float))
     R = A.astype(float).copy()
     Q = np.eye(m)
     for j in range(n):
@@ -553,15 +568,34 @@ def thomas(a, b, c, d) -> np.ndarray:
 
     ``a`` sub-diagonal (length n-1 or n with a[0] ignored), ``b`` diagonal,
     ``c`` super-diagonal, ``d`` right-hand side. Runs in O(n).
+
+    ``d`` may also be a 2-D array holding one right-hand side per *column*, in
+    which case the returned array has the same shape. The elimination
+    coefficients depend only on the matrix, so a whole block of systems costs
+    barely more than one -- which is what alternating-direction and
+    line-relaxation schemes need, where the same tridiagonal matrix is solved
+    once per grid line.
     """
-    b = as_vector(b).copy()
-    d = as_vector(d).copy()
+    if np.ndim(d) == 2:
+        return _thomas_many(a, b, c, d)
+    b = as_vector(b)
+    d = as_vector(d)
     n = b.size
     a = as_vector(a)
     c = as_vector(c)
     a = a[-(n - 1) :] if a.size >= n else a
     c = c[: n - 1] if c.size >= n else c
-    cp = np.zeros(n)
+
+    fast = _accel.kernel("thomas")
+    if fast is not None and n:
+        try:
+            return fast(a, b, c, d)
+        except RuntimeError as exc:
+            raise (_accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
+                   or exc) from None
+
+    b = b.copy()
+    d = d.copy()
     for i in range(1, n):
         if b[i - 1] == 0.0:
             raise SingularMatrixError("zero pivot in Thomas algorithm")
@@ -574,8 +608,52 @@ def thomas(a, b, c, d) -> np.ndarray:
     x[n - 1] = d[n - 1] / b[n - 1]
     for i in range(n - 2, -1, -1):
         x[i] = (d[i] - c[i] * x[i + 1]) / b[i]
-    del cp
     return x
+
+
+def _thomas_many(a, b, c, D):
+    """Solve one tridiagonal system against every column of ``D``."""
+    b = as_vector(b)
+    n = b.size
+    a = as_vector(a)
+    c = as_vector(c)
+    a = a[-(n - 1):] if a.size >= n else a
+    c = c[: n - 1] if c.size >= n else c
+    D = np.asarray(D, dtype=float)
+    if D.shape[0] != n:
+        raise DimensionError("right-hand side must have one row per diagonal entry")
+    if not n or not D.shape[1]:
+        return np.zeros(D.shape)
+
+    fast = _accel.kernel("thomas_batch")
+    if fast is not None:
+        # The kernel solves in place, so it gets its own buffer: an
+        # `ascontiguousarray` of an already-contiguous input is the caller's
+        # array, and writing through it would destroy their right-hand side.
+        out = np.array(D, dtype=float, copy=True, order="C")
+        try:
+            fast(a, b, c, out)
+        except RuntimeError as exc:
+            raise (_accel.translate_error(exc, SingularMatrixError, SingularMatrixError)
+                   or exc) from None
+        return out
+
+    # Same recurrence as the single-system routine, with the right-hand side
+    # step applied to every column at once.
+    diag = b.astype(float, copy=True)
+    X = np.array(D, dtype=float, copy=True)
+    for i in range(1, n):
+        if diag[i - 1] == 0.0:
+            raise SingularMatrixError("zero pivot in Thomas algorithm")
+        m = a[i - 1] / diag[i - 1]
+        diag[i] -= m * c[i - 1]
+        X[i] -= m * X[i - 1]
+    if diag[n - 1] == 0.0:
+        raise SingularMatrixError("zero pivot in Thomas algorithm")
+    X[n - 1] /= diag[n - 1]
+    for i in range(n - 2, -1, -1):
+        X[i] = (X[i] - c[i] * X[i + 1]) / diag[i]
+    return X
 
 
 def banded_solve(A, b, kl: int, ku: int) -> np.ndarray:

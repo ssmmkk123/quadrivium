@@ -147,14 +147,16 @@ def middle_square(seed: int, n: int, digits: int = 4):
 
 def van_der_corput(n: int, base: int = 2):
     """First ``n`` elements of the van der Corput low-discrepancy sequence."""
-    out = np.empty(n)
-    for i in range(n):
-        q, bk, k = 0.0, 1.0 / base, i + 1
-        while k:
-            k, rem = divmod(k, base)
-            q += rem * bk
-            bk /= base
-        out[i] = q
+    # One base-b digit per pass over the whole index range, rather than one
+    # index at a time: the digit count is log_b(n), so this is a handful of
+    # vector operations however long the sequence is.
+    out = np.zeros(n)
+    k = np.arange(1, n + 1, dtype=np.int64)
+    weight = 1.0 / base
+    while k.any():
+        k, rem = np.divmod(k, base)
+        out += rem * weight
+        weight /= base
     return out
 
 

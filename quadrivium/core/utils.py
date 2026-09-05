@@ -39,6 +39,12 @@ __all__ = [
 EPS = float(np.finfo(float).eps)
 SQRT_EPS = float(np.sqrt(EPS))
 
+# Bound once: `as_vector` compares against it on every call.
+_F64 = np.dtype(np.float64)
+
+# Distinguishes "no argument given" from a legitimate ``None`` argument.
+_UNSET = object()
+
 
 def machine_epsilon(dtype=float) -> float:
     """Smallest ``e`` with ``1 + e != 1`` in the given floating type."""
@@ -110,7 +116,17 @@ def relative_error(approx, exact) -> float:
 
 
 def as_vector(x) -> np.ndarray:
-    """Coerce to a 1-D float array (scalars become length-1 arrays)."""
+    """Coerce to a 1-D float array (scalars become length-1 arrays).
+
+    This runs in the inner loop of every iterative solver in the package, so
+    the overwhelmingly common case -- an argument that is already a contiguous
+    1-D ``float64`` array -- returns immediately. The general path is the
+    original coercion; both return a view when one is possible and a copy when
+    the input cannot be viewed as contiguous 1-D, so aliasing is unchanged.
+    """
+    if (x.__class__ is np.ndarray and x.ndim == 1 and x.dtype == _F64
+            and x.flags.c_contiguous):
+        return x
     return np.atleast_1d(np.asarray(x, dtype=float)).ravel()
 
 
@@ -177,9 +193,17 @@ class CountedFunction:
         self.f = f
         self.calls = 0
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, x=_UNSET, *args, **kwargs):
+        # Single-argument calls dominate -- every objective and every integrand
+        # -- and skipping the re-packing there is worth the extra branch. The
+        # sentinel keeps keyword-only and zero-argument calls working, since
+        # this class is part of the public API.
         self.calls += 1
-        return self.f(*args, **kwargs)
+        if args or kwargs or x is _UNSET:
+            if x is _UNSET:
+                return self.f(*args, **kwargs)
+            return self.f(x, *args, **kwargs)
+        return self.f(x)
 
     def reset(self) -> None:
         self.calls = 0

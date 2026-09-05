@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Callable, Optional
 
 __all__ = ["available", "backend", "version", "disabled", "enabled", "kernel",
@@ -37,19 +38,19 @@ try:  # pragma: no cover - depends on how the package was installed
 except Exception:  # noqa: BLE001 - any import failure means "no fast path"
     _rs = None
 
-# Runtime switch, independent of the environment variable, so callers can flip
-# backends inside a single process.
-_active = _rs is not None
+# A context-local switch keeps nested calls, threads and asyncio tasks from
+# changing one another's backend or restoring a stale process-wide value.
+_active = ContextVar("quadrivium_accel_active", default=_rs is not None)
 
 
 def available() -> bool:
     """True when the compiled backend is importable *and* currently enabled."""
-    return _active
+    return _active.get()
 
 
 def backend() -> str:
     """``'rust'`` or ``'python'`` -- whichever will actually run."""
-    return "rust" if _active else "python"
+    return "rust" if available() else "python"
 
 
 def version() -> Optional[str]:
@@ -59,26 +60,22 @@ def version() -> Optional[str]:
 
 @contextmanager
 def disabled():
-    """Context manager forcing the pure-Python path for the enclosed block."""
-    global _active
-    prev = _active
-    _active = False
+    """Force Python in this context, independently of other threads/tasks."""
+    token = _active.set(False)
     try:
         yield
     finally:
-        _active = prev
+        _active.reset(token)
 
 
 @contextmanager
 def enabled():
-    """Context manager re-enabling the compiled path, if it is importable."""
-    global _active
-    prev = _active
-    _active = _rs is not None
+    """Enable the compiled path in this context, if it is importable."""
+    token = _active.set(_rs is not None)
     try:
         yield
     finally:
-        _active = prev
+        _active.reset(token)
 
 
 def kernel(name: str) -> Optional[Callable]:
@@ -88,7 +85,7 @@ def kernel(name: str) -> Optional[Callable]:
     which keeps the fallback visible at the call site rather than hidden behind
     a dispatcher.
     """
-    if not _active or _rs is None:
+    if not _active.get() or _rs is None:
         return None
     return getattr(_rs, name, None)
 

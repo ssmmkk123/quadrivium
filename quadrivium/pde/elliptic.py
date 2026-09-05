@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
+from .. import _accel
+
 from ..core.types import PDESolution
 from ..core.utils import as_vector
+from ..linalg.direct import block_tridiagonal_solve
 
 __all__ = [
     "poisson_2d_direct",
@@ -115,19 +118,30 @@ def poisson_2d_direct(f, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0,
             val = val + hf * hf / 12.0 * lap_f
         return val
 
-    A = np.zeros((mi * mj, mi * mj))
+    # Ordering the unknowns with i fastest makes the system block-tridiagonal:
+    # every stencil offset moves j by at most one, so a node in row j couples
+    # only to rows j-1, j and j+1. Storing those blocks rather than the whole
+    # matrix is O(N * nx) instead of O(N^2) -- 8 MB rather than 97 MB on a
+    # 60x60 grid -- and the block solve is O(mj * mi^3) rather than O(N^3).
+    B = [np.zeros((mi, mi)) for _ in range(mj)]
+    A_sub = [np.zeros((mi, mi)) for _ in range(max(mj - 1, 0))]
+    C_sup = [np.zeros((mi, mi)) for _ in range(max(mj - 1, 0))]
     b = np.zeros(mi * mj)
     for j in range(1, ny):
+        jb = j - 1
         for i in range(1, nx):
-            k = (j - 1) * mi + (i - 1)
+            k = jb * mi + (i - 1)
             b[k] = rhs_value(i, j)
             for di, dj, w in weights:
                 ii, jj = i + di, j + dj
                 if 1 <= ii <= nx - 1 and 1 <= jj <= ny - 1:
-                    A[k, (jj - 1) * mi + (ii - 1)] += w
+                    block = B[jb] if dj == 0 else (A_sub[jb - 1] if dj < 0
+                                                   else C_sup[jb])
+                    block[i - 1, ii - 1] += w
                 else:
                     b[k] -= w * bc_fun(x[ii], y[jj])   # known boundary value
-    sol = np.linalg.solve(A, b)
+    sol = block_tridiagonal_solve(
+        A_sub, B, C_sup, [b[jb * mi : (jb + 1) * mi] for jb in range(mj)])
     U = np.zeros((nx + 1, ny + 1))
     for j in range(1, ny):
         for i in range(1, nx):
@@ -190,20 +204,40 @@ def poisson_2d_iterative(f, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0,
                 U[i + 1, j + 1] = res.x[j * (nx - 1) + i]
         return PDESolution(U, (x, y), None, "poisson_cg", res.iterations,
                            res.converged, res.residuals)
-    for it in range(1, max_iter + 1):
-        U_old = U.copy()
-        if method == "jacobi":
-            U[1:-1, 1:-1] = ((U_old[2:, 1:-1] + U_old[:-2, 1:-1]
-                              + beta2 * (U_old[1:-1, 2:] + U_old[1:-1, :-2])
-                              - dx**2 * F[1:-1, 1:-1]) / denom)
-        else:
-            w = 1.0 if method == "gauss_seidel" else omega
+    if method != "jacobi":
+        # Lexicographic Gauss-Seidel and SOR read values written earlier in the
+        # same sweep, so neither can be expressed as an array update; the
+        # reference below is a point-by-point loop. The compiled kernel runs
+        # the whole iteration, not one sweep, because a converging solve is
+        # tens of thousands of sweeps.
+        w = 1.0 if method == "gauss_seidel" else omega
+        fast = _accel.kernel("sor_poisson")
+        if fast is not None:
+            U = np.ascontiguousarray(U)
+            it, conv, res = fast(U, np.ascontiguousarray(F), beta2, dx**2, w,
+                                 tol, max_iter)
+            return PDESolution(U, (x, y), None, f"poisson_{method}", it, conv,
+                               list(res))
+        for it in range(1, max_iter + 1):
+            U_old = U.copy()
             for i in range(1, nx):
                 for j in range(1, ny):
                     new = ((U[i + 1, j] + U[i - 1, j]
                             + beta2 * (U[i, j + 1] + U[i, j - 1])
                             - dx**2 * F[i, j]) / denom)
                     U[i, j] = (1 - w) * U[i, j] + w * new
+            change = np.max(np.abs(U - U_old))
+            residuals.append(change)
+            if change < tol:
+                return PDESolution(U, (x, y), None, f"poisson_{method}", it, True,
+                                   residuals)
+        return PDESolution(U, (x, y), None, f"poisson_{method}", max_iter, False,
+                           residuals)
+    for it in range(1, max_iter + 1):
+        U_old = U.copy()
+        U[1:-1, 1:-1] = ((U_old[2:, 1:-1] + U_old[:-2, 1:-1]
+                          + beta2 * (U_old[1:-1, 2:] + U_old[1:-1, :-2])
+                          - dx**2 * F[1:-1, 1:-1]) / denom)
         change = np.max(np.abs(U - U_old))
         residuals.append(change)
         if change < tol:

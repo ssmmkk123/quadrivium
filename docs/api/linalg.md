@@ -211,4 +211,4 @@ Implements COO / CSR / CSC / DIA storage with the operations the iterative solve
 | `sparse_solve` | `(A, b, method: str = 'cg', **kwargs)` | Solve a sparse system with a matrix-free Krylov method. |
 | `reverse_cuthill_mckee` | `(A)` | Reverse Cuthill-McKee ordering; returns a permutation reducing bandwidth. |
 | `bandwidth` | `(A) -> tuple` | Lower and upper bandwidths of a (dense or sparse) matrix. |
-| `sparsity` | `(A) -> float` | Fraction of entries that are exactly zero. |
+| `sparsity` | `(A) -> float` | Fraction of entries that are exactly zero (one for an empty matrix). |

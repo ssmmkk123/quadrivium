@@ -885,16 +885,16 @@ L 418.695767 116.440176
    </g>
    <g id="line2d_35">
     <path d="M 63.604858 201.986981 
-L 99.113949 196.98025 
-L 134.62304 188.539959 
-L 170.132131 176.905823 
-L 205.641222 169.221666 
-L 241.150313 162.760102 
-L 276.659403 150.578468 
-L 312.168494 145.207079 
-L 347.677585 139.997667 
-L 383.186676 142.968985 
-L 418.695767 122.106088 
+L 99.113949 193.453273 
+L 134.62304 188.159388 
+L 170.132131 177.800494 
+L 205.641222 171.173759 
+L 241.150313 161.196062 
+L 276.659403 152.08632 
+L 312.168494 141.724789 
+L 347.677585 135.509152 
+L 383.186676 126.705938 
+L 418.695767 121.327298 
 " clip-path="url(#pa8348857a7)" style="fill: none; stroke: #1baf7a; stroke-width: 2; stroke-linecap: round"/>
     <defs>
      <path id="m83df963d9f" d="M -2 2 
@@ -906,16 +906,16 @@ z
     </defs>
     <g clip-path="url(#pa8348857a7)">
      <use xlink:href="#m83df963d9f" x="63.604858" y="201.986981" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="99.113949" y="196.98025" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="134.62304" y="188.539959" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="170.132131" y="176.905823" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="205.641222" y="169.221666" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="241.150313" y="162.760102" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="276.659403" y="150.578468" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="312.168494" y="145.207079" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="347.677585" y="139.997667" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="383.186676" y="142.968985" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
-     <use xlink:href="#m83df963d9f" x="418.695767" y="122.106088" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="99.113949" y="193.453273" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="134.62304" y="188.159388" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="170.132131" y="177.800494" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="205.641222" y="171.173759" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="241.150313" y="161.196062" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="276.659403" y="152.08632" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="312.168494" y="141.724789" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="347.677585" y="135.509152" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="383.186676" y="126.705938" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
+     <use xlink:href="#m83df963d9f" x="418.695767" y="121.327298" style="fill: #1baf7a; stroke: #1baf7a; stroke-linejoin: miter"/>
     </g>
    </g>
    <g id="patch_3">
@@ -929,8 +929,8 @@ L 436.450313 219.502437
 " style="fill: none; stroke: #c3c2b7; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
    </g>
    <g id="patch_5">
-    <path d="M 198.082783 68.407836 
-Q 306.933356 94.902584 415.783929 121.397332 
+    <path d="M 198.595995 68.400599 
+Q 307.186632 94.513047 415.777269 120.625496 
 " style="fill: none; stroke: #898781; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="text_19">

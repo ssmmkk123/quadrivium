@@ -17,8 +17,10 @@ import numpy as np
 from quadrivium import _accel
 from quadrivium.core.exceptions import SingularMatrixError
 from quadrivium.linalg import (back_substitution, cholesky, forward_substitution,
-                               householder_qr, jacobi_eigen, plu_decomposition, solve)
+                               householder_qr, jacobi_eigen, plu_decomposition,
+                               qr_algorithm, solve, thomas)
 from quadrivium.ode import solve_ivp
+from quadrivium.pde import lid_driven_cavity, poisson_2d_iterative
 from quadrivium.special import erf, erfc, gamma, log_gamma
 from quadrivium.transforms import fft, ifft
 
@@ -142,6 +144,105 @@ class TestLinalgEquivalence(unittest.TestCase):
                 )
                 v, w = fast.eigenvectors, fast.eigenvalues
                 np.testing.assert_allclose(a @ v, v * w, rtol=1e-8, atol=1e-10)
+
+
+@skip_no_accel
+class TestGridSolverEquivalence(unittest.TestCase):
+    """Kernels that run a whole iteration rather than a single step.
+
+    These do not merely have to land on the same answer: they drive their own
+    convergence tests, so a backend that took a different number of sweeps
+    would be reporting different diagnostics for the same problem. Iteration
+    counts are therefore compared alongside the fields.
+    """
+
+    def test_qr_algorithm_spectrum_and_vectors(self):
+        rng = np.random.default_rng(5)
+        for n in (2, 3, 9, 25):
+            with self.subTest(n=n):
+                a = rng.standard_normal((n, n))
+                a = a + a.T
+                slow, fast = both_backends(lambda: qr_algorithm(a))
+                self.assertEqual(fast.iterations, slow.iterations)
+                self.assertEqual(fast.converged, slow.converged)
+                np.testing.assert_allclose(fast.eigenvalues, slow.eigenvalues,
+                                           rtol=1e-9, atol=1e-11)
+
+    def test_qr_algorithm_accumulates_the_same_basis(self):
+        rng = np.random.default_rng(6)
+        a = rng.standard_normal((8, 8))
+        a = a + a.T
+        slow, fast = both_backends(lambda: qr_algorithm(a, compute_vectors=True))
+        np.testing.assert_allclose(fast.eigenvectors, slow.eigenvectors,
+                                   rtol=1e-9, atol=1e-11)
+        v = fast.eigenvectors
+        # V stays orthogonal, and diagonalizes A when the iteration converged.
+        np.testing.assert_allclose(v.T @ v, np.eye(8), rtol=1e-9, atol=1e-11)
+        if fast.converged:
+            np.testing.assert_allclose(a @ v, v * fast.eigenvalues,
+                                       rtol=1e-7, atol=1e-9)
+
+    def test_sor_and_gauss_seidel_sweeps_agree(self):
+        src = lambda x, y: np.sin(np.pi * x) * y
+        for method in ("sor", "gauss_seidel"):
+            for n in (5, 12):
+                with self.subTest(method=method, n=n):
+                    slow, fast = both_backends(
+                        lambda: poisson_2d_iterative(src, (0, 1), (0, 1), nx=n, ny=n,
+                                                     method=method))
+                    self.assertEqual(fast.iterations, slow.iterations)
+                    self.assertEqual(fast.converged, slow.converged)
+                    np.testing.assert_allclose(fast.u, slow.u, rtol=1e-9, atol=1e-11)
+
+    def test_jacobi_poisson_has_no_kernel_and_still_matches(self):
+        # The Jacobi branch is array-expressible and deliberately has no
+        # compiled twin; enabling the backend must not perturb it.
+        src = lambda x, y: 1.0
+        slow, fast = both_backends(
+            lambda: poisson_2d_iterative(src, (0, 1), (0, 1), nx=8, ny=8,
+                                         method="jacobi", max_iter=200))
+        np.testing.assert_allclose(fast.u, slow.u, rtol=1e-12, atol=1e-14)
+
+    def test_thomas_matches_and_stays_exact(self):
+        rng = np.random.default_rng(8)
+        for n in (1, 2, 3, 64, 2000):
+            with self.subTest(n=n):
+                # Diagonally dominant, so the pivot-free recurrence is stable.
+                diag = rng.uniform(3.0, 4.0, n)
+                sub = rng.uniform(-1.0, 1.0, max(n - 1, 0))
+                sup = rng.uniform(-1.0, 1.0, max(n - 1, 0))
+                rhs = rng.standard_normal(n)
+                slow, fast = both_backends(lambda: thomas(sub, diag, sup, rhs))
+                np.testing.assert_array_equal(fast, slow)
+                a = np.diag(diag)
+                if n > 1:
+                    a += np.diag(sub, -1) + np.diag(sup, 1)
+                np.testing.assert_allclose(a @ fast, rhs, rtol=1e-9, atol=1e-11)
+
+    def test_thomas_zero_pivot_raises_on_both_paths(self):
+        sub, diag = np.array([1.0]), np.array([0.0, 1.0])
+        sup, rhs = np.array([1.0]), np.array([1.0, 1.0])
+        with _accel.disabled():
+            self.assertRaises(SingularMatrixError, thomas, sub, diag, sup, rhs)
+        self.assertRaises(SingularMatrixError, thomas, sub, diag, sup, rhs)
+
+    def test_thomas_does_not_consume_its_inputs(self):
+        # The kernel copies before eliminating; a caller reusing the arrays
+        # (every implicit PDE step does) must see them unchanged.
+        diag = np.array([4.0, 4.0, 4.0])
+        sub, sup, rhs = np.array([1.0, 1.0]), np.array([1.0, 1.0]), np.array([1.0, 2.0, 3.0])
+        keep = [v.copy() for v in (sub, diag, sup, rhs)]
+        thomas(sub, diag, sup, rhs)
+        for got, want in zip((sub, diag, sup, rhs), keep):
+            np.testing.assert_array_equal(got, want)
+
+    def test_lid_driven_cavity_fields_agree(self):
+        for n, re in ((7, 10.0), (13, 100.0)):
+            with self.subTest(n=n, re=re):
+                slow, fast = both_backends(
+                    lambda: lid_driven_cavity(re=re, n=n, max_iter=300))
+                for got, want in zip(fast, slow):
+                    np.testing.assert_allclose(got, want, rtol=1e-9, atol=1e-11)
 
 
 @skip_no_accel

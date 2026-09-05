@@ -1041,7 +1041,6 @@ L 105.370313 109.862923
 L 107.230313 149.556897 
 L 109.090313 191.567558 
 L 110.950313 219.502438 
-L 112.810313 219.502438 
 " clip-path="url(#pa8348857a7)" style="fill: none; stroke: #3987e5; stroke-width: 2; stroke-linecap: round"/>
    </g>
    <g id="line2d_34">
@@ -1655,7 +1654,7 @@ L 268.876563 29.597187
 " style="fill: none; stroke: #3987e5; stroke-width: 2; stroke-linecap: round"/>
     </g>
     <g id="text_20">
-     <!-- BFGS (quasi-Newton) — 36 iterations -->
+     <!-- BFGS (quasi-Newton) — 35 iterations -->
      <g style="fill: #c3c2b7" transform="translate(273.676563 32.397187) scale(0.08 -0.08)">
       <defs>
        <path id="DejaVuSans-42" d="M 1259 2228 
@@ -1852,7 +1851,7 @@ z
       <use xlink:href="#DejaVuSans-2014" transform="translate(1094.677734 0)"/>
       <use xlink:href="#DejaVuSans-20" transform="translate(1194.677734 0)"/>
       <use xlink:href="#DejaVuSans-33" transform="translate(1226.464844 0)"/>
-      <use xlink:href="#DejaVuSans-36" transform="translate(1290.087891 0)"/>
+      <use xlink:href="#DejaVuSans-35" transform="translate(1290.087891 0)"/>
       <use xlink:href="#DejaVuSans-20" transform="translate(1353.710938 0)"/>
       <use xlink:href="#DejaVuSans-69" transform="translate(1385.498047 0)"/>
       <use xlink:href="#DejaVuSans-74" transform="translate(1413.28125 0)"/>

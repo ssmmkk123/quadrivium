@@ -38,6 +38,23 @@ def _stalled(alpha, x_new, x):
     return alpha <= 1e-16 or np.all(x_new == x)
 
 
+def _at_precision_floor(f_old, f_new, ftol):
+    """True when successive objective values differ by less than ``ftol``.
+
+    A gradient tolerance alone is not a reachable stopping test when the
+    gradient comes from finite differences: central differences resolve the
+    gradient to roughly ``eps**(2/3)`` times the scale of ``f``, so a request
+    like ``tol=1e-10`` sits *below* the noise floor and can never be met. The
+    iterates then sit on the minimizer while the loop runs to ``max_iter`` and
+    reports failure -- the answer is right and the status is wrong.
+
+    Testing the objective instead detects that state directly: once a full
+    quasi-Newton step no longer changes ``f`` to relative precision ``ftol``,
+    no further progress is available in this arithmetic.
+    """
+    return abs(f_new - f_old) <= ftol * max(1.0, abs(f_old), abs(f_new))
+
+
 def newton_method(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10,
                   max_iter: int = 200, line_search: bool = True):
     """Newton's method: solve ``H p = -g`` each step. Quadratic convergence."""
@@ -109,36 +126,47 @@ def modified_newton(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10,
 
 
 def _quasi_newton_driver(f, x0, grad_f, update, name, tol, max_iter, H0=None,
-                         c2: float = 0.9):
+                         c2: float = 0.9, ftol: float = 1e-12):
     """Shared loop for the inverse-Hessian quasi-Newton updates."""
     fc, g = _prep(f, grad_f)
     x = as_vector(x0).copy()
     n = x.size
     H = np.eye(n) if H0 is None else np.array(H0, dtype=float)
     gk = g(x)
+    fk = float(fc(x))
     history = [x.copy()]
     for k in range(1, max_iter + 1):
         if np.linalg.norm(gk) < tol:
-            return OptimizeResult(x, float(fc(x)), gk, H, k - 1, True, fc.calls, k,
+            return OptimizeResult(x, fk, gk, H, k - 1, True, fc.calls, k,
                                   name, history, "converged")
         p = -H @ gk
         if gk @ p >= 0:
             H = np.eye(n)      # reset if the approximation lost definiteness
             p = -gk
-        alpha = strong_wolfe(fc, g, x, p, alpha0=1.0, c2=c2)
+        # f(x) and grad f(x) are already in hand; handing them to the line
+        # search saves a redundant gradient (2n evaluations of f when the
+        # gradient is a finite difference) on every iteration.
+        alpha = strong_wolfe(fc, g, x, p, alpha0=1.0, c2=c2,
+                             phi0=fk, dphi0=float(gk @ p))
         x_new = x + alpha * p
         if _stalled(alpha, x_new, x):
-            return OptimizeResult(x, float(fc(x)), gk, H, k, np.linalg.norm(gk) < tol,
+            return OptimizeResult(x, fk, gk, H, k, np.linalg.norm(gk) < tol,
                                   fc.calls, k, name, history,
                                   "line search stalled: further progress is limited "
                                   "by the floating-point precision of f")
+        f_new = float(fc(x_new))
+        if _at_precision_floor(fk, f_new, ftol):
+            x, fk = x_new, f_new
+            history.append(x.copy())
+            return OptimizeResult(x, fk, g(x), H, k, True, fc.calls, k, name,
+                                  history, "converged: objective change below ftol")
         g_new = g(x_new)
         s = x_new - x
         y = g_new - gk
         H = update(H, s, y)
-        x, gk = x_new, g_new
+        x, gk, fk = x_new, g_new, f_new
         history.append(x.copy())
-    return OptimizeResult(x, float(fc(x)), gk, H, max_iter, False, fc.calls,
+    return OptimizeResult(x, fk, gk, H, max_iter, False, fc.calls,
                           max_iter, name, history, "maximum iterations reached")
 
 
@@ -217,7 +245,8 @@ def broyden_class(f, x0, grad_f=None, phi: float = 0.5, tol: float = 1e-10,
                                 max_iter, H0, c2)
 
 
-def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1000):
+def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1000,
+          ftol: float = 1e-12):
     """Limited-memory BFGS.
 
     Stores only the last ``m`` correction pairs and applies the inverse Hessian
@@ -227,11 +256,12 @@ def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1
     fc, g = _prep(f, grad_f)
     x = as_vector(x0).copy()
     gk = g(x)
+    fk = float(fc(x))
     S, Y, rho = [], [], []
     history = [x.copy()]
     for k in range(1, max_iter + 1):
         if np.linalg.norm(gk) < tol:
-            return OptimizeResult(x, float(fc(x)), gk, None, k - 1, True, fc.calls,
+            return OptimizeResult(x, fk, gk, None, k - 1, True, fc.calls,
                                   k, "lbfgs", history, "converged")
         # two-loop recursion for p = -H_k g_k
         q = gk.copy()
@@ -249,13 +279,20 @@ def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1
         p = -q
         if gk @ p >= 0:
             p = -gk
-        alpha = strong_wolfe(fc, g, x, p, alpha0=1.0, c2=0.9)
+        alpha = strong_wolfe(fc, g, x, p, alpha0=1.0, c2=0.9,
+                             phi0=fk, dphi0=float(gk @ p))
         x_new = x + alpha * p
         if _stalled(alpha, x_new, x):
-            return OptimizeResult(x, float(fc(x)), gk, None, k,
+            return OptimizeResult(x, fk, gk, None, k,
                                   np.linalg.norm(gk) < tol, fc.calls, k, "lbfgs",
                                   history, "line search stalled at floating-point "
                                   "precision")
+        f_new = float(fc(x_new))
+        if _at_precision_floor(fk, f_new, ftol):
+            x, fk = x_new, f_new
+            history.append(x.copy())
+            return OptimizeResult(x, fk, g(x), None, k, True, fc.calls, k, "lbfgs",
+                                  history, "converged: objective change below ftol")
         g_new = g(x_new)
         s = x_new - x
         y = g_new - gk
@@ -268,9 +305,9 @@ def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1
                 S.pop(0)
                 Y.pop(0)
                 rho.pop(0)
-        x, gk = x_new, g_new
+        x, gk, fk = x_new, g_new, f_new
         history.append(x.copy())
-    return OptimizeResult(x, float(fc(x)), gk, None, max_iter, False, fc.calls,
+    return OptimizeResult(x, fk, gk, None, max_iter, False, fc.calls,
                           max_iter, "lbfgs", history, "maximum iterations reached")
 
 

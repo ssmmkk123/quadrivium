@@ -27,7 +27,7 @@ from typing import Callable
 
 import numpy as np
 
-from quadrivium import _accel, linalg, ode, special, transforms
+from quadrivium import _accel, interpolate, linalg, ode, pde, special, transforms
 
 
 def warm_blas(rng) -> None:
@@ -136,6 +136,39 @@ def cases(rng: np.random.Generator):
         yield f"special.log_gamma", n, lambda x=grid: special.log_gamma(x)
         yield f"special.erf", n, lambda x=wide: special.erf(x)
         yield f"special.erfc", n, lambda x=wide: special.erfc(x)
+
+    # Kernels that own a whole iteration rather than one step. The Python twin
+    # of each is a per-element loop, so the gap here is the interpreter's,
+    # not BLAS's.
+    for n in (1000, 50000):
+        diag = rng.uniform(3.0, 4.0, n)
+        sub = rng.uniform(-1.0, 1.0, n - 1)
+        sup = rng.uniform(-1.0, 1.0, n - 1)
+        rhs = rng.standard_normal(n)
+        yield ("linalg.thomas", n,
+               lambda a=sub, b=diag, c=sup, d=rhs: linalg.thomas(a, b, c, d))
+
+    for n in (20, 40):
+        m = rng.standard_normal((n, n))
+        yield f"linalg.qr_algorithm", n, lambda s=m + m.T: linalg.qr_algorithm(s)
+
+    src = lambda x, y: 1.0
+    for n in (20, 40):
+        yield (f"pde.poisson_2d_iterative (sor)", n,
+               lambda k=n: pde.poisson_2d_iterative(src, (0, 1), (0, 1), nx=k, ny=k,
+                                                    method="sor"))
+    yield ("pde.poisson_2d_iterative (gauss_seidel)", 30,
+           lambda: pde.poisson_2d_iterative(src, (0, 1), (0, 1), nx=30, ny=30,
+                                            method="gauss_seidel"))
+    for n in (21, 31):
+        yield f"pde.lid_driven_cavity", n, lambda k=n: pde.lid_driven_cavity(re=100.0, n=k)
+
+    # Routines that reach the kernel through `thomas` rather than directly.
+    u0 = lambda x: np.sin(np.pi * x)
+    yield ("pde.heat_crank_nicolson", 800,
+           lambda: pde.heat_crank_nicolson(u0, 0.1, (0, 1), (0, 0.2), nx=800, nt=400))
+    yield ("interpolate.cubic_spline", 3200,
+           lambda x=np.linspace(0, 1, 3200): interpolate.cubic_spline(x, np.sin(7 * x)))
 
 
 def main(argv: list[str] | None = None) -> int:

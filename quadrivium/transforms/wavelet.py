@@ -99,7 +99,7 @@ def wavelet_filters(wavelet="haar"):
     return h[::-1].copy(), g[::-1].copy(), h.copy(), g.copy()
 
 
-def _fft_filter(h, n):
+def _fft_filter(h, n, step=1):
     """Spectrum of ``h`` wrapped -- not truncated -- to length ``n``.
 
     ``np.fft.fft(h, n)`` pads when ``n > h.size`` but *truncates* when
@@ -109,12 +109,15 @@ def _fft_filter(h, n):
     the band gets shorter than the filter.
     """
     h = np.asarray(h, dtype=float)
-    if h.size <= n:
+    if n < 1:
+        raise ValueError("wavelet filtering needs a nonempty signal")
+    if step == 1 and h.size <= n:
         return np.fft.fft(h, n)
+    # Reduce dilated tap positions modulo the signal length before allocating:
+    # SWT level j otherwise materializes O(len(h) * 2**j) mostly-zero taps.
     wrapped = np.zeros(n)
-    for start in range(0, h.size, n):
-        chunk = h[start:start + n]
-        wrapped[:chunk.size] += chunk
+    indices = (np.arange(h.size) * (step % n)) % n
+    np.add.at(wrapped, indices, h)
     return np.fft.fft(wrapped)
 
 
@@ -141,9 +144,33 @@ def dwt(x, wavelet="haar"):
     """
     x = as_vector(x)
     _, _, h, g = wavelet_filters(wavelet)
+    if not x.size:
+        raise ValueError("DWT needs a nonempty signal")
     if x.size % 2:
         x = np.concatenate([x, x[-1:]])
-    return _circ_correlate(x, h)[::2], _circ_correlate(x, g)[::2]
+    if h.size > 32:
+        spectrum = np.fft.fft(x)
+        a = np.fft.ifft(spectrum * np.conj(_fft_filter(h, x.size))).real[::2].copy()
+        d = np.fft.ifft(spectrum * np.conj(_fft_filter(g, x.size))).real[::2].copy()
+        return a, d
+    # For short filters, evaluate only the samples retained by downsampling.
+    # Two strided slices cover each periodic shift without full-size FFTs,
+    # rolled signals or a matrix of all tap/sample indices.
+    n = x.size
+    a = np.zeros(n // 2)
+    d = np.zeros(n // 2)
+    work = np.empty(n // 2)
+    for k, (hk, gk) in enumerate(zip(h, g)):
+        k %= n
+        split = (n - k + 1) // 2
+        for target, samples in ((slice(None, split), x[k::2]),
+                                (slice(split, None), x[k % 2 : k : 2])):
+            buf = work[:samples.size]
+            np.multiply(samples, hk, out=buf)
+            a[target] += buf
+            np.multiply(samples, gk, out=buf)
+            d[target] += buf
+    return a, d
 
 
 def idwt(cA, cD, wavelet="haar", length=None):
@@ -159,11 +186,29 @@ def idwt(cA, cD, wavelet="haar", length=None):
         raise DimensionError("approximation and detail must have equal length")
     _, _, h, g = wavelet_filters(wavelet)
     n = 2 * cA.size
-    up_a = np.zeros(n)
-    up_d = np.zeros(n)
-    up_a[::2] = cA
-    up_d[::2] = cD
-    out = _circ_convolve(up_a, h) + _circ_convolve(up_d, g)
+    if not n:
+        raise ValueError("IDWT needs nonempty coefficients")
+    if h.size > 32:
+        up_a = np.zeros(n)
+        up_d = np.zeros(n)
+        up_a[::2] = cA
+        up_d[::2] = cD
+        spectrum = (np.fft.fft(up_a) * _fft_filter(h, n)
+                    + np.fft.fft(up_d) * _fft_filter(g, n))
+        out = np.fft.ifft(spectrum).real.copy()
+    else:
+        out = np.zeros(n)
+        work = np.empty(cA.size)
+        for k, (hk, gk) in enumerate(zip(h, g)):
+            k %= n
+            split = (n - k + 1) // 2
+            for target, source in ((out[k::2], slice(None, split)),
+                                   (out[k % 2 : k : 2], slice(split, None))):
+                buf = work[:target.size]
+                np.multiply(cA[source], hk, out=buf)
+                target += buf
+                np.multiply(cD[source], gk, out=buf)
+                target += buf
     return out if length is None else out[:length]
 
 
@@ -198,6 +243,41 @@ def waverec(coeffs, wavelet="haar", length=None):
     return a if length is None else a[:length]
 
 
+def _dwt_rows(X, h, g):
+    """One DWT level along the rows of a 2-D array, all rows together.
+
+    The same two strided slices as :func:`dwt`, taken across every row at
+    once: the filter loop runs once for the whole array instead of once per
+    row, which for a square image is the difference between a few dozen
+    vector operations and a few thousand.
+    """
+    n = X.shape[1]
+    if h.size > 32:
+        spectrum = np.fft.fft(X, axis=1)
+        a = np.fft.ifft(spectrum * np.conj(_fft_filter(h, n)), axis=1).real[:, ::2]
+        d = np.fft.ifft(spectrum * np.conj(_fft_filter(g, n)), axis=1).real[:, ::2]
+        return a.copy(), d.copy()
+    a = np.zeros((X.shape[0], n // 2))
+    d = np.zeros((X.shape[0], n // 2))
+    work = np.empty((X.shape[0], n // 2))
+    for k, (hk, gk) in enumerate(zip(h, g)):
+        k %= n
+        split = (n - k + 1) // 2
+        for target, samples in ((slice(None, split), X[:, k::2]),
+                                (slice(split, None), X[:, k % 2:k:2])):
+            buf = work[:, :samples.shape[1]]
+            np.multiply(samples, hk, out=buf)
+            a[:, target] += buf
+            np.multiply(samples, gk, out=buf)
+            d[:, target] += buf
+    return a, d
+
+
+def _even_rows(X):
+    """Repeat the last column when the row length is odd, as :func:`dwt` does."""
+    return X if X.shape[1] % 2 == 0 else np.concatenate([X, X[:, -1:]], axis=1)
+
+
 def dwt2(X, wavelet="haar"):
     """One level of the 2-D (separable) DWT.
 
@@ -205,23 +285,15 @@ def dwt2(X, wavelet="haar"):
     and diagonal detail bands, obtained by transforming rows then columns.
     """
     X = np.atleast_2d(np.asarray(X, dtype=float))
-    rows_a, rows_d = [], []
-    for r in X:
-        a, d = dwt(r, wavelet)
-        rows_a.append(a)
-        rows_d.append(d)
-    A, D = np.array(rows_a), np.array(rows_d)
-    cA, cH = [], []
-    for j in range(A.shape[1]):
-        a, d = dwt(A[:, j], wavelet)
-        cA.append(a)
-        cH.append(d)
-    cV, cD = [], []
-    for j in range(D.shape[1]):
-        a, d = dwt(D[:, j], wavelet)
-        cV.append(a)
-        cD.append(d)
-    return np.array(cA).T, (np.array(cH).T, np.array(cV).T, np.array(cD).T)
+    if X.shape[1] == 0:
+        raise ValueError("DWT needs a nonempty signal")
+    _, _, h, g = wavelet_filters(wavelet)
+    A, D = _dwt_rows(_even_rows(X), h, g)
+    # A column transform is the row transform of the transpose; the copy makes
+    # the strided slices below contiguous.
+    cA, cH = _dwt_rows(_even_rows(np.ascontiguousarray(A.T)), h, g)
+    cV, cD = _dwt_rows(_even_rows(np.ascontiguousarray(D.T)), h, g)
+    return cA.T, (cH.T, cV.T, cD.T)
 
 
 def idwt2(cA, details, wavelet="haar", shape=None):
@@ -245,15 +317,18 @@ def swt(x, wavelet="haar", level=1):
     redundancy -- every level keeps the full length.
     """
     x = as_vector(x)
+    if not isinstance(level, (int, np.integer)) or level < 0:
+        raise ValueError("level must be a nonnegative integer")
     _, _, h, g = wavelet_filters(wavelet)
     a = x.copy()
     out = []
     for j in range(level):
         step = 2 ** j
-        lo = _upsample_filter(h, step)
-        hi = _upsample_filter(g, step)
-        out.append(_circ_correlate(a, hi))
-        a = _circ_correlate(a, lo)
+        lo = _fft_filter(h, x.size, step)
+        hi = _fft_filter(g, x.size, step)
+        spectrum = np.fft.fft(a)
+        out.append(np.fft.ifft(spectrum * np.conj(hi)).real.copy())
+        a = np.fft.ifft(spectrum * np.conj(lo)).real.copy()
     return [a] + out[::-1]
 
 
@@ -273,11 +348,15 @@ def iswt(coeffs, wavelet="haar"):
     _, _, h, g = wavelet_filters(wavelet)
     for j, d in reversed(list(enumerate(details))):
         step = 2 ** j
-        lo = _upsample_filter(h, step)
-        hi = _upsample_filter(g, step)
+        lo = _fft_filter(h, a.size, step)
+        hi = _fft_filter(g, a.size, step)
+        d = as_vector(d)
+        if d.size != a.size:
+            raise DimensionError("stationary wavelet bands must have equal length")
         # The undecimated frame has redundancy 2 at every level -- |H|^2 + |G|^2
         # is 2, not 1 -- so the adjoint must be halved to invert it.
-        a = 0.5 * (_circ_convolve(a, lo) + _circ_convolve(as_vector(d), hi))
+        a = np.fft.ifft(np.fft.fft(a) * lo + np.fft.fft(d) * hi).real.copy()
+        a *= 0.5
     return a
 
 

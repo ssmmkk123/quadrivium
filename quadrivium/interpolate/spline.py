@@ -58,6 +58,12 @@ class PiecewisePolynomial:
                 f"{self.x.size} knots require {self.x.size - 1} coefficient sets, "
                 f"got {len(self.coeffs)}"
             )
+        # Every constructor in this module gives all pieces the same degree,
+        # which lets evaluation run Horner over the whole query at once. A
+        # hand-built ragged list is still accepted; it just takes the loop.
+        widths = {c.size for c in self.coeffs}
+        self._table = (np.array(self.coeffs, dtype=float)
+                       if len(widths) == 1 and self.coeffs else None)
 
     def _interval(self, t):
         idx = np.searchsorted(self.x, t, side="right") - 1
@@ -70,14 +76,28 @@ class PiecewisePolynomial:
                 f"evaluation outside the spline domain [{self.x[0]}, {self.x[-1]}]"
             )
         idx = self._interval(t_arr)
-        out = np.empty_like(t_arr)
-        for k, (ti, i) in enumerate(zip(t_arr, idx)):
-            dt = ti - self.x[i]
-            c = self.coeffs[i]
-            acc = 0.0
-            for p in range(len(c) - 1, -1, -1):
-                acc = acc * dt + c[p]
-            out[k] = acc
+        if self._table is not None:
+            dt = t_arr - self.x[idx]
+            acc = np.zeros_like(dt)
+            # Same Horner recurrence as the reference loop below, including the
+            # zero seed -- which is what keeps a non-finite dt propagating
+            # identically instead of short-circuiting to the top coefficient.
+            # One coefficient column is gathered at a time: gathering the whole
+            # table would hold a (points x degree) temporary for a query that
+            # only ever needs one column of it.
+            for p in range(self._table.shape[1] - 1, -1, -1):
+                acc *= dt
+                acc += self._table[idx, p]
+            out = acc
+        else:
+            out = np.empty_like(t_arr)
+            for k, (ti, i) in enumerate(zip(t_arr, idx)):
+                dt = ti - self.x[i]
+                c = self.coeffs[i]
+                acc = 0.0
+                for p in range(len(c) - 1, -1, -1):
+                    acc = acc * dt + c[p]
+                out[k] = acc
         return out[0] if np.ndim(t) == 0 else out.reshape(np.shape(t))
 
     def derivative(self, order: int = 1):
@@ -167,15 +187,43 @@ def quadratic_spline(x, y, slope0: float = 0.0):
 
 def _cubic_from_moments(x, y, M):
     """Assemble cubic pieces from second derivatives ``M`` at the knots."""
-    coeffs = []
-    for i in range(x.size - 1):
-        h = x[i + 1] - x[i]
-        a = y[i]
-        b = (y[i + 1] - y[i]) / h - h * (2 * M[i] + M[i + 1]) / 6.0
-        c = M[i] / 2.0
-        d = (M[i + 1] - M[i]) / (6.0 * h)
-        coeffs.append(np.array([a, b, c, d]))
-    return PiecewisePolynomial(x, coeffs)
+    h = np.diff(x)
+    a = y[:-1]
+    b = (y[1:] - y[:-1]) / h - h * (2 * M[:-1] + M[1:]) / 6.0
+    c = M[:-1] / 2.0
+    d = (M[1:] - M[:-1]) / (6.0 * h)
+    return PiecewisePolynomial(x, np.column_stack([a, b, c, d]))
+
+
+def _moment_rows(h, y):
+    """Interior rows of the cubic-spline moment system, in tridiagonal form.
+
+    Continuity of the second derivative gives one equation per interior knot,
+    and each couples only ``M[i-1], M[i], M[i+1]``. The whole system is
+    therefore tridiagonal apart from the two rows the boundary condition
+    supplies, so it is stored and solved as three vectors: building the dense
+    ``(n+1)x(n+1)`` matrix instead costs ``O(n^2)`` memory and an ``O(n^3)``
+    factorization for an ``O(n)`` problem.
+
+    Returns ``(lower, diag, upper, rhs)``, each of length ``n+1``, with rows
+    ``0`` and ``n`` left zeroed for the caller to fill.
+    """
+    n = h.size
+    lower = np.zeros(n + 1)
+    diag = np.zeros(n + 1)
+    upper = np.zeros(n + 1)
+    rhs = np.zeros(n + 1)
+    lower[1:n] = h[:-1]
+    diag[1:n] = 2.0 * (h[:-1] + h[1:])
+    upper[1:n] = h[1:]
+    slope = np.diff(y) / h
+    rhs[1:n] = 6.0 * (slope[1:] - slope[:-1])
+    return lower, diag, upper, rhs
+
+
+def _solve_moments(lower, diag, upper, rhs):
+    """Solve the tridiagonal moment system with the Thomas algorithm."""
+    return thomas(lower[1:], diag, upper[:-1], rhs)
 
 
 def natural_cubic_spline(x, y):
@@ -187,15 +235,9 @@ def natural_cubic_spline(x, y):
     if n == 1:
         return linear_spline(x, y)
     h = np.diff(x)
-    A = np.zeros((n + 1, n + 1))
-    rhs = np.zeros(n + 1)
-    A[0, 0] = A[n, n] = 1.0
-    for i in range(1, n):
-        A[i, i - 1] = h[i - 1]
-        A[i, i] = 2 * (h[i - 1] + h[i])
-        A[i, i + 1] = h[i]
-        rhs[i] = 6 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1])
-    M = np.linalg.solve(A, rhs)
+    lower, diag, upper, rhs = _moment_rows(h, y)
+    diag[0] = diag[n] = 1.0
+    M = _solve_moments(lower, diag, upper, rhs)
     return _cubic_from_moments(x, y, M)
 
 
@@ -204,20 +246,14 @@ def clamped_cubic_spline(x, y, dy0: float, dyn: float):
     x, y = _check(x, y)
     n = x.size - 1
     h = np.diff(x)
-    A = np.zeros((n + 1, n + 1))
-    rhs = np.zeros(n + 1)
-    A[0, 0] = 2 * h[0]
-    A[0, 1] = h[0]
+    lower, diag, upper, rhs = _moment_rows(h, y)
+    diag[0] = 2 * h[0]
+    upper[0] = h[0]
     rhs[0] = 6 * ((y[1] - y[0]) / h[0] - dy0)
-    A[n, n - 1] = h[n - 1]
-    A[n, n] = 2 * h[n - 1]
+    lower[n] = h[n - 1]
+    diag[n] = 2 * h[n - 1]
     rhs[n] = 6 * (dyn - (y[n] - y[n - 1]) / h[n - 1])
-    for i in range(1, n):
-        A[i, i - 1] = h[i - 1]
-        A[i, i] = 2 * (h[i - 1] + h[i])
-        A[i, i + 1] = h[i]
-        rhs[i] = 6 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1])
-    M = np.linalg.solve(A, rhs)
+    M = _solve_moments(lower, diag, upper, rhs)
     return _cubic_from_moments(x, y, M)
 
 
@@ -229,20 +265,30 @@ def not_a_knot_spline(x, y):
     if n < 3:
         return natural_cubic_spline(x, y)
     h = np.diff(x)
-    A = np.zeros((n + 1, n + 1))
-    rhs = np.zeros(n + 1)
-    A[0, 0] = h[1]
-    A[0, 1] = -(h[0] + h[1])
-    A[0, 2] = h[0]
-    A[n, n - 2] = h[n - 1]
-    A[n, n - 1] = -(h[n - 2] + h[n - 1])
-    A[n, n] = h[n - 2]
-    for i in range(1, n):
-        A[i, i - 1] = h[i - 1]
-        A[i, i] = 2 * (h[i - 1] + h[i])
-        A[i, i + 1] = h[i]
-        rhs[i] = 6 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1])
-    M = np.linalg.solve(A, rhs)
+    lower, diag, upper, rhs = _moment_rows(h, y)
+    # The not-a-knot rows reach outside the tridiagonal band, so rather than
+    # widen the band the two end moments are eliminated. Each condition gives
+    # M[0] and M[n] as a combination of their two inward neighbours; those are
+    # substituted into rows 1 and n-1, leaving a tridiagonal system in the
+    # n-1 interior moments alone. Clearing the out-of-band entry directly
+    # against the neighbouring row instead would divide by h[1] - h[0], which
+    # vanishes on a uniform grid.
+    #   h[1] M0 - (h0+h1) M1 + h0 M2 = 0  ->  M0 = ((h0+h1) M1 - h0 M2) / h1
+    a0 = h[0] / h[1]
+    an = h[n - 1] / h[n - 2]
+    lo = lower[1:n].copy()
+    di = diag[1:n].copy()
+    up = upper[1:n].copy()
+    rh = rhs[1:n].copy()
+    di[0] += a0 * (h[0] + h[1])
+    up[0] -= a0 * h[0]
+    di[-1] += an * (h[n - 2] + h[n - 1])
+    lo[-1] -= an * h[n - 1]
+    inner = thomas(lo[1:], di, up[:-1], rh)
+    M = np.empty(n + 1)
+    M[1:n] = inner
+    M[0] = ((h[0] + h[1]) * M[1] - h[0] * M[2]) / h[1]
+    M[n] = ((h[n - 2] + h[n - 1]) * M[n - 1] - h[n - 1] * M[n - 2]) / h[n - 2]
     return _cubic_from_moments(x, y, M)
 
 
@@ -304,11 +350,16 @@ def pchip(x, y):
     h = np.diff(x)
     delta = np.diff(y) / h
     d = np.zeros(n)
-    for i in range(1, n - 1):
-        if delta[i - 1] * delta[i] > 0:
-            w1 = 2 * h[i] + h[i - 1]
-            w2 = h[i] + 2 * h[i - 1]
-            d[i] = (w1 + w2) / (w1 / delta[i - 1] + w2 / delta[i])
+    # Every interior slope is an independent weighted harmonic mean of the two
+    # neighbouring secants, taken only where they agree in sign -- which is
+    # what makes the result monotone. The sign test guards the division, so
+    # the masked subset is evaluated rather than the whole array.
+    same_sign = np.flatnonzero(delta[:-1] * delta[1:] > 0) + 1
+    if same_sign.size:
+        i = same_sign
+        w1 = 2 * h[i] + h[i - 1]
+        w2 = h[i] + 2 * h[i - 1]
+        d[i] = (w1 + w2) / (w1 / delta[i - 1] + w2 / delta[i])
     # one-sided three-point ends, limited to preserve monotonicity
     def end_slope(h0, h1, d0, d1):
         s = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1)
@@ -482,11 +533,19 @@ def de_casteljau(control_points, t):
     P = np.atleast_2d(np.asarray(control_points, dtype=float))
     t = np.atleast_1d(np.asarray(t, dtype=float))
     out = np.empty((t.size, P.shape[1]))
-    for k, tk in enumerate(t):
-        Q = P.copy()
-        for r in range(1, Q.shape[0]):
-            Q = (1.0 - tk) * Q[:-1] + tk * Q[1:]
-        out[k] = Q[0]
+    # The triangle is the same shape for every parameter value, so all of them
+    # are carried through it together as one (points, level, dim) block. The
+    # arithmetic is unchanged -- still a convex combination at every step --
+    # and the block shrinks by one level per pass. It is chunked so the
+    # working set stays bounded for long parameter arrays.
+    order, dim = P.shape
+    block = max(1, (1 << 18) // max(order * dim, 1))
+    for start in range(0, t.size, block):
+        ts = t[start:start + block, None, None]
+        Q = np.broadcast_to(P, (ts.shape[0], order, dim)).copy()
+        for _ in range(1, order):
+            Q = (1.0 - ts) * Q[:, :-1] + ts * Q[:, 1:]
+        out[start:start + block] = Q[:, 0]
     return out[0] if out.shape[0] == 1 else out
 
 

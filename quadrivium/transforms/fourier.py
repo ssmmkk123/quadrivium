@@ -44,9 +44,12 @@ def next_power_of_two(n: int) -> int:
 
 def dft_matrix(n: int, inverse: bool = False):
     """Explicit DFT matrix ``W`` with ``W[j,k] = exp(-2 pi i j k / n)``."""
-    j, k = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
     sign = 1.0 if inverse else -1.0
-    W = np.exp(sign * 2j * np.pi * j * k / n)
+    # The outer product of the index ranges is the exponent table directly;
+    # meshgrid would first materialize two full n-by-n index arrays for it.
+    idx = np.arange(n)
+    W = np.outer(idx, idx) * (sign * 2j * np.pi / n)
+    np.exp(W, out=W)
     return W / n if inverse else W
 
 
@@ -83,27 +86,35 @@ def fft_radix2(x, inverse: bool = False):
     Works in place over a bit-reversed copy, doubling the transform size each
     stage -- the classic decimation-in-time formulation.
     """
-    a = np.asarray(x, dtype=complex).copy()
+    a = np.atleast_1d(np.asarray(x, dtype=complex))
+    if a.ndim != 1:
+        raise ValueError("FFT input must be one-dimensional")
     n = a.size
     if n & (n - 1):
         raise ValueError(f"radix-2 FFT needs a power-of-two length, got {n}")
-    if n == 1:
-        return a
+    if n <= 1:
+        return a.copy()
     a = a[bit_reverse_permutation(n)]
     sign = 1.0 if inverse else -1.0
+    # All stages draw from one twiddle table. Reuse one work array instead
+    # of allocating a pair for each of the n-1 butterfly groups.
+    roots = np.arange(n // 2, dtype=complex)
+    roots *= sign * 2j * np.pi / n
+    np.exp(roots, out=roots)
+    odd_work = np.empty(n // 2, dtype=complex)
     size = 2
     while size <= n:
         half = size // 2
-        w = np.exp(sign * 2j * np.pi * np.arange(half) / size)
-        for start in range(0, n, size):
-            # `even` must be a copy: assigning to a[start:start+half] below
-            # would otherwise overwrite it before the second line reads it.
-            even = a[start : start + half].copy()
-            odd = a[start + half : start + size] * w
-            a[start : start + half] = even + odd
-            a[start + half : start + size] = even - odd
+        blocks = a.reshape(-1, size)
+        odd = odd_work.reshape(-1, half)
+        np.multiply(blocks[:, half:], roots[:: n // size], out=odd)
+        # Write the odd half first, while the original even half is intact.
+        np.subtract(blocks[:, :half], odd, out=blocks[:, half:])
+        np.add(blocks[:, :half], odd, out=blocks[:, :half])
         size *= 2
-    return a / n if inverse else a
+    if inverse:
+        a /= n
+    return a
 
 
 def fft_bluestein(x, inverse: bool = False):
@@ -131,34 +142,44 @@ def fft_bluestein(x, inverse: bool = False):
 
 
 def fft_mixed_radix(x, inverse: bool = False):
-    """Recursive mixed-radix FFT: splits on the smallest prime factor.
+    """Recursive mixed-radix FFT with a radix-2 base case.
 
+    Small odd factors are split first to leave power-of-two subtransforms.
     Falls back to Bluestein when the remaining length is prime.
     """
     a = np.asarray(x, dtype=complex)
     n = a.size
     if n <= 1:
         return a.copy()
-    # find the smallest prime factor
-    p = None
-    for q in range(2, int(np.sqrt(n)) + 1):
-        if n % q == 0:
-            p = q
-            break
+    if inverse:
+        # Conjugation keeps every recursive subtransform in the same forward
+        # convention; changing only the final twiddle signs is not an inverse.
+        return np.conj(fft_mixed_radix(np.conj(a))) / n
+    if n & (n - 1) == 0:
+        return fft_radix2(a)
+    # Peel common odd radices before 2: e.g. 3 * 512 needs three radix-2
+    # transforms, rather than a recursion tree of 512 length-3 transforms.
+    p = next((q for q in (3, 5, 7) if n % q == 0 and n != q), None)
+    if p is None:
+        for q in range(2, int(np.sqrt(n)) + 1):
+            if n % q == 0:
+                p = q
+                break
     if p is None:
         return fft_bluestein(a, inverse)
     m = n // p
-    sign = 1.0 if inverse else -1.0
     # decimation in time by p
-    sub = np.array([fft_mixed_radix(a[r::p], inverse=False) for r in range(p)])
     out = np.zeros(n, dtype=complex)
-    for k in range(n):
-        acc = 0.0
-        for r in range(p):
-            twiddle = np.exp(sign * 2j * np.pi * r * k / n)
-            acc += twiddle * sub[r, k % m]
-        out[k] = acc
-    return out / n if inverse else out
+    angles = np.arange(n, dtype=complex)
+    angles *= -2j * np.pi / n
+    twiddle = np.empty(n, dtype=complex)
+    for r in range(p):
+        sub = fft_mixed_radix(a[r::p])
+        np.multiply(angles, r, out=twiddle)
+        np.exp(twiddle, out=twiddle)
+        twiddle.reshape(p, m)[:] *= sub
+        out += twiddle
+    return out
 
 
 def fft(x):
@@ -200,7 +221,8 @@ def rfft(x):
     information.
     """
     x = np.asarray(x, dtype=float)
-    return fft(x)[: x.size // 2 + 1]
+    # Do not retain the redundant half through the result's base array.
+    return fft(x)[: x.size // 2 + 1].copy()
 
 
 def irfft(X, n=None):
@@ -264,14 +286,22 @@ def dct(x, kind: int = 2, norm: bool = False):
         ext[2 * n + 1 :: 2] = x[::-1]
         out = np.real(fft(ext))[:n]
     elif kind == 3:
-        k = np.arange(n)
-        out = np.array([x[0] / 2 + np.sum(x[1:] * np.cos(np.pi * np.arange(1, n)
-                                                         * (2 * j + 1) / (2 * n)))
-                        for j in k]) * 2
+        # cos(pi k (2j+1) / 2n) = Re[ e^{i pi k /2n} e^{i 2 pi k j / 2n} ], so
+        # pre-twiddling the input turns the sum into one length-2n inverse
+        # DFT -- O(n log n) instead of the O(n^2) the definition spells out.
+        w = np.zeros(2 * n, dtype=complex)
+        c = np.full(n, 2.0)
+        c[0] = 1.0
+        w[:n] = c * x * np.exp(1j * np.pi * np.arange(n) / (2 * n))
+        out = np.real(ifft(w))[:n] * (2 * n)
     elif kind == 4:
-        j = np.arange(n)
-        out = np.array([2 * np.sum(x * np.cos(np.pi * (2 * j + 1) * (2 * m + 1)
-                                              / (4 * n))) for m in range(n)])
+        # Same idea with a half-sample shift on both indices, which leaves a
+        # twiddle on the output as well as the input.
+        v = np.zeros(2 * n, dtype=complex)
+        v[:n] = x * np.exp(1j * np.pi * np.arange(n) / (2 * n))
+        m = np.arange(n)
+        out = np.real(2 * np.exp(1j * np.pi * (2 * m + 1) / (4 * n))
+                      * (ifft(v)[:n] * (2 * n)))
     else:
         raise ValueError("kind must be 1, 2, 3 or 4")
     if norm:
@@ -310,9 +340,14 @@ def dst(x, kind: int = 1):
         ext[n + 2 :] = -x[::-1]
         return -np.imag(fft(ext))[1 : n + 1]
     if kind == 2:
-        j = np.arange(n)
-        return np.array([2 * np.sum(x * np.sin(np.pi * (2 * j + 1) * (m + 1)
-                                               / (2 * n))) for m in range(n)])
+        # The imaginary counterpart of DCT-III: one length-2n inverse DFT of
+        # the zero-padded signal, with the half-sample shift applied as an
+        # output twiddle. O(n log n) rather than the definition's O(n^2).
+        v = np.zeros(2 * n, dtype=complex)
+        v[:n] = x
+        m = np.arange(n)
+        return np.imag(2 * np.exp(1j * np.pi * (m + 1) / (2 * n))
+                       * (ifft(v) * (2 * n))[1:n + 1])
     raise ValueError("kind must be 1 or 2")
 
 

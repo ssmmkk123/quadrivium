@@ -99,7 +99,7 @@ python tools/gen_docs.py
 ### 3. Check everything locally
 
 ```bash
-python -m unittest discover -s tests     # the full suite, all green
+python -m pytest -q     # the full suite, all green
 python tools/gen_docs.py --check         # generated pages match the code
 python tools/gen_figures.py --check      # figures match the code (needs [figures])
 mkdocs build --strict                    # no broken links or missing pages
@@ -186,5 +186,5 @@ downstream packager can build and validate the release from it alone:
 
 ```bash
 tar tzf dist/quadrivium-*.tar.gz | head -20
-python -m unittest discover -s tests      # runs from an unpacked sdist
+python -m pytest -q      # runs from an unpacked sdist
 ```

@@ -134,10 +134,20 @@ def halton_sequence(n: int, dim: int = 1, skip: int = 1):
     if dim > len(_PRIMES):
         raise ValueError(f"Halton supports up to {len(_PRIMES)} dimensions here")
     out = np.empty((n, dim))
+    # The radical inverse consumes one base-b digit per pass, and every index
+    # is on the same digit at the same time, so a dimension is built in
+    # log_b(n) vector passes instead of n scalar ones.
+    idx0 = np.arange(skip, skip + n, dtype=np.int64)
     for j in range(dim):
         base = _PRIMES[j]
-        for i in range(n):
-            out[i, j] = _van_der_corput(i + skip, base)
+        col = np.zeros(n)
+        k = idx0.copy()
+        weight = 1.0 / base
+        while k.any():
+            k, rem = np.divmod(k, base)
+            col += rem * weight
+            weight /= base
+        out[:, j] = col
     return out[:, 0] if dim == 1 else out
 
 
@@ -171,16 +181,19 @@ def sobol_sequence(n: int, dim: int = 1):
                         val ^= V[j, i - k]
                 V[j, i] = val
     out = np.zeros((n, dim))
-    X = np.zeros(dim, dtype=np.int64)
-    for i in range(1, n + 1):
-        c = 1
-        v = i - 1
-        while v & 1:
-            v >>= 1
-            c += 1
-        for j in range(dim):
-            X[j] ^= V[j, min(c, bits)]
-            out[i - 1, j] = X[j] / float(1 << bits)
+    if n == 0:
+        return out[:, 0] if dim == 1 else out
+    # The state is a running XOR of one direction number per step, and the
+    # column chosen at step i is fixed by i alone: the loop counts the
+    # trailing one-bits of i-1, which is the number of trailing zero bits of
+    # i. Because XOR is associative, the whole run of states is a cumulative
+    # XOR over that fixed column sequence -- no step-by-step Python loop.
+    i = np.arange(1, n + 1, dtype=np.int64)
+    lowest_bit = i & -i                       # a power of two, so log2 is exact
+    cols = np.minimum(np.log2(lowest_bit).astype(np.int64) + 1, bits)
+    for j in range(dim):
+        X = np.bitwise_xor.accumulate(V[j, cols])
+        out[:, j] = X / float(1 << bits)
     return out[:, 0] if dim == 1 else out
 
 

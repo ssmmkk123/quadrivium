@@ -241,32 +241,72 @@ def histogram_density(x, bins: int = 30, range_=None):
     return 0.5 * (edges[:-1] + edges[1:]), counts
 
 
+# Pairwise distances are evaluated in tiles so the working set does not grow
+# as sample_count * point_count. One float64 tile occupies at most 1 MiB.
+_KDE_TILE_ELEMENTS = 131072
+
+
 def kernel_density(x, points=None, bandwidth=None, kernel: str = "gaussian"):
     """Kernel density estimate.
 
-    The default bandwidth is Silverman's rule of thumb.
+    The default bandwidth is Silverman's rule of thumb, using a unit scale
+    for a singleton or constant sample. Pairwise evaluations use bounded
+    workspace, even when both the sample and evaluation grid are large.
+    Samples and points must be finite and bandwidth must be positive.
     """
     x = as_vector(x)
     n = x.size
+    if n == 0 or not np.all(np.isfinite(x)):
+        raise ValueError("kernel density requires a nonempty finite sample")
+    if kernel not in ("gaussian", "epanechnikov", "uniform", "triangular"):
+        raise ValueError(f"unknown kernel {kernel!r}")
     if bandwidth is None:
-        sigma = min(np.std(x, ddof=1),
-                    (np.quantile(x, 0.75) - np.quantile(x, 0.25)) / 1.349)
-        sigma = sigma if sigma > 0 else np.std(x, ddof=1) or 1.0
+        std = float(np.std(x, ddof=1)) if n > 1 else 0.0
+        q1, q3 = np.quantile(x, [0.25, 0.75])
+        sigma = min(std, (q3 - q1) / 1.349)
+        sigma = sigma if sigma > 0 else std or 1.0
         bandwidth = 0.9 * sigma * n ** (-1 / 5)
+    bandwidth = float(bandwidth)
+    if not np.isfinite(bandwidth) or bandwidth <= 0:
+        raise ValueError("bandwidth must be positive and finite")
     pts = np.linspace(x.min() - 3 * bandwidth, x.max() + 3 * bandwidth, 200) \
         if points is None else as_vector(points)
-    u = (pts[:, None] - x[None, :]) / bandwidth
-    if kernel == "gaussian":
-        K = np.exp(-0.5 * u**2) / np.sqrt(2 * np.pi)
-    elif kernel == "epanechnikov":
-        K = np.where(np.abs(u) <= 1, 0.75 * (1 - u**2), 0.0)
-    elif kernel == "uniform":
-        K = np.where(np.abs(u) <= 1, 0.5, 0.0)
-    elif kernel == "triangular":
-        K = np.where(np.abs(u) <= 1, 1 - np.abs(u), 0.0)
-    else:
-        raise ValueError(f"unknown kernel {kernel!r}")
-    return pts, K.sum(axis=1) / (n * bandwidth)
+    if not np.all(np.isfinite(pts)):
+        raise ValueError("evaluation points must be finite")
+    density = np.zeros(pts.size)
+    sample_step = min(n, _KDE_TILE_ELEMENTS)
+    point_step = max(1, _KDE_TILE_ELEMENTS // sample_step)
+    for i in range(0, pts.size, point_step):
+        stop = min(i + point_step, pts.size)
+        for j in range(0, n, sample_step):
+            # Overflow in distances far outside the kernel's support means a
+            # zero contribution, including for the Gaussian tail.
+            with np.errstate(over="ignore"):
+                u = pts[i:stop, None] - x[None, j:j + sample_step]
+                u /= bandwidth
+                if kernel == "gaussian":
+                    np.square(u, out=u)
+                    u *= -0.5
+                    np.exp(u, out=u)
+                    u /= np.sqrt(2 * np.pi)
+                elif kernel == "uniform":
+                    np.abs(u, out=u)
+                    np.less_equal(u, 1, out=u)
+                    u *= 0.5
+                else:
+                    # Clip before squaring to keep compact kernels finite
+                    # even for very distant evaluation points.
+                    np.abs(u, out=u)
+                    np.minimum(u, 1.0, out=u)
+                    if kernel == "epanechnikov":
+                        np.square(u, out=u)
+                    np.subtract(1.0, u, out=u)
+                    if kernel == "epanechnikov":
+                        u *= 0.75
+            density[i:stop] += u.sum(axis=1)
+    density /= n
+    density /= bandwidth
+    return pts, density
 
 
 def _t_cdf(t: float, dof: float) -> float:
@@ -334,16 +374,33 @@ def ks_test(a, cdf=None, b=None):
         d = float(np.max(np.abs(Fa - Fb)))
         ne = n * m / (n + m)
     else:
-        F = np.array([cdf(v) for v in a])
+        F = _cdf_values(cdf, a)
         d_plus = np.max(np.arange(1, n + 1) / n - F)
         d_minus = np.max(F - np.arange(n) / n)
         d = float(max(d_plus, d_minus))
         ne = n
     # asymptotic Kolmogorov distribution
     lam = (np.sqrt(ne) + 0.12 + 0.11 / np.sqrt(ne)) * d
-    p = 2.0 * sum((-1) ** (k - 1) * np.exp(-2 * k * k * lam * lam)
-                  for k in range(1, 101))
+    k = np.arange(1, 101)
+    p = 2.0 * float(np.sum((-1.0) ** (k - 1) * np.exp(-2 * k * k * lam * lam)))
     return {"statistic": d, "p_value": float(min(max(p, 0.0), 1.0))}
+
+
+def _cdf_values(cdf, a):
+    """Evaluate ``cdf`` at every sorted sample, on the whole array if it can.
+
+    Most CDFs handed in here are NumPy expressions that take an array
+    directly, which is one call instead of one per sample. A CDF written for
+    scalars raises or returns the wrong shape; it then gets the element loop,
+    and any genuine error inside it surfaces from that loop unchanged.
+    """
+    try:
+        out = np.asarray(cdf(a), dtype=float)
+    except Exception:  # noqa: BLE001 - scalar-only CDF; retried elementwise
+        out = None
+    if out is None or out.shape != a.shape:
+        out = np.array([cdf(v) for v in a], dtype=float)
+    return out
 
 
 def anova_one_way(*groups):

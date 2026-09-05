@@ -155,23 +155,41 @@ def fem_2d_triangular(source, points=None, triangles=None, boundary=None,
     npt = len(P)
     A = np.zeros((npt, npt))
     b = np.zeros(npt)
-    for tri in T:
-        p = P[tri]
-        # area and shape function gradients from the barycentric coordinates
-        M = np.array([[1, p[0, 0], p[0, 1]], [1, p[1, 0], p[1, 1]], [1, p[2, 0], p[2, 1]]])
-        area = 0.5 * abs(np.linalg.det(M))
-        if area < 1e-300:
-            continue
-        beta = np.array([p[1, 1] - p[2, 1], p[2, 1] - p[0, 1], p[0, 1] - p[1, 1]])
-        gamma = np.array([p[2, 0] - p[1, 0], p[0, 0] - p[2, 0], p[1, 0] - p[0, 0]])
-        c = c_diff(*p.mean(axis=0)) if callable(c_diff) else c_diff
-        ke = c * (np.outer(beta, beta) + np.outer(gamma, gamma)) / (4.0 * area)
-        centroid = p.mean(axis=0)
-        fval = source(centroid[0], centroid[1]) if callable(source) else source
-        for a in range(3):
-            b[tri[a]] += fval * area / 3.0
-            for bb in range(3):
-                A[tri[a], tri[bb]] += ke[a, bb]
+    # Every element contributes the same closed-form 3x3 stiffness matrix, so
+    # all of them are formed at once and scattered in one pass. The per-element
+    # determinant, two outer products and 3x3 scatter loop that this replaces
+    # were the whole cost of assembly.
+    p = P[T]                                       # (elements, 3, 2)
+    # Twice the signed area, from the barycentric coordinate determinant.
+    two_area = ((p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
+                - (p[:, 2, 0] - p[:, 0, 0]) * (p[:, 1, 1] - p[:, 0, 1]))
+    area = 0.5 * np.abs(two_area)
+    live = area >= 1e-300
+    if np.any(live):
+        p, area, T_live = p[live], area[live], T[live]
+        beta = np.stack([p[:, 1, 1] - p[:, 2, 1],
+                         p[:, 2, 1] - p[:, 0, 1],
+                         p[:, 0, 1] - p[:, 1, 1]], axis=1)
+        gamma = np.stack([p[:, 2, 0] - p[:, 1, 0],
+                          p[:, 0, 0] - p[:, 2, 0],
+                          p[:, 1, 0] - p[:, 0, 0]], axis=1)
+        centroid = p.mean(axis=1)
+        if callable(c_diff):
+            c = np.array([c_diff(cx, cy) for cx, cy in centroid])
+        else:
+            c = np.full(area.shape, float(c_diff))
+        if callable(source):
+            fval = np.asarray(source(centroid[:, 0], centroid[:, 1]), dtype=float)
+            fval = np.broadcast_to(np.atleast_1d(fval), area.shape)
+        else:
+            fval = np.full(area.shape, float(source))
+        ke = ((beta[:, :, None] * beta[:, None, :]
+               + gamma[:, :, None] * gamma[:, None, :])
+              * (c / (4.0 * area))[:, None, None])
+        rows = np.repeat(T_live, 3, axis=1).ravel()
+        cols = np.tile(T_live, (1, 3)).ravel()
+        np.add.at(A, (rows, cols), ke.ravel())
+        np.add.at(b, T_live.ravel(), np.repeat(fval * area / 3.0, 3))
     bdry = np.asarray(boundary, dtype=int)
     bc_fun = bc if callable(bc) else (lambda x, y: bc)
     u = np.zeros(npt)

@@ -10,8 +10,65 @@ that could break an existing call.
 
 ## [Unreleased]
 
+### Fixed
+
+- Native kernels preserve Fortran, strided, and unaligned input layouts and
+  reject malformed dimensions before entering numerical loops. In-place
+  kernels require aligned C-contiguous buffers. NaN Poisson updates no
+  longer report convergence.
+- Adaptive Runge-Kutta respects the first-step limit, rejects nonfinite or
+  unsatisfiable steps, supports backward/zero-length dense output, and marks
+  trajectories truncated by `max_steps` as unsuccessful.
+- Backend contexts are isolated between threads and asyncio tasks.
+- Mixed-radix inverse FFT signs, resampling Nyquist handling, singleton KDE
+  bandwidths, and empty spectrogram outputs are corrected.
+- Optional builds exclude stale native binaries from portable wheels and
+  honor Cargo-reported artifact paths, including custom target directories.
+- CI uses pytest to collect parametrized regressions and explicitly runs the
+  documentation doctests on both backends.
+- **`bfgs`, `lbfgs`, `dfp` and `sr1` reported `converged=False` at the
+  minimizer.** Their only stopping test was `‖grad f‖ < tol`, defaulting to
+  `1e-10`. A central-difference gradient — the default when the caller supplies
+  none — resolves the gradient to about `eps^(2/3)` times the scale of `f`, so
+  that threshold sits below the noise floor and cannot be reached. On a
+  6-dimensional Rosenbrock, L-BFGS reached `f = 1.3e-16` within 40 iterations
+  and then ran the remaining 960 without moving, spending 114 619 function
+  evaluations to return `converged=False`. All four now also stop when a full
+  step fails to change the objective by a relative `ftol` (new argument,
+  default `1e-12`), reporting `"converged: objective change below ftol"`. Same
+  minimizer, 41 iterations, 1 107 evaluations.
+- **`gradient_descent`, `adam`, `rmsprop`, `adagrad`, `momentum` and
+  `nesterov` ran to `max_iter` after overflowing.** Once a step sent the
+  iterate to NaN, every later iteration was NaN arithmetic appended to
+  `history`, and the result said "maximum iterations reached" — indistinguishable
+  from a run that nearly converged. They now stop at the overflow, report
+  `converged=False` with a message naming the step size, and return the
+  history up to that point. A diverging `gradient_descent` on Rosenbrock takes
+  7 iterations and 0.4 ms rather than 10 000 and 513 ms, and its peak
+  allocation drops from 1.6 MB to 3.4 KB.
+
 ### Added
 
+- Compact Householder least squares in Python and Rust, applying reflectors
+  to the right-hand side with `O(m*n)` workspace instead of forming full Q.
+- Sparse operations avoid dense intermediates; compressed products use
+  vectorized reductions and validate their storage structure.
+- Bounded KDE tiles, vectorized FFT stages, reusable spectral windows, and
+  short wavelet filters reduce interpreter overhead and temporary storage.
+- `tools/bench_scalability.py` measures isolated-process timing, tracked
+  allocations, and peak RSS. See `PERFORMANCE.md` for measured results and
+  memory tradeoffs. The Rust crate drops its unused duplicate ndarray
+  dependency and declares its dependencies' actual Rust 1.83 minimum.
+- **Five compiled kernels that own a whole iteration** rather than one step,
+  because the boundary crossing costs more than the arithmetic when a solve is
+  thousands of `O(n^2)` sweeps:
+  `hessenberg_qr_iterate` (unshifted QR on a Hessenberg matrix, 102× at
+  n = 40), `sor_poisson` (lexicographic Gauss-Seidel/SOR, 114×),
+  `thomas` (tridiagonal solve, 64× at n = 50 000), `lid_driven_cavity`
+  (16×), and the `qr_algorithm` eigenvector accumulation. Each is
+  bit-identical to its Python twin, including iteration counts and the
+  exceptions raised, and `tests/test_accel.py` pins that.
+- `optimize.bfgs`, `dfp`, `sr1`, `broyden_class` and `lbfgs` take `ftol`.
 - **A packed SIMD `gemm` (`rust/src/gemm.rs`).** Hand-written AVX2/FMA
   micro-kernel holding a 6x8 tile of `C` in registers, cache blocking over all
   three dimensions, packed panels, and rayon across row bands, with a runtime
@@ -28,12 +85,76 @@ that could break an existing call.
   context manager that forces the reference implementation. The environment
   variable `QUADRIVIUM_NO_ACCEL=1` does the same process-wide, and
   `QUADRIVIUM_NO_RUST=1` skips the compiled build at install time.
-- `tests/test_accel.py`: 18 tests and 71 subtests requiring the two backends to
+- `tests/test_accel.py`: 31 tests and 100 subtests requiring the two backends to
   agree to floating-point noise and to raise the same exceptions, over sizes
-  that straddle the kernels' 64-wide blocking thresholds.
+  that straddle the kernels' 64-wide blocking thresholds. The kernels that run
+  a whole iteration are held to a stricter contract: they drive their own
+  convergence tests, so the iteration count and the converged flag have to
+  match as well, not just the fields.
 
 ### Changed
 
+- **The cubic splines solve a tridiagonal system instead of a dense one.**
+  `natural_cubic_spline`, `clamped_cubic_spline` and `not_a_knot_spline` each
+  built a dense `(n+1) x (n+1)` matrix and called `np.linalg.solve` on it —
+  `O(n^2)` memory and an `O(n^3)` factorization for a system whose every row
+  touches three columns. They now store three bands and run the Thomas
+  algorithm. At n = 3 200 that is 365 ms and 80.6 MB down to 0.81 ms and
+  1.1 MB; a 12 800-point spline wanted 1.3 GB and now takes 3 MB. The
+  not-a-knot rows reach outside the band, so its two end moments are
+  eliminated into the interior system rather than the band being widened —
+  clearing them against the neighbouring row instead would divide by
+  `h[1] - h[0]`, which vanishes on a uniform grid. Values agree with the dense
+  solve to 6.5e-15 relative across uniform, random, clustered and geometric
+  knot spacings.
+- **`pde.poisson_2d_direct` assembles block-tridiagonal blocks, not a dense
+  matrix.** With the unknowns ordered `i`-fastest, every stencil offset moves
+  `j` by at most one, so a node couples only to the row above and below: the
+  system is block-tridiagonal with `ny-1` blocks of size `nx-1`. It was being
+  stored as one dense `N x N` matrix and handed to `np.linalg.solve` -- 97 MB
+  and an `O(N^3)` factorization on a 60x60 grid. It now stores the blocks and
+  uses `linalg.block_tridiagonal_solve`: 233.78 ms and 94.8 MB down to 10.74 ms
+  and 11.3 MB, agreeing with the dense solve to 1.8e-16 on both the 5- and
+  9-point stencils. `laplace_2d`, `poisson_9point` and `helmholtz_2d` inherit
+  it. A 90x90 grid, which wanted about 480 MB, now takes 39 MB.
+- **`PiecewisePolynomial.__call__` evaluates the whole query at once.** It ran
+  one Python iteration per query point, with an inner Horner loop inside that;
+  it now gathers one coefficient column at a time and runs Horner over the
+  entire query. 28× at 100 000 points. A hand-built ragged coefficient list
+  still takes the per-point path.
+- **`linalg.qr_algorithm` reduces to Hessenberg form first.** That is an
+  orthogonal similarity, so no eigenvalue moves, and Hessenberg form survives a
+  QR step — which drops a sweep from `O(n^3)` to `O(n^2)` and lets the
+  convergence test read the subdiagonal instead of the whole lower triangle.
+  With the compiled kernel, 1 707 ms to 16.8 ms at n = 40. Accuracy improves
+  where it converges (n = 20: 2.7e-12 to 4.8e-14); where unshifted QR does not
+  converge it still says so, and the docstring now points at
+  `shifted_qr_algorithm` and `francis_qr`.
+- **The fully implicit Runge-Kutta stage coupling is an array product.**
+  `radau_iia`, `gauss_legendre_irk` and `lobatto_iiic` wrote `A K` and `b K` as
+  Python sums over the stage index, inside the Newton loop, allocating `s`
+  temporaries per stage per residual evaluation. 2.2× on `radau_iia`.
+- **`strong_wolfe` no longer re-derives what the caller already knows.** Every
+  caller in the package holds `f(x)` and `grad f(x)` from the step that chose
+  the direction; they are now passed in as `phi0` and `dphi0` (new optional
+  arguments), which with a finite-difference gradient saves `2n + 1` evaluations
+  of `f` per line search. The zoom phase also carries `phi(hi)` with the
+  bracket rather than re-evaluating an endpoint it had already measured.
+  Together: `bfgs` 2.1×, `newton_cg` and `nonlinear_cg` about 12% fewer
+  evaluations even with an analytic gradient.
+- **`core.utils.as_vector` and `CountedFunction.__call__` have fast paths.**
+  Between them they ran 6.5 million times over the test suite. `as_vector`
+  returns immediately for an argument that is already a contiguous 1-D
+  `float64` array (3.2× on that path, and identical aliasing either way);
+  `CountedFunction` skips re-packing single-argument calls.
+- `integrate.adaptive_gauss_kronrod` mirrors its half-tabulated node and weight
+  arrays once at import instead of on every panel: 2.4× on `quad`.
+- `pde.smooth` builds its two red-black masks once per call rather than a fresh
+  `np.indices` per half-sweep.
+- `stochastic.hamiltonian_mc` carries the current state's log-density between
+  iterations instead of recomputing it — one fewer call to the user's
+  `log_target` per sample, and the chain is bit-identical.
+- `linalg.thomas` no longer allocates an `n`-vector it never reads.
 - `ode.adaptive_rk` — and so `solve_ivp`, `dormand_prince`, `rkf45`,
   `cash_karp` and `bogacki_shampine` — runs its stage assembly, error estimate
   and PI step controller in the compiled kernel, calling back into Python for
@@ -89,10 +210,13 @@ fewer objects.
 
 Kernels were wired in only where they measurably win. `qr_algorithm` was
 implemented in Rust, measured at 1.02–1.50× against a NumPy `R @ Q` backed by a
-tuned BLAS, and removed again; it keeps its Python loop and reaches 1.33–2.08×
-through the accelerated `householder_qr` underneath. The scalar-only special
-functions (`digamma`, `erfcx`, the Bessel family) have no Python loop to
-eliminate and were left alone.
+tuned BLAS, and removed again; it kept its Python loop and reached 1.33–2.08×
+through the accelerated `householder_qr` underneath. *(Superseded: the ceiling
+there was the algorithm, not the language. Reducing to Hessenberg form first
+makes a sweep `O(n^2)` instead of `O(n^3)`, and a compiled kernel that owns the
+whole iteration then reaches 102× — see `hessenberg_qr_iterate` below.)* The
+scalar-only special functions (`digamma`, `erfcx`, the Bessel family) have no
+Python loop to eliminate and were left alone.
 
 ### Added
 
@@ -123,7 +247,7 @@ eliminate and were left alone.
 
 ### Changed
 
-- The test suite is 376 tests, up from 370.
+- The test suite is 385 tests, up from 370.
 
 ## [1.1.0] - 2026-09-01
 

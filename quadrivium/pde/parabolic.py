@@ -155,20 +155,24 @@ def heat_2d_adi(u0, alpha: float, x_span, y_span, t_span, nx: int = 40, ny: int 
     ly = np.full(ny - 2, -ry)
     dyg = np.full(ny - 1, 1 + 2 * ry)
     uy = np.full(ny - 2, -ry)
+    # Every grid line in a half-step solves the *same* tridiagonal matrix, so
+    # the lines go to the solver together: one factorization and one call per
+    # half-step instead of one per line.
     for k in range(nt):
         half = U.copy()
-        for j in range(1, ny):  # implicit in x, explicit in y
-            rhs = U[1:-1, j] + ry * (U[1:-1, j + 1] - 2 * U[1:-1, j] + U[1:-1, j - 1])
-            rhs[0] += rx * bc
-            rhs[-1] += rx * bc
-            half[1:-1, j] = thomas(lx, dxg, ux, rhs)
+        # implicit in x, explicit in y -- one column of `rhs` per interior j
+        rhs = U[1:-1, 1:-1] + ry * (U[1:-1, 2:] - 2 * U[1:-1, 1:-1] + U[1:-1, :-2])
+        rhs[0, :] += rx * bc
+        rhs[-1, :] += rx * bc
+        half[1:-1, 1:-1] = thomas(lx, dxg, ux, rhs)
         half[0, :] = half[-1, :] = bc
         half[:, 0] = half[:, -1] = bc
-        for i in range(1, nx):  # implicit in y, explicit in x
-            rhs = half[i, 1:-1] + rx * (half[i + 1, 1:-1] - 2 * half[i, 1:-1] + half[i - 1, 1:-1])
-            rhs[0] += ry * bc
-            rhs[-1] += ry * bc
-            U[i, 1:-1] = thomas(ly, dyg, uy, rhs)
+        # implicit in y, explicit in x -- transposed so each i is a column
+        rhs = (half[1:-1, 1:-1]
+               + rx * (half[2:, 1:-1] - 2 * half[1:-1, 1:-1] + half[:-2, 1:-1])).T
+        rhs[0, :] += ry * bc
+        rhs[-1, :] += ry * bc
+        U[1:-1, 1:-1] = thomas(ly, dyg, uy, rhs).T
         U[0, :] = U[-1, :] = bc
         U[:, 0] = U[:, -1] = bc
         out[k + 1] = U

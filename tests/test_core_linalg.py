@@ -4,7 +4,8 @@ import unittest
 
 import numpy as np
 
-from quadrivium.core import (EPS, absolute_error, condition_number,
+from quadrivium.core import (EPS, CountedFunction, absolute_error,
+                            as_vector, condition_number,
                             is_diagonally_dominant, is_positive_definite,
                             machine_epsilon, matrix_norm, norm,
                             numerical_gradient, numerical_hessian,
@@ -50,6 +51,42 @@ class TestCoreUtils(unittest.TestCase):
         np.testing.assert_allclose(H, [[1.0, 4.0], [4.0, -np.sin(0.5)]], atol=1e-4)
         J = numerical_jacobian(lambda v: np.array([v[0] * v[1], v[0] + v[1]]), x)
         np.testing.assert_allclose(J, [[0.5, 2.0], [1.0, 1.0]], atol=1e-6)
+
+
+    def test_as_vector_shapes_and_aliasing(self):
+        # The fast path returns the argument itself; every other input is
+        # coerced. Which of those share memory with the input is part of the
+        # contract, because callers rely on `as_vector(x).copy()` being the
+        # only thing that detaches.
+        flat = np.arange(4.0)
+        self.assertIs(as_vector(flat), flat)
+        for value, want in ((3.0, [3.0]), ([1, 2], [1.0, 2.0]),
+                            (np.zeros((2, 3)), [0.0] * 6),
+                            (np.array(5.0), [5.0]),
+                            (np.ones(3, dtype=np.float32), [1.0] * 3)):
+            got = as_vector(value)
+            self.assertEqual(got.ndim, 1)
+            self.assertEqual(got.dtype, np.float64)
+            np.testing.assert_array_equal(got, want)
+        strided = np.arange(6.0)[::2]
+        self.assertFalse(np.shares_memory(as_vector(strided), strided))
+        view = as_vector(flat)
+        view[0] = 9.0
+        self.assertEqual(flat[0], 9.0)
+
+    def test_counted_function_call_shapes(self):
+        self.assertEqual(CountedFunction(lambda: 7)(), 7)
+        self.assertEqual(CountedFunction(lambda a: a + 1)(2), 3)
+        self.assertEqual(CountedFunction(lambda a, b: a + b)(2, 3), 5)
+        self.assertEqual(CountedFunction(lambda k: k * 2)(k=4), 8)
+        self.assertEqual(CountedFunction(lambda a, k=0: a + k)(1, k=2), 3)
+        self.assertIsNone(CountedFunction(lambda a: a)(None))
+        counted = CountedFunction(lambda a: a)
+        for _ in range(5):
+            counted(1)
+        self.assertEqual(counted.calls, 5)
+        counted.reset()
+        self.assertEqual(counted.calls, 0)
 
 
 class TestDirectSolvers(unittest.TestCase):

@@ -71,7 +71,7 @@ immediately, then run the suite:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
-python -m unittest discover -s tests
+python -m pytest -q
 ```
 
 The suite is 376 tests and takes about half a minute. `pytest` works too, and

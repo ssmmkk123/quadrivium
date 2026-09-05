@@ -50,7 +50,10 @@ def _drift_diffusion(a, b):
         return as_vector(a(x, t))
 
     def bv(x, t):
-        return np.atleast_1d(np.asarray(b(x, t), dtype=float))
+        # Same coercion as the drift above. `as_vector` returns an already
+        # contiguous 1-D float array untouched, which is what every step of a
+        # solve hands it.
+        return as_vector(b(x, t))
 
     return av, bv
 
@@ -126,10 +129,9 @@ def milstein(a, b, t_span, x0, n: int = 1000, rng=None, db=None, dW=None):
     """
     def dbn(x, t):
         if db is not None:
-            return np.atleast_1d(np.asarray(db(x, t), dtype=float))
+            return as_vector(db(x, t))
         h = 1e-6 * np.maximum(np.abs(x), 1.0)
-        return (np.atleast_1d(np.asarray(b(x + h, t), dtype=float))
-                - np.atleast_1d(np.asarray(b(x - h, t), dtype=float))) / (2 * h)
+        return (as_vector(b(x + h, t)) - as_vector(b(x - h, t))) / (2 * h)
 
     def step(a, b, x, t, dt, dw, rng):
         bx = b(x, t)
@@ -149,10 +151,9 @@ def implicit_milstein(a, b, t_span, x0, n: int = 1000, rng=None, db=None,
     """
     def dbn(x, t):
         if db is not None:
-            return np.atleast_1d(np.asarray(db(x, t), dtype=float))
+            return as_vector(db(x, t))
         h = 1e-6 * np.maximum(np.abs(x), 1.0)
-        return (np.atleast_1d(np.asarray(b(x + h, t), dtype=float))
-                - np.atleast_1d(np.asarray(b(x - h, t), dtype=float))) / (2 * h)
+        return (as_vector(b(x + h, t)) - as_vector(b(x - h, t))) / (2 * h)
 
     def step(a, b, x, t, dt, dw, rng):
         bx = b(x, t)
