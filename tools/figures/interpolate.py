@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.interpolate import (akima_spline, barycentric, bezier,
                                     bspline_basis, chebyshev_nodes, cubic_spline,

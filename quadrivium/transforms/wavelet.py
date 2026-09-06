@@ -8,7 +8,7 @@ a handful of large coefficients here and an infinite Fourier tail there.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import DimensionError
 from ..core.utils import as_vector

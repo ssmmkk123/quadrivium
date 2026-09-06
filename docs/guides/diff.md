@@ -46,7 +46,7 @@ for one variable, so the derivative comes out exact — no step size, no
 truncation error, no cancellation:
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> from quadrivium.diff import Dual
 >>> x = Dual(2.0, 1.0)               # value 2, derivative of x with respect to x

@@ -13,7 +13,7 @@ points. Full signatures are in the
 Interpolants are returned as callables, so the result is used like a function:
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> x = np.linspace(0, 1, 6)
 >>> y = np.sin(2 * np.pi * x)

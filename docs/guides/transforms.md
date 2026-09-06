@@ -12,7 +12,7 @@ processing built on them, and wavelets. Full signatures are in the
 ## The Fourier family
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> x = np.array([1.0, 2.0, 3.0, 4.0])
 >>> X = qd.fft(x)

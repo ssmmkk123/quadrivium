@@ -25,12 +25,29 @@ import sys
 import time
 from typing import Callable
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium import _accel, interpolate, linalg, ode, pde, special, transforms
 
 
-def warm_blas(rng) -> None:
+def import_numpy():
+    """NumPy, for `--native` only.
+
+    The package no longer depends on it; this comparison does, because the
+    point of it is to measure these routines against a library that has been
+    binding LAPACK for thirty years.
+    """
+    try:
+        import numpy
+    except ImportError:  # pragma: no cover - depends on the environment
+        raise SystemExit(
+            "--native compares against NumPy, which is not installed; "
+            "`pip install numpy` or run without --native"
+        ) from None
+    return numpy
+
+
+def warm_blas(numpy, rng) -> None:
     """Spin up NumPy's BLAS thread pool before anything is timed.
 
     OpenBLAS pays its pool startup on first use. Without this the cost lands on
@@ -38,41 +55,49 @@ def warm_blas(rng) -> None:
     it really is -- an easy way to flatter these numbers by accident.
     """
     w = rng.standard_normal((1200, 1200))
-    spd = w @ w.T + 1200 * np.eye(1200)
+    spd = w @ w.T + 1200 * numpy.eye(1200)
     small = w[:200, :200] + w[:200, :200].T
     for _ in range(5):
         w @ w
-        np.linalg.cholesky(spd)
-        np.linalg.qr(w, mode="complete")
-        np.fft.fft(w[0])
-        np.linalg.eigh(small)
+        numpy.linalg.cholesky(spd)
+        numpy.linalg.qr(w, mode="complete")
+        numpy.fft.fft(w[0])
+        numpy.linalg.eigh(small)
 
 
-def native_cases(rng):
-    """Yield ``(label, size, ours, numpy)`` for routines NumPy also provides."""
+def native_cases(numpy, rng):
+    """Yield ``(label, size, ours, numpy)`` for routines NumPy also provides.
+
+    Each operand is built once in NumPy and handed to this package through the
+    buffer protocol, so both sides time the same numbers in their own layout.
+    """
     mm = _accel.kernel("matmul")
+    ours = lambda x: np.asarray(x)
     for n in (200, 400, 800, 1600):
         a = rng.standard_normal((n, n))
         b = rng.standard_normal((n, n))
-        spd = a @ a.T + n * np.eye(n)
+        spd = a @ a.T + n * numpy.eye(n)
         rhs = rng.standard_normal(n)
+        qa, qb, qspd, qrhs = ours(a), ours(b), ours(spd), ours(rhs)
         if mm is not None:
-            yield "matmul", n, (lambda x=a, y=b: mm(x, y)), (lambda x=a, y=b: x @ y)
-        yield ("linalg.cholesky", n, lambda s=spd: linalg.cholesky(s),
-               lambda s=spd: np.linalg.cholesky(s))
-        yield ("linalg.householder_qr", n, lambda m=a: linalg.householder_qr(m),
-               lambda m=a: np.linalg.qr(m, mode="complete"))
-        yield ("linalg.solve", n, lambda s=spd, v=rhs: linalg.solve(s, v),
-               lambda s=spd, v=rhs: np.linalg.solve(s, v))
+            yield "matmul", n, (lambda x=qa, y=qb: mm(x, y)), (lambda x=a, y=b: x @ y)
+        yield ("linalg.cholesky", n, lambda s=qspd: linalg.cholesky(s),
+               lambda s=spd: numpy.linalg.cholesky(s))
+        yield ("linalg.householder_qr", n, lambda m=qa: linalg.householder_qr(m),
+               lambda m=a: numpy.linalg.qr(m, mode="complete"))
+        yield ("linalg.solve", n, lambda s=qspd, v=qrhs: linalg.solve(s, v),
+               lambda s=spd, v=rhs: numpy.linalg.solve(s, v))
     for n in (1024, 4096, 65536, 262144, 1000, 10000, 100000):
         v = rng.standard_normal(n) + 1j * rng.standard_normal(n)
-        yield ("transforms.fft", n, lambda x=v: transforms.fft(x),
-               lambda x=v: np.fft.fft(x))
+        qv = ours(v)
+        yield ("transforms.fft", n, lambda x=qv: transforms.fft(x),
+               lambda x=v: numpy.fft.fft(x))
     for n in (40, 80, 160):
         m = rng.standard_normal((n, n))
         sym = m + m.T
-        yield ("linalg.jacobi_eigen", n, lambda s=sym: linalg.jacobi_eigen(s),
-               lambda s=sym: np.linalg.eigh(s))
+        qsym = ours(sym)
+        yield ("linalg.jacobi_eigen", n, lambda s=qsym: linalg.jacobi_eigen(s),
+               lambda s=sym: numpy.linalg.eigh(s))
 
 
 def measure(fn: Callable[[], object], repeat: int) -> float:
@@ -191,11 +216,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.native:
-        rng = np.random.default_rng(args.seed)
-        warm_blas(rng)
+        numpy = import_numpy()
+        rng = numpy.random.default_rng(args.seed)
+        warm_blas(numpy, rng)
         print(f"{'operation':28s} {'quadrivium':>12s} {'numpy':>10s}  ratio")
         print("-" * 68)
-        for label, size, ours, theirs in native_cases(rng):
+        for label, size, ours, theirs in native_cases(numpy, rng):
             a = measure(ours, args.repeat)
             b = measure(theirs, args.repeat)
             ratio = a / b

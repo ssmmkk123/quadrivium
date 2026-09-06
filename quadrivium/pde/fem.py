@@ -6,7 +6,7 @@ handle unstructured meshes and complicated geometry.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import PDESolution
 from ..core.utils import as_vector

@@ -7,7 +7,7 @@ transportation and assignment special cases.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import OptimizeResult
 from ..core.utils import as_vector

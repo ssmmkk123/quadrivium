@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-import numpy as np
+from quadrivium import numeric as np
 
 import quadrivium as qd
 from quadrivium.ode import (backward_euler, energy_drift, euler, heun,

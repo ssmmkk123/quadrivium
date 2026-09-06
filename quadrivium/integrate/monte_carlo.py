@@ -7,7 +7,7 @@ techniques here buy back a substantial constant factor.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import QuadratureResult
 from ..core.utils import as_vector

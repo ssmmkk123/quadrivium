@@ -7,7 +7,7 @@ is what makes them reliable on non-convex problems.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import OptimizeResult
 from ..core.utils import (CountedFunction, as_vector, numerical_gradient,

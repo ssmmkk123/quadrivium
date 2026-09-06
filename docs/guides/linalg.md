@@ -17,7 +17,7 @@ low-rank methods. Full signatures are in the
 default when you do not want to think about it:
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> A = np.array([[4.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 2.0]])
 >>> b = np.array([1.0, 2.0, 3.0])

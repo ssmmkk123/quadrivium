@@ -7,7 +7,7 @@ makes it the standard choice for shocks and for CFD.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import PDESolution
 from ..core.utils import as_vector

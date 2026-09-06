@@ -8,7 +8,7 @@ or any object exposing ``@`` / ``matvec``, so the sparse types in
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import ConvergenceError, DimensionError
 from ..core.types import IterationResult

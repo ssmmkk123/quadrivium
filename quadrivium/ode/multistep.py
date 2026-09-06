@@ -6,7 +6,7 @@ Adams method costs one right-hand side evaluation per step regardless of order.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import ODESolution
 from ..core.utils import CountedFunction, as_vector

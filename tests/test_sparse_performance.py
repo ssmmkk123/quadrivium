@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-import numpy as np
+from quadrivium import numeric as np
 import pytest
 
 from quadrivium.core.exceptions import DimensionError

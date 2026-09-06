@@ -31,7 +31,7 @@ flowchart TD
 ## Parabolic: diffusion
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> u0 = lambda x: np.sin(np.pi * x)
 >>> sol = qd.heat_crank_nicolson(u0, 0.1, (0, 1), (0, 0.5), nx=50, nt=100)

@@ -7,7 +7,7 @@ Galerkin (expand in basis functions).
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import ConvergenceError
 from ..core.types import ODESolution

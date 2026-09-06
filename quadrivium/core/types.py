@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Sequence
 
-import numpy as np
+from .. import numeric as np
 
 __all__ = [
     "RootResult",

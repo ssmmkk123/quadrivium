@@ -1,16 +1,19 @@
-"""Build hook that compiles the optional Rust acceleration extension.
+"""Build the two compiled pieces of the package.
 
-The extension is genuinely optional. If Cargo is missing, the build fails, or
-``QUADRIVIUM_NO_RUST=1`` is set, installation still succeeds and the package
-runs its pure-Python implementations. Set ``QUADRIVIUM_REQUIRE_RUST=1`` to turn
-a failed extension build into a hard error instead (used by the wheel CI, where
-a silently pure-Python wheel would be a defect).
+The first is required: ``quadrivium._qnp`` is the array core the whole package
+computes with, built here from the C sources under ``csrc/``. There is no
+fallback for it, so a wheel or an install without it would be useless; the
+build simply fails if it cannot be compiled.
 
-Whether the extension gets built also decides how the wheel is tagged. A wheel
-carrying a compiled object must be platform-specific, or `pip` would hand one
-platform's binary to every other; a wheel without one is `py3-none-any` and
-installs anywhere. Build eligibility is resolved before commands run; normal
-wheel tags are updated after Cargo reports whether a backend was produced.
+The second is the optional Rust extension holding accelerated kernels. If Cargo
+is missing, the build fails, or ``QUADRIVIUM_NO_RUST=1`` is set, installation
+still succeeds and those routines run their readable Python implementations.
+Set ``QUADRIVIUM_REQUIRE_RUST=1`` to turn a failed build into a hard error
+instead (used by the wheel CI, where a silently unaccelerated wheel would be a
+defect).
+
+Because the array core is always compiled, every wheel is platform- and
+interpreter-specific; there is no pure-Python configuration to tag for.
 """
 
 from __future__ import annotations
@@ -23,15 +26,41 @@ import subprocess
 import sys
 from pathlib import Path
 
-from setuptools import Distribution, setup
+from setuptools import Distribution, Extension, setup
 from setuptools.command.build_py import build_py as _build_py
 
 HERE = Path(__file__).parent.resolve()
 CRATE = HERE / "rust"
+CSRC = HERE / "csrc"
 
-# The oldest CPython the abi3 extension is compatible with; must match the
-# `abi3-pyXY` feature selected in rust/Cargo.toml.
-ABI3_TAG = "cp39"
+
+def core_extension():
+    """The array core: strided arrays, ufuncs, linear algebra, transforms."""
+    sources = sorted(str(path.relative_to(HERE)) for path in CSRC.glob("*.c"))
+    if not sources:
+        raise SystemExit(
+            "quadrivium: the C sources of the array core are missing from "
+            f"{CSRC}; the package cannot be built without them"
+        )
+    if sys.platform == "win32":
+        compile_args = ["/O2"]
+    else:
+        compile_args = [
+            "-O3",
+            # The core reads one buffer through several element types, which
+            # the strict-aliasing rules do not allow the compiler to assume
+            # away. This is a correctness flag, not a tuning one.
+            "-fno-strict-aliasing",
+            # `errno` is never read after a libm call here, and setting it
+            # blocks vectorisation of the element-wise loops.
+            "-fno-math-errno",
+        ]
+    return Extension(
+        "quadrivium._qnp",
+        sources=sources,
+        depends=[str(path.relative_to(HERE)) for path in sorted(CSRC.glob("*.h"))],
+        extra_compile_args=compile_args,
+    )
 
 
 def _truthy(name: str) -> bool:
@@ -53,8 +82,13 @@ if REQUIRE_RUST and not WILL_BUILD_RUST:
 
 
 def _target_name(artifact: Path) -> str:
-    # abi3 extensions use the plain suffix on POSIX and .pyd on Windows.
-    return "_quadrivium_rs.pyd" if artifact.suffix == ".dll" else "_quadrivium_rs.abi3.so"
+    # The Rust extension is built against the running interpreter, so it takes
+    # that interpreter's extension suffix.
+    if artifact.suffix == ".dll":
+        return "_quadrivium_rs.pyd"
+    import sysconfig
+
+    return "_quadrivium_rs" + (sysconfig.get_config_var("EXT_SUFFIX") or ".so")
 
 
 def _cargo_artifact(output: str):
@@ -161,41 +195,14 @@ class build_py(_build_py):
 
 
 class ExtensionAwareDistribution(Distribution):
-    """Reports a binary distribution exactly when one is being produced."""
+    """Always a binary distribution: the array core is compiled."""
 
     def has_ext_modules(self) -> bool:  # noqa: D102 - setuptools hook
-        return getattr(self, "_rust_build_succeeded", WILL_BUILD_RUST)
+        return True
 
 
-cmdclass = {"build_py": build_py}
-
-# Tag the wheel `cp39-abi3-<platform>` rather than `cp39-cp3XX-<platform>`, so
-# one build serves every supported interpreter.
-try:
-    from setuptools.command.bdist_wheel import bdist_wheel as _bdist_wheel
-except ImportError:  # pragma: no cover - older setuptools
-    try:
-        from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
-    except ImportError:
-        _bdist_wheel = None
-
-if _bdist_wheel is not None:
-
-    class bdist_wheel(_bdist_wheel):
-        def finalize_options(self) -> None:
-            if WILL_BUILD_RUST:
-                self.py_limited_api = ABI3_TAG
-                self.root_is_pure = False
-            super().finalize_options()
-
-        def run_command(self, command):
-            super().run_command(command)
-            if command == "build":
-                # bdist_wheel consults this flag before choosing its install
-                # layout and tags. A failed optional build is a pure wheel.
-                self.root_is_pure = not self.distribution.has_ext_modules()
-
-    cmdclass["bdist_wheel"] = bdist_wheel
-
-
-setup(cmdclass=cmdclass, distclass=ExtensionAwareDistribution)
+setup(
+    cmdclass={"build_py": build_py},
+    distclass=ExtensionAwareDistribution,
+    ext_modules=[core_extension()],
+)

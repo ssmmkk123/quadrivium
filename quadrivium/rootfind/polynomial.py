@@ -7,10 +7,10 @@ Coefficients are ordered from the highest degree down, matching
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import RootResult
-from ..core.utils import as_vector
+from ..core.utils import as_vector, unwrap_scalar
 
 __all__ = [
     "horner",
@@ -45,7 +45,7 @@ def horner(coeffs, x):
         # allocates a 0-d array per coefficient and pays full NumPy dispatch
         # for each multiply-add, and a NumPy scalar is barely cheaper.
         terms = c.astype(dtype).tolist()
-        val = dtype.type(xa).item()
+        val = xa.astype(dtype).item()
         acc = terms[0]
         for a in terms[1:]:
             acc = acc * val + a
@@ -67,7 +67,7 @@ def horner_derivative(coeffs, x):
         dp = dp * xa + p
         p = p * xa + a
     if xa.ndim == 0:
-        return p[()], dp[()]
+        return unwrap_scalar(p), unwrap_scalar(dp)
     return p, dp
 
 

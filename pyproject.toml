@@ -24,7 +24,9 @@ keywords = [
     "monte-carlo",
     "special-functions",
 ]
-dependencies = ["numpy>=1.20"]
+# No runtime dependencies: the array core the package computes with is
+# compiled from the C sources under `csrc/` at install time.
+dependencies = []
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
@@ -54,7 +56,9 @@ Changelog = "https://github.com/ssmmkk123/quadrivium/blob/main/CHANGELOG.md"
 Issues = "https://github.com/ssmmkk123/quadrivium/issues"
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+# NumPy is a test-only dependency: `tests/test_numeric_backend.py` checks the
+# compiled array core against it, operation by operation.
+test = ["pytest>=7.0", "numpy>=1.20"]
 # MkDocs 2.0 is announced as backward-incompatible with the plugin and
 # theming systems these docs use, so the majors are capped.
 docs = ["mkdocs>=1.6,<2", "mkdocs-material>=9.5,<10"]
@@ -72,7 +76,7 @@ version = { attr = "quadrivium.__version__" }
 
 [tool.setuptools.package-data]
 # setup.py filters cached binaries here and explicitly installs only the
-# artifact reported by the current Cargo build.
+# artifacts the current build produced.
 quadrivium = ["*.so", "*.pyd", "*.dylib"]
 
 [tool.setuptools.packages.find]

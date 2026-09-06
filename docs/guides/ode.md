@@ -14,7 +14,7 @@ index-1 DAEs and delay equations. Full signatures are in the
 ## The default path
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> sol = qd.solve_ivp(lambda t, y: -2*y, (0, 1), [1.0], rtol=1e-10)
 >>> abs(float(sol.y[-1, 0]) - float(np.exp(-2))) < 1e-9

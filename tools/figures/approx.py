@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.approx import (aaa, chebyshev_t, fourier_series,
                                gauss_chebyshev_nodes, gauss_hermite_nodes,

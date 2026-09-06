@@ -5,13 +5,15 @@
 | | |
 | --- | --- |
 | Python | 3.9 or newer (tested on 3.9 through 3.14) |
-| Dependencies | [NumPy](https://numpy.org) 1.20 or newer — nothing else |
-| Platform | any, including Windows, macOS, Linux, and PyPy where NumPy builds |
-| Compiler | none: the distribution is a pure-Python `py3-none-any` wheel |
+| Dependencies | none at runtime |
+| Platform | Windows, macOS, Linux |
+| Compiler | a C compiler, when building from source rather than from a wheel |
 
-Nothing in the library is compiled, so there are no per-platform wheels, no
-build step, and no version of the package that can be subtly mismatched to
-your interpreter.
+The package computes on its own array type, `quadrivium.numeric`, compiled from
+the C sources in `csrc/`. That extension is not optional — it is the array
+core — so wheels are per-platform and per-interpreter, and a source install
+needs a C compiler. Nothing else is required: there is no NumPy, no BLAS, and
+no LAPACK underneath.
 
 ## From PyPI
 
@@ -36,14 +38,16 @@ uv add quadrivium
 Inside a conda environment, install with pip — there is no conda-forge package:
 
 ```bash
-conda create -n numerics python=3.12 numpy
+conda create -n numerics python=3.12
 conda activate numerics
 pip install quadrivium
 ```
 
 ## Optional extras
 
-The library itself needs only NumPy. The extras exist for working *on* it:
+The library itself needs nothing at runtime. The extras exist for working *on*
+it -- `test` pulls in NumPy, which the test suite uses to check the compiled
+array core against an independent implementation:
 
 | Extra | Installs | For |
 | --- | --- | --- |
@@ -92,7 +96,7 @@ python -c "import quadrivium; print(quadrivium.__version__)"
 A quick end-to-end check that the numerics work, not just the import:
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> abs(float(qd.quad(lambda x: np.exp(-x*x), -np.inf, np.inf)) - float(np.sqrt(np.pi))) < 1e-12
 True
@@ -119,9 +123,10 @@ reproducible:
 
 ```text
 quadrivium==1.1.0
-numpy==2.4.3
 ```
 
-Numerical output can differ in the last few digits between NumPy versions and
-BLAS builds, because the library's dense linear algebra rests on NumPy's own
-matrix products. Anything sensitive to the last digit should pin both.
+Numerical output can still differ in the last few digits between platforms,
+because the array core's matrix kernels use fused multiply-add where the CPU
+provides it. Everything else is fixed by the package itself: sums are pairwise
+with a fixed block size, and a seeded generator produces the same stream
+everywhere, so pinning the version pins the numbers on a given machine.

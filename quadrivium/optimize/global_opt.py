@@ -6,7 +6,7 @@ guarantees for the ability to escape local optima.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import OptimizeResult
 from ..core.utils import CountedFunction, as_vector

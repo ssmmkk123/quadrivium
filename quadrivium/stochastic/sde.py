@@ -14,7 +14,7 @@ the step buys so little pathwise accuracy and so much in expectation.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import ODESolution
 from ..core.utils import as_vector

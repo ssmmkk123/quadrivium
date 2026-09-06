@@ -75,6 +75,7 @@ nav:
   - Installation: installation.md
   - Getting started: getting-started.md
   - Guides:
+      - The array layer: guides/numeric.md
       - Core: guides/core.md
       - Linear algebra: guides/linalg.md
       - Root finding: guides/rootfind.md

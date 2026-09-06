@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.utils import as_vector
 

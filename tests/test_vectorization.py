@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import unittest
 
-import numpy as np
+from quadrivium import numeric as np
 
 import quadrivium as qd
 from quadrivium import _accel, special

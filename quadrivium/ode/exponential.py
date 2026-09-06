@@ -6,7 +6,7 @@ they stay stable at step sizes an explicit method could never take.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import ODESolution
 from ..core.utils import CountedFunction, as_vector, check_square

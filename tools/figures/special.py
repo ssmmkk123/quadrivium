@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.special import (airy_ai, airy_bi, bessel_jn, bessel_yn, dawson,
                                 erf, erfc, erfcx, gamma, lambert_w, log_gamma,

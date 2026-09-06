@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import operator
 
-import numpy as np
+from .. import numeric as np
 
 from .. import _accel
 

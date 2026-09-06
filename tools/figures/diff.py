@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.core import CountedFunction
 from quadrivium.diff import (central_difference, chebyshev_derivative,

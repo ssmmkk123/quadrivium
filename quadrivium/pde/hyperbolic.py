@@ -7,7 +7,7 @@ here blend a low-order and a high-order flux through a limiter.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import DomainError
 from ..core.types import PDESolution

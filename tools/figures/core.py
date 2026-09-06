@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.core import EPS, condition_number, norm
 from quadrivium.linalg import qr_solve, solve

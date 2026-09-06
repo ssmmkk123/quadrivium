@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.integrate import (adaptive_gauss_kronrod, boole_rule, filon,
                                   gauss_legendre, monte_carlo,

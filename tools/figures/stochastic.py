@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.stochastic import (LCG, autocorrelation_time, bootstrap,
                                    effective_sample_size,

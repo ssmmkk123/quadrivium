@@ -22,7 +22,7 @@ triples lie on a small number of planes, which is invisible in one dimension
 and fatal in three:
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> from quadrivium.stochastic import LCG, MersenneTwister, spectral_test
 >>> lcg = LCG(seed=1)
 >>> round(float(lcg.random()), 12)

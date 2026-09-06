@@ -6,7 +6,7 @@ designs -- are visible rather than hidden behind a library call.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 __all__ = [
     "LCG",

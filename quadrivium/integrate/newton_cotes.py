@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import QuadratureResult
 from ..core.utils import CountedFunction, as_vector

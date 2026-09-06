@@ -32,7 +32,7 @@ Quick start
 Results are rounded below to the accuracy each method is actually asked for --
 ``solve_ivp`` defaults to ``rtol=1e-8``, so its last digits are not meaningful.
 
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> round(qd.brent(lambda x: x**3 - 2*x - 5, 1, 3).root, 12)
 2.094551481542

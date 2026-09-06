@@ -32,7 +32,7 @@ returns nodes and weights), so nothing is shadowed.
 ## A five-minute tour
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 
 ```
@@ -327,7 +327,7 @@ the method did — this is fast enough.
 Inputs and outputs are NumPy arrays, so nothing special is needed:
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> t = np.linspace(0, 1, 5)
 >>> sol = qd.solve_ivp(lambda t, y: -y, (0, 1), [1.0], rtol=1e-10)
 >>> y = sol(t)                          # dense output on your own grid

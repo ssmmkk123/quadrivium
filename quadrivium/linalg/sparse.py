@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import deque
 from operator import index
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import DimensionError
 from ..core.utils import as_vector

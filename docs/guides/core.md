@@ -46,7 +46,7 @@ flowchart LR
 ```
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> float(qd.quad(lambda x: x**2, 0, 1))              # QuadratureResult → float
 0.3333333333333323

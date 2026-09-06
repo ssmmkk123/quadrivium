@@ -4,7 +4,7 @@ import math
 import unittest
 from fractions import Fraction
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.core.exceptions import DomainError
 from quadrivium.diff import *

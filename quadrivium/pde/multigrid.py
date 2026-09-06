@@ -7,7 +7,7 @@ removes every frequency at the same rate, giving ``O(N)`` overall work.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import PDESolution
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 import quadrivium as qd
 from quadrivium.optimize import (backtracking, bfgs, curve_fit,

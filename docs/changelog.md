@@ -13,6 +13,67 @@ that could break an existing call.
 
 ## [Unreleased]
 
+### Changed
+
+- **NumPy is no longer a dependency: the array layer is now this project's own,
+  written in C.** `quadrivium.numeric` replaces it -- the same names, the same
+  signatures, the same semantics for the subset the package used, compiled from
+  the sources in `csrc/` into `quadrivium._qnp`. It provides strided
+  N-dimensional arrays over `bool`, `int64`, `float64` and `complex128`, with
+  broadcasting, views, the whole indexing grammar (basic slicing, boolean
+  masks, integer arrays, `ix_`, `add.at`), reductions, dense linear algebra
+  (`solve`, `inv`, `det`, `slogdet`, `cholesky`, `eig`, `eigh`, `svd`, `lstsq`,
+  `pinv`, `norm`), the FFT family, sorting and searching, polynomials, and a
+  PCG64 generator. Library code that read `import numpy as np` now reads
+  `from .. import numeric as np` and is otherwise untouched.
+
+  Compatibility was the point, so it is tested as such: 367 differential tests
+  compare the backend against NumPy operation by operation, exactly where an
+  exact answer exists. Sums use NumPy's pairwise scheme and its block size, so
+  a sum agrees bit for bit rather than to a tolerance. `random.default_rng`
+  reproduces NumPy's SeedSequence, PCG64, ziggurat tables and Lemire bounded
+  integers, so a seeded run yields the identical stream -- every published
+  number in the documentation is unchanged. Array `repr` and `str` match NumPy
+  character for character. Arrays export the buffer protocol, so callers who
+  have NumPy can still hand NumPy arrays in and read results back out.
+
+  Two differences are deliberate. `linalg.eigh` fixes the sign of each
+  eigenvector so the largest-magnitude entry is positive, which LAPACK does not
+  promise and which varies between BLAS builds; the decomposition is therefore
+  reproducible across machines, but a routine that consumes eigenvectors as a
+  random basis -- `cma_es` -- follows a different trajectory for a given seed
+  than it did against LAPACK. And `reciprocal` on an integer array promotes to
+  float rather than performing integer division.
+
+  The package is faster and smaller for the change. Measured with
+  `tools/bench_scalability.py`, one process per case and threads pinned to one:
+  the Gaussian density estimate 32.3 -> 16.6 ms, Welch PSD 24.7 -> 14.4 ms, FFT
+  0.44 -> 0.33 ms, sparse identity 0.015 -> 0.014 ms, and least squares and the
+  CSR matrix-vector product unchanged. Peak resident memory falls from 36-43
+  MiB to 23-29 MiB in every case, most of it the NumPy import that no longer
+  happens. The element-wise kernels carry a vectorised `exp` accurate to one
+  ulp of libm, the matrix product is a packed kernel with an AVX2/FMA
+  micro-kernel running at roughly 46 GFLOPS single-threaded, and indexing has
+  direct paths for `a[mask]` and `a[indices]` in both directions. Nothing is
+  retained between operations: a buffer returns to the allocator when its array
+  dies, which `test_temporaries_do_not_accumulate` checks by watching peak RSS
+  across four hundred iterations of large temporaries.
+
+- **The compiled Rust kernels now cross the boundary through the buffer
+  protocol.** They previously took NumPy arrays through the `numpy` crate;
+  they now accept anything exporting a PEP 3118 buffer and allocate their
+  results through the array core. The kernels themselves are unchanged. Because
+  the buffer protocol only entered CPython's limited API in 3.11, the extension
+  is built against the running interpreter rather than the stable ABI -- which
+  costs nothing, since the array core makes every wheel interpreter-specific
+  anyway.
+
+- **`multivariate_normal` drops eigenvalues at the decomposition's rounding
+  floor** when falling back to an eigendecomposition for a singular covariance.
+  `sqrt(1e-16)` is `1e-8`, large enough to appear in the samples of an exactly
+  singular covariance; those eigenvalues are noise and their square roots are
+  not.
+
 ### Fixed
 
 - **`jacobi_eigen` and `qr_algorithm` could not converge on a matrix of any

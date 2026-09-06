@@ -18,7 +18,7 @@ one formula stretched past its useful range.
 ## Gamma and friends
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> round(float(qd.gamma(5.0)), 10)                 # Γ(n) = (n-1)!
 24.0

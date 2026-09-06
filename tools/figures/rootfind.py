@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.rootfind import (aberth_ehrlich, bisection, brent, companion_roots,
                                  illinois, itp, newton, ridders, root_bounds,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.utils import as_vector
 
@@ -243,7 +243,12 @@ def multivariate_normal(mean, cov, n: int = 1000, rng=None):
     except np.linalg.LinAlgError:
         # fall back to the eigendecomposition for a semi-definite covariance
         w, V = np.linalg.eigh(cov)
-        L = V @ np.diag(np.sqrt(np.maximum(w, 0.0)))
+        # An eigenvalue at the decomposition's rounding floor is noise, but its
+        # square root is not: sqrt(1e-16) is 1e-8, large enough to show up in
+        # the samples of an exactly singular covariance. Drop those instead.
+        scale = float(np.max(np.abs(w))) if w.size else 0.0
+        floor = np.finfo(float).eps * max(scale, 1.0) * cov.shape[0]
+        L = V @ np.diag(np.sqrt(np.where(w > floor, w, 0.0)))
     z = rng.standard_normal((n, mean.size))
     return mean + z @ L.T
 

@@ -17,7 +17,8 @@ compiled library.
 or interval arithmetic, so no method here can return a certified error bound —
 only an estimate.
 
-**Threads.** Nothing is parallelized. NumPy's own BLAS may use threads for the
+**Threads.** Nothing in the array core is parallelized. The optional Rust
+kernels use threads for the
 matrix products underneath, but no algorithm here is threaded or vectorized
 across independent problems.
 

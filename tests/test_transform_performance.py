@@ -6,7 +6,7 @@ transform definitions, boundary conventions and bounded workspace instead.
 
 import tracemalloc
 
-import numpy as np
+from quadrivium import numeric as np
 import pytest
 
 from quadrivium import _accel

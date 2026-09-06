@@ -7,7 +7,7 @@ rank deficient or ill-posed.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from .. import _accel
 from ..core.exceptions import DimensionError, SingularMatrixError

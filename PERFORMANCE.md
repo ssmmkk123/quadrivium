@@ -1,6 +1,7 @@
 # Performance and reliability improvements
 
-Measured on 2026-09-05 using Python 3.14.4, NumPy 2.4.4, and Linux x86-64.
+Measured on Python 3.14.4 and Linux x86-64; the earlier passes used NumPy 2.4.4
+as the array backend, which the last section replaces.
 The baseline is the working tree at the start of this request, including its
 existing local changes and compiled backend. These results measure selected
 workloads, not a uniform speedup across every public function.
@@ -108,6 +109,40 @@ dominated by a user callback -- the ODE and SDE integrators, the optimizers --
 are unchanged: 55 000 of the 75 000 calls in a `newton_cg` solve are the
 caller's objective, so the framework around it is not what costs.
 
+## Replacing NumPy with a C array core
+
+`quadrivium.numeric` -- the package's own array layer, compiled from `csrc/` --
+replaced NumPy. The comparison below is the same tree before and after that
+change: one process per case, threads pinned to one, a warm-up and the median
+of twenty-five timed samples.
+
+| Operation | Workload | NumPy backend (ms) | C backend (ms) | | Peak RSS before | Peak RSS after |
+|---|---|---:|---:|---:|---:|---:|
+| Least squares, compiled kernels | 1500 x 12 | 0.148 | 0.150 | unchanged | 36 MiB | 24 MiB |
+| Least squares, Python path | 1500 x 12 | 0.470 | 0.482 | unchanged | 37 MiB | 24 MiB |
+| Gaussian density estimate | 20000 samples x 400 points | 32.348 | 16.623 | 1.95x faster | 38 MiB | 25 MiB |
+| Sparse identity | 2000 x 2000 | 0.015 | 0.014 | 1.12x faster | 36 MiB | 23 MiB |
+| CSR matrix-vector product | 100000 nonzeros | 0.974 | 1.002 | unchanged | 43 MiB | 29 MiB |
+| FFT, Python path | 8192 samples | 0.443 | 0.325 | 1.36x faster | 37 MiB | 24 MiB |
+| Welch PSD, Python path | 65536 samples; 256 per segment | 24.731 | 14.375 | 1.72x faster | 37 MiB | 24 MiB |
+
+Peak resident memory falls across the board because the NumPy import no longer
+happens; the tracked allocations of the workloads themselves are unchanged.
+
+Three things carry the speed. Element-wise loops have unit-stride fast paths the
+compiler vectorises, and `exp` is a vectorised Cody-Waite reduction accurate to
+one ulp of libm, which is where the density estimate's gain comes from. The
+matrix product is a packed kernel with an AVX2/FMA micro-kernel holding a 4x8
+tile of `C` in registers, reaching about 46 GFLOPS single-threaded. And
+indexing has direct paths for the two idioms this package runs hardest --
+`a[mask]` and `a[indices]`, in both directions -- which is what keeps the
+sparse matrix-vector product level.
+
+Nothing is retained between operations: an array's buffer goes back to the
+allocator when the array dies, which `test_temporaries_do_not_accumulate` in
+`tests/test_numeric_backend.py` holds to by measuring peak RSS over four
+hundred iterations of large temporaries.
+
 ## Memory
 
 - Gaussian KDE (20,000 samples, 400 points): tracked peak allocations fell
@@ -151,19 +186,21 @@ From the second pass:
   18× less time. The block scales with the element count, not with the dense
   system it assembles into.
 
-Tracemalloc captures Python/NumPy allocations but does not capture all Rust
-allocations. Native workloads must also be assessed using the recorded process
-peak RSS, which includes the interpreter and inputs. Raw samples and memory
+Tracemalloc captures Python-side allocations but not those a compiled kernel
+makes for itself. Native workloads must also be judged by the recorded process
+peak RSS, which includes the interpreter and its inputs. Raw samples and memory
 measurements are in [before](benchmarks/scalability-before.json) and
-[after](benchmarks/scalability-after.json).
+[after](benchmarks/scalability-after.json) for the earlier passes, and in
+[NumPy backend](benchmarks/scalability-numpy-backend.json) and
+[C backend](benchmarks/scalability-c-backend.json) for the array core.
 
 ## Reliability and compatibility
 
 The public numerical algorithms remain visible in Python, with optional Rust
-kernels. No new runtime dependency or language toolchain is required. NumPy's
-compiled array operations provide the gains in sparse storage, density
-estimation, and Python transforms. The Rust build now declares the 1.83 minimum
-required by PyO3/NumPy bindings and avoids a duplicate ndarray dependency.
+kernels. There is no longer any runtime dependency at all: the array layer that
+provides the gains in sparse storage, density estimation and Python transforms
+is `quadrivium.numeric`, compiled from this project's own C sources. The Rust
+build declares the 1.83 minimum required by its PyO3 bindings.
 
 Regression coverage includes independent residual and transform identities,
 noncontiguous/read-only/unaligned inputs, sparse duplicates and empty shapes,

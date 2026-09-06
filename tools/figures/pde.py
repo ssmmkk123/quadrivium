@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.pde import (advection_upwind, heat_crank_nicolson, heat_ftcs,
                             lax_wendroff, lid_driven_cavity, multigrid_solve,

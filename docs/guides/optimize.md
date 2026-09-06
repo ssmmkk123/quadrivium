@@ -13,7 +13,7 @@ methods, proximal splitting, and linear programming. Full signatures are in the
 ## The default path
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> rosen = lambda v: (1 - v[0])**2 + 100*(v[1] - v[0]**2)**2
 >>> res = qd.minimize(rosen, [-1.2, 1.0], method="bfgs")

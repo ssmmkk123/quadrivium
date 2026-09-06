@@ -8,7 +8,7 @@ random projection.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import ConvergenceError, DimensionError, SingularMatrixError
 from ..core.types import EigenResult

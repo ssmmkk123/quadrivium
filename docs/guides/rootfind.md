@@ -45,7 +45,7 @@ flowchart TD
 | the problem is naturally `x = g(x)` | `fixed_point`, `aitken_accelerated` | 1, accelerated |
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> f = lambda x: x**3 - 2*x - 5
 >>> r = qd.brent(f, 1, 3)

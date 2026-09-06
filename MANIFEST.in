@@ -17,10 +17,14 @@ recursive-include docs *.md
 recursive-include docs *.css
 recursive-include tools *.py
 
-# The Rust crate for the optional compiled backend. Without these the sdist
-# could only ever install as pure Python, so they ship even though the wheel
-# carries the built extension instead.
+# The C sources of the array core. These are not optional -- the package does
+# not run without them -- so an sdist that omitted them would be unbuildable.
 include setup.py
+recursive-include csrc *.c
+recursive-include csrc *.h
+
+# The Rust crate for the optional compiled kernels. The wheel carries the built
+# extension; the sources ship so a downstream packager can rebuild it.
 recursive-include rust *.rs
 include rust/Cargo.toml
 include rust/Cargo.lock

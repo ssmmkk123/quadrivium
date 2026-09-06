@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 
-import numpy as np
+from quadrivium import numeric as np
 
 import quadrivium as qd
 from quadrivium.diff import central_difference, forward_difference

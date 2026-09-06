@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium import _accel
 
@@ -12,16 +12,21 @@ rs = _accel._rs
 
 
 def layouts(array):
-    """Include byte-offset data which cannot be viewed as aligned Rust slices."""
-    unaligned = np.ndarray(array.shape, dtype=array.dtype,
-                           buffer=bytearray(array.nbytes + 1), offset=1)
-    unaligned[:] = array
-    byte_strided = np.ndarray(array.shape, dtype=array.dtype,
-                              buffer=bytearray(array.size * 9),
-                              strides=(array.shape[1] * 9, 9))
-    byte_strided[:] = array
+    """Every layout the array core can hand to a compiled kernel.
+
+    Its arrays are always element-aligned -- the allocator returns aligned
+    storage and views only ever offset by whole elements -- so the byte-offset
+    buffers a foreign array library can build are not representable. What is
+    left is what the native boundary has to get right anyway: column-major
+    order, negative strides, gapped views, and read-only inputs.
+    """
+    rows, cols = array.shape
+    gapped = np.empty((rows * 2, cols * 3))
+    gapped[::2, ::3] = array
+    readonly = array.copy()
+    readonly.flags.writeable = False
     return (array.copy(), np.asfortranarray(array), array.T.copy().T,
-            array[::-1, ::-1].copy()[::-1, ::-1], unaligned, byte_strided)
+            array[::-1, ::-1].copy()[::-1, ::-1], gapped[::2, ::3], readonly)
 
 
 @unittest.skipUnless(rs is not None, "compiled backend not built")
@@ -57,18 +62,17 @@ class TestNativeArrayLayouts(unittest.TestCase):
         for value in layouts(l.T):
             np.testing.assert_allclose(rs.back_substitution(value, l.T @ x), x)
 
-    def test_read_only_vectors_handle_unaligned_and_negative_strides(self):
+    def test_read_only_vectors_handle_gapped_and_negative_strides(self):
         x = np.array([0.25, 0.5, 1., 2.])
-        unaligned = np.ndarray(x.shape, dtype=x.dtype,
-                               buffer=bytearray(x.nbytes + 1), offset=1)
-        unaligned[:] = x
-        for value in (unaligned, x[::-1].copy()[::-1]):
+        gapped = np.empty(x.size * 3)
+        gapped[::3] = x
+        for value in (gapped[::3], x[::-1].copy()[::-1]):
             for name in ("gamma", "log_gamma", "erf", "erfc"):
                 np.testing.assert_array_equal(getattr(rs, name)(value), getattr(rs, name)(x))
         z = x.astype(complex)
-        raw = np.ndarray(z.shape, dtype=z.dtype,
-                         buffer=bytearray(z.nbytes + 1), offset=1)
-        raw[:] = z
+        spread = np.empty(z.size * 2, dtype=complex)
+        spread[::2] = z
+        raw = spread[::2]
         np.testing.assert_allclose(rs.fft(raw), np.fft.fft(z), atol=1e-12)
         np.testing.assert_allclose(rs.ifft(raw), np.fft.ifft(z), atol=1e-12)
 

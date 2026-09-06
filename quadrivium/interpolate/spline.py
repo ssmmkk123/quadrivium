@@ -6,7 +6,7 @@ differentiation, integration and root finding on the spline itself.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import DimensionError, DomainError
 from ..core.utils import as_vector

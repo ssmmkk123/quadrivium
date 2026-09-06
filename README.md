@@ -13,7 +13,7 @@ Hungarian algorithm walks its own augmenting paths — so the method itself is
 readable rather than hidden behind a compiled call.
 
 **836 public functions and classes across 13 subpackages.
-Depends only on NumPy.**
+No runtime dependencies: the arrays are its own, written in C.**
 
 *The quadrivium was the medieval curriculum of the four mathematical arts —
 arithmetic, geometry, music, astronomy — the complete education in number.
@@ -31,13 +31,28 @@ It abbreviates to **quad**.*
 pip install quadrivium
 ```
 
-Python 3.9 or newer, NumPy 1.20 or newer, and nothing else at runtime.
+Python 3.9 or newer, a C compiler if you build from source, and nothing else.
 
-Wheels bundle an optional compiled backend (see
-[Performance](#performance)). It is genuinely optional: if no wheel matches your
-platform, `pip` builds from source, and if a Rust toolchain is not present the
-install still succeeds and every routine runs its pure-Python implementation.
-Set `QUADRIVIUM_NO_RUST=1` to skip the compiled build deliberately.
+The package computes on its own array type, `quadrivium.numeric`, compiled from
+the C sources in `csrc/`. It is a drop-in replacement for the subset of the
+NumPy API this library used to depend on -- the same names, the same
+signatures, the same semantics -- so code that says
+
+```python
+from quadrivium import numeric as np
+```
+
+reads exactly as it did before. Arrays are strided and N-dimensional over
+`bool`, `int64`, `float64` and `complex128`, with broadcasting, views, the full
+indexing grammar, dense linear algebra, transforms and a PCG64 generator. They
+export the buffer protocol, so if you already have NumPy you can pass NumPy
+arrays straight in and read the results back with `numpy.asarray`.
+
+Wheels also bundle an optional Rust extension of accelerated kernels (see
+[Performance](#performance)). That one is genuinely optional: if no wheel
+matches your platform, `pip` builds from source, and if a Rust toolchain is not
+present the install still succeeds and those routines run their readable Python
+implementations. Set `QUADRIVIUM_NO_RUST=1` to skip it deliberately.
 
 For an editable development installation with the test and documentation
 dependencies:
@@ -55,7 +70,7 @@ The documentation imports the package as `qd` rather than `quad`, so that the
 library's own general-purpose integrator stays legible as `qd.quad(...)`.
 
 ```python
-import numpy as np
+from quadrivium import numeric as np
 import quadrivium as qd
 
 qd.brent(lambda x: x**3 - 2*x - 5, 1, 3).root      # 2.0945514815423265
@@ -84,7 +99,7 @@ convergence flags and a message explaining what happened:
 
 ```
 
-Stochastic routines take `rng=` — an integer seed or a `numpy.random.Generator` —
+Stochastic routines take `rng=` — an integer seed or a generator —
 so every run is reproducible.
 
 ## What is included

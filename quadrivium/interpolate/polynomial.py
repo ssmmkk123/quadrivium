@@ -6,10 +6,10 @@ passed straight to the quadrature and ODE routines.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.exceptions import DimensionError, DomainError
-from ..core.utils import as_vector
+from ..core.utils import as_vector, unwrap_scalar
 
 __all__ = [
     "lagrange",
@@ -74,7 +74,7 @@ def lagrange(x, y):
                     term *= shifted
                     term /= den[i, j]
             total += term
-        return total[()] if total.ndim == 0 else total
+        return unwrap_scalar(total)
 
     return p
 
@@ -117,7 +117,7 @@ def newton_divided_differences(x, y):
         result = np.full_like(t, coeffs[-1], dtype=float)
         for k in range(len(coeffs) - 2, -1, -1):
             result = result * (t - x[k]) + coeffs[k]
-        return result[()] if result.ndim == 0 else result
+        return unwrap_scalar(result)
 
     p.coefficients = coeffs
     return p
@@ -145,7 +145,7 @@ def newton_forward(x, y):
         for k in range(1, n):
             term = term * (s - (k - 1)) / k
             total = total + coeffs[k] * term
-        return total[()] if total.ndim == 0 else total
+        return unwrap_scalar(total)
 
     return p
 
@@ -172,7 +172,7 @@ def newton_backward(x, y):
         for k in range(1, n):
             term = term * (s + (k - 1)) / k
             total = total + coeffs[k] * term
-        return total[()] if total.ndim == 0 else total
+        return unwrap_scalar(total)
 
     return p
 
@@ -284,7 +284,7 @@ def hermite(x, y, dy):
         result = np.full_like(t, coeffs[-1], dtype=float)
         for k in range(2 * n - 2, -1, -1):
             result = result * (t - z[k]) + coeffs[k]
-        return result[()] if result.ndim == 0 else result
+        return unwrap_scalar(result)
 
     p.coefficients = coeffs
     p.nodes = z

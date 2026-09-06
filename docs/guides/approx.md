@@ -17,7 +17,7 @@ weighted — is the choice this subpackage is organised around.
 ## Fitting data
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> x = np.array([0.0, 1.0, 2.0, 3.0])
 >>> y = x**2 + x + 1
@@ -26,7 +26,7 @@ weighted — is the choice this subpackage is organised around.
 
 ```
 
-Coefficients come back highest degree first, so `numpy.polyval` evaluates them.
+Coefficients come back highest degree first, so `numeric.polyval` evaluates them.
 
 | Data or goal | Function |
 | --- | --- |

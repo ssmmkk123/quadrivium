@@ -11,10 +11,17 @@ factorization loops over its pivots, the FFT does its own bit reversal, the
 Hungarian algorithm walks its own augmenting paths, Bartels-Stewart reduces to
 Schur form and back-substitutes block by block.
 
-NumPy is used for array storage and the primitives underneath — a matrix
-product, an element-wise exponential — but never to supply the method itself.
-There is no call to `numpy.linalg.solve` inside `quadrivium.linalg.solve`, and
-no call to `numpy.fft` inside `quadrivium.transforms.fft`.
+`quadrivium.numeric` supplies array storage and the primitives underneath — a
+matrix product, an element-wise exponential — but never the method itself.
+There is no call to `numeric.linalg.solve` inside `quadrivium.linalg.solve`,
+and no call to `numeric.fft` inside `quadrivium.transforms.fft`.
+
+That array layer is the package's own, written in C under `csrc/`: strided
+N-dimensional arrays over four dtypes, broadcasting element-wise operations,
+NumPy's indexing grammar, its pairwise summation, dense factorisations,
+transforms and a PCG64 generator. It replaced a NumPy dependency and keeps
+NumPy's semantics deliberately, down to reproducing its random streams bit for
+bit, so results carry over unchanged.
 
 The consequence is that reading the source is a way to learn the method, and
 modifying it is a way to test a claim about it. The cost is speed; see
@@ -42,7 +49,7 @@ this one.
 </figure>
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> exact = float(np.exp(-1.0))
 >>> e1 = abs(float(qd.rk4(lambda t, y: -y, (0, 1), [1.0], n=20).y[-1, 0]) - exact)

@@ -10,7 +10,7 @@ conservation laws, and published benchmarks.
 import math
 import unittest
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.approx import aaa, chebyshev_economization
 from quadrivium.integrate import (cauchy_principal_value, filon,

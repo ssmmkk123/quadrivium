@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.transforms import (dwt, fft, fftfreq, fftshift, periodogram,
                                    spectrogram, wavedec, wavelet_denoise, welch,

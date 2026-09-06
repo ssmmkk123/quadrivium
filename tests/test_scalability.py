@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium import _accel
 from quadrivium.core.exceptions import DimensionError, SingularMatrixError

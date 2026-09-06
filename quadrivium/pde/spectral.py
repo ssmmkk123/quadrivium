@@ -7,7 +7,7 @@ points to achieve.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..core.types import PDESolution
 from ..diff.spectral import chebyshev_diff_matrix, fourier_derivative

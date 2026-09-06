@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import Callable
 
-import numpy as np
+from .. import numeric as np
 
 __all__ = [
     "Dual",

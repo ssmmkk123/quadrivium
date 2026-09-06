@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-import numpy as np
+from .. import numeric as np
 
 from .exceptions import DimensionError
 
@@ -113,6 +113,16 @@ def relative_error(approx, exact) -> float:
     denom = norm(exact, np.inf)
     err = absolute_error(approx, exact)
     return err / denom if denom > 0 else err
+
+
+def unwrap_scalar(value):
+    """Return a 0-d array's single element, and anything else unchanged.
+
+    Element-wise operations already yield Python scalars for 0-d operands, but
+    array constructors still produce 0-d arrays, so a routine that promises a
+    scalar for scalar input finishes through this.
+    """
+    return value[()] if getattr(value, "ndim", None) == 0 else value
 
 
 def as_vector(x) -> np.ndarray:

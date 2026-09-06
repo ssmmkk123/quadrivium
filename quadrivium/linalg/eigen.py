@@ -7,7 +7,7 @@ method, Krylov projections (Lanczos, Arnoldi), and SVD by one-sided Jacobi.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from .. import _accel
 

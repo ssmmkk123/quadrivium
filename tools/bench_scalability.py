@@ -7,7 +7,7 @@ Run on two source trees with the same interpreter and hardware::
     python tools/bench_scalability.py --output after.json
 
 Each case warms up, reports the median of repeated wall times, and measures
-Python/NumPy-tracked allocations separately. Peak RSS includes the interpreter,
+Python-tracked allocations separately. Peak RSS includes the interpreter,
 inputs, and native allocations (unlike tracemalloc), and is available on Unix.
 Thread counts are fixed to one in child processes for comparable BLAS timings.
 """
@@ -31,7 +31,14 @@ CASES = ("least_squares", "least_squares_python", "kernel_density", "identity_sp
 
 def measure_case(name, root, repeat):
     sys.path.insert(0, str(root))
-    import numpy as np
+    # Each tree is measured with its own array backend: the current one has
+    # `quadrivium.numeric`, an older checkout falls back to NumPy.
+    try:
+        from quadrivium import numeric as np
+        backend_name = "quadrivium.numeric"
+    except ImportError:
+        import numpy as np
+        backend_name = f"numpy {np.__version__}"
     from quadrivium import _accel
     from quadrivium.linalg import CSRMatrix, qr_least_squares, identity_sparse
     from quadrivium.stochastic import kernel_density
@@ -86,7 +93,7 @@ def measure_case(name, root, repeat):
     return {"case": name, "size": size, "backend": backend,
             "median_ms": statistics.median(times), "samples_ms": times,
             "traced_peak_mib": peak / 1024**2, "process_peak_rss_mib": peak_rss,
-            "numpy": np.__version__}
+            "array_backend": backend_name}
 
 
 def main():

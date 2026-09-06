@@ -2,7 +2,9 @@
 
 import unittest
 
-import numpy as np
+import array as array_module
+
+from quadrivium import numeric as np
 
 from quadrivium.core import (EPS, CountedFunction, absolute_error,
                             as_vector, condition_number,
@@ -63,7 +65,7 @@ class TestCoreUtils(unittest.TestCase):
         for value, want in ((3.0, [3.0]), ([1, 2], [1.0, 2.0]),
                             (np.zeros((2, 3)), [0.0] * 6),
                             (np.array(5.0), [5.0]),
-                            (np.ones(3, dtype=np.float32), [1.0] * 3)):
+                            (array_module.array("f", [1.0] * 3), [1.0] * 3)):
             got = as_vector(value)
             self.assertEqual(got.ndim, 1)
             self.assertEqual(got.dtype, np.float64)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np
+from quadrivium import numeric as np
 from matplotlib.patches import Circle
 
 from quadrivium.core import SingularMatrixError

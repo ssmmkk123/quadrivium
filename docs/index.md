@@ -7,7 +7,7 @@ Hungarian algorithm walks its own augmenting paths — so the method itself is
 readable rather than hidden behind a compiled call.
 
 **836 public functions and classes across 13 subpackages. 376 tests, all
-passing. Depends only on NumPy.**
+passing. No runtime dependencies: the arrays are its own, written in C.**
 
 *The quadrivium was the medieval curriculum of the four mathematical arts —
 arithmetic, geometry, music, astronomy — the complete education in number.
@@ -18,7 +18,7 @@ pip install quadrivium
 ```
 
 ```python
-import numpy as np
+from quadrivium import numeric as np
 import quadrivium as qd
 
 qd.brent(lambda x: x**3 - 2*x - 5, 1, 3).root      # 2.0945514815423265

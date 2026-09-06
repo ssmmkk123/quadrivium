@@ -16,7 +16,7 @@ carries an error estimate where the method produces one.
 ## Start with `quad`
 
 ```pycon
->>> import numpy as np
+>>> from quadrivium import numeric as np
 >>> import quadrivium as qd
 >>> q = qd.quad(lambda x: np.exp(-x*x), -np.inf, np.inf)
 >>> round(float(q), 12) == round(float(np.sqrt(np.pi)), 12)

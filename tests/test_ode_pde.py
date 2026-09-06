@@ -2,7 +2,7 @@
 
 import unittest
 
-import numpy as np
+from quadrivium import numeric as np
 
 from quadrivium.core.exceptions import DomainError
 from quadrivium.ode import *

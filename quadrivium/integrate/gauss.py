@@ -7,7 +7,7 @@ to endpoint singularities.
 
 from __future__ import annotations
 
-import numpy as np
+from .. import numeric as np
 
 from ..approx.orthopoly import (
     gauss_chebyshev_nodes,
