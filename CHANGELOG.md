@@ -73,6 +73,67 @@ that could break an existing call.
 
 ### Fixed
 
+- **Three native crashes reachable from ordinary Python.** Indexing with more
+  new axes than an array header can hold (`a.ones(1)[(None,)*20]`) wrote past
+  the fixed 16-entry shape and stride buffers in `basic_view` before the
+  dimensionality could be rejected; AddressSanitizer reported a
+  stack-buffer-overflow and the ordinary build aborted. The advanced-indexing
+  planner had the same hole. Both now reject the key before writing. Integer
+  floor division and remainder by `-1` trapped with `SIGFPE` on the minimum
+  signed integer, which is not representable as its own negation; both now
+  wrap to the two's-complement result NumPy reports.
+
+- **Overlapping array writes silently produced wrong answers.** `x[:] = x[::-1]`
+  gave `[5, 4, 3, 3, 4, 5]`, and `x[1:] += x[:-1]` gave `[0, 1, 3, 6, 10, 15]`,
+  because assignment and in-place ufuncs read operands after their storage had
+  already been overwritten. Assignment, binary ufuncs and unary ufuncs with an
+  aliased `out=` now snapshot the source when the two genuinely overlap. Views
+  that share an address range without sharing elements -- adjacent column
+  blocks of one array, as an FFT butterfly produces -- are proved disjoint
+  rather than copied, so the common strided cases stay copy-free.
+
+- **The mean of an empty array returned `0.0`.** A plausible-looking zero can
+  pass for real data in a downstream statistic; it is now NaN in all four
+  dtypes, as NumPy has it.
+
+- **`irfft` mishandled a requested output length.** Both the numeric and the
+  public transform placed the mirrored half-spectrum using the length of the
+  input rather than the length asked for, so anything needing padding or
+  truncation came back wrong or raised a broadcasting error; 130 of 210
+  length and axis combinations failed. The retained half is now resized to
+  `n // 2 + 1` before its Hermitian counterpart is appended.
+
+- **Invalid inputs that were quietly accepted.** Fractional advanced indices
+  were truncated (`a.arange(3)[a.array([0.5])]` returned `[0]`), repeated
+  reduction axes were ignored, and a negative scale was accepted by the normal
+  and exponential distributions and a negative rate by the Poisson. All are
+  now rejected. `numeric.fft` also refuses a zero-length transform axis, as
+  `numpy.fft` does, rather than returning an empty array.
+
+- **Special functions wrong inside their advertised domains.** `airy_ai` had
+  no correct digits left at `x = 8` and returned the wrong sign at `x = 10`;
+  `struve_h0(50)` returned `-2.5` where the answer is `-0.085`; `airy_bi` was
+  wrong for large negative arguments and truncated silently above `x = 31`;
+  `polygamma` was wrong in its fifth digit at order 50; and the Bessel `Y`
+  rational fits were accurate to about `1e-8` absolutely, which says nothing
+  near a zero of `Y_0`. Each now selects between an ascending series, a
+  quadrature or modified-Bessel form, and an asymptotic expansion truncated at
+  its smallest term. Worst-case relative error against mpmath at 40 digits is
+  now around `1e-11` or better across the sampled domains. `bessel_yn` and
+  `spherical_bessel_y` return a signed infinity where the result overflows,
+  rather than NaN.
+
+- **The 65,536-point DCT-I lost eight digits.** Bluestein's chirp formed its
+  angle as `k*k/n` in floating point, spending the mantissa on a quotient of
+  order `n` and leaving the fractional part -- the part that sets the phase --
+  good to about `1e-11`. Reducing `k*k` modulo `2n` in exact integers first
+  brings the transform's maximum absolute error from `2.5e-8` to `1.1e-12`.
+
+- **Undefined behaviour on ordinary operations.** Scalar conversions passed
+  null shape pointers to `memcmp` with a zero byte count, which UBSan rejects;
+  zero-dimensional shapes no longer reach it. The test suite now passes under
+  AddressSanitizer and UndefinedBehaviorSanitizer with no diagnostics.
+
 - **`jacobi_eigen` and `qr_algorithm` could not converge on a matrix of any
   appreciable size.** Both compared the off-diagonal mass against `tol`
   outright, and rounding holds that mass near `eps*||A||`: for `||A||` of a
@@ -309,6 +370,30 @@ that could break an existing call.
   381× at n = 80.
 
 ### Performance
+
+Four routines were doing asymptotically or structurally more work than the
+operation needs. Single-threaded, separate process per measurement, median of
+eleven samples:
+
+| Routine | Workload | Before | After | |
+|---|---|---:|---:|---:|
+| `jacobi_eigen`, Python path | 128 x 128 | 16441.9 ms | 694.7 ms | 23.7x |
+| `cubic_spline` construction | 10 000 knots | 3.544 ms | 0.440 ms | 8.1x |
+| `CSRMatrix.matvec` | 1 000 000 nonzeros | 9.905 ms | 2.554 ms | 3.9x |
+| `identity_sparse` | 1 000 000 | 11.866 ms | 7.086 ms | 1.7x |
+
+The Python Jacobi rotation built a full `n x n` rotation matrix and multiplied
+it through three times per rotation, making a sweep `O(n^5)` where a rotation
+touches two rows and two columns; it is now the rank-2 update the Rust routine
+beside it always used. Spline construction split its coefficient block into one
+array per interval and stacked those back into the same table, one `asarray`
+per knot; the split is now made only on demand. `CSRMatrix.matvec` materialised
+the gather and its product -- two arrays the size of the nonzero count -- before
+the segment sum, and a fused kernel replaces them, which also brings traced
+workspace for the million-entry case from 31.5 MiB to 7.63 MiB. Sparse
+construction validated its indices with three full-length boolean comparisons,
+now one compiled pass, and `identity_sparse` no longer re-checks a diagonal it
+built itself.
 
 Thirteen routines whose inner loop ran in Python now do that work in NumPy or
 in a compiled kernel. Single-threaded, best of twenty runs, same machine:

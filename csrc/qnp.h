@@ -172,6 +172,14 @@ void qnp_exp_f64(const double *src, double *dst, qintp n);
 /* ---- indexing -------------------------------------------------------- */
 PyObject *qnp_getitem(QArray *self, PyObject *key);
 int qnp_setitem(QArray *self, PyObject *key, PyObject *value);
+/* memcmp is undefined for a null pointer even with a zero byte count, and a
+ * zero-dimensional array carries a null shape, so the count is checked first. */
+static inline int qnp_same_shape(int nd, const qintp *a, const qintp *b) {
+    return nd == 0 || !memcmp(a, b, (size_t)nd * sizeof(qintp));
+}
+
+int qnp_may_share_memory(QArray *x, QArray *y);
+int qnp_overlap_needs_copy(QArray *out, QArray *in);
 int qnp_copy_into(QArray *dst, QArray *src);
 PyObject *qnp_take_axis(QArray *a, QArray *idx, int axis);
 

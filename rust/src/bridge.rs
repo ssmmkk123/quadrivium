@@ -10,9 +10,9 @@ use num_complex::Complex64;
 use pyo3::buffer::{Element, PyBuffer};
 use pyo3::exceptions::{PyBufferError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::Borrowed;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::PyModule;
+use pyo3::Borrowed;
 use std::ffi::CStr;
 
 /// `complex128` as the buffer protocol spells it.  `Complex64` is two adjacent

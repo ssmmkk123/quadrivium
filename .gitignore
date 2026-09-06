@@ -18,6 +18,13 @@ MANIFEST
 # Built documentation
 site/
 
+# Local benchmark and audit runs (published baseline JSON stays tracked)
+/benchmarks/runs/
+/benchmarks/audit-*/
+/benchmarks/benchmark-*/
+/benchmarks/retest-*/
+/benchmarks/stress-*/
+
 # Test, coverage, and static-analysis caches
 .pytest_cache/
 .coverage

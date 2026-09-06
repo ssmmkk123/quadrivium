@@ -332,13 +332,7 @@ fn lid_driven_cavity(
 
 /// Tridiagonal solve. Inputs are read-only; the scratch copies stay here.
 #[pyfunction]
-fn thomas<'py>(
-    py: Python<'py>,
-    sub: Vec1,
-    diag: Vec1,
-    sup: Vec1,
-    rhs: Vec1,
-) -> PyResult<Arr<'py>> {
+fn thomas<'py>(py: Python<'py>, sub: Vec1, diag: Vec1, sup: Vec1, rhs: Vec1) -> PyResult<Arr<'py>> {
     let n = diag.len();
     if rhs.len() != n {
         return Err(PyValueError::new_err("rhs must match the diagonal length"));
@@ -364,13 +358,7 @@ fn thomas<'py>(
 /// One tridiagonal matrix against many right-hand sides; `rhs` is `n x m`
 /// with one system per column and is overwritten with the solutions.
 #[pyfunction]
-fn thomas_batch(
-    py: Python<'_>,
-    sub: Vec1,
-    diag: Vec1,
-    sup: Vec1,
-    rhs: MutMat,
-) -> PyResult<()> {
+fn thomas_batch(py: Python<'_>, sub: Vec1, diag: Vec1, sup: Vec1, rhs: MutMat) -> PyResult<()> {
     let mut rhs = rhs;
     let n = diag.len();
     let (rows, cols) = (rhs.rows, rhs.cols);

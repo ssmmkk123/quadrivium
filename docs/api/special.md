@@ -55,8 +55,8 @@ Implemented from scratch (Lanczos, continued fractions, series/asymptotic switch
 | `bessel_k0` | `(x)` | Modified Bessel function of the second kind, order 0. |
 | `bessel_k1` | `(x)` | Modified Bessel function of the second kind, order 1. |
 | `bessel_kn` | `(n: int, x)` | Modified Bessel ``K_n`` for integer order. |
-| `airy_ai` | `(x, terms: int = 60)` | Airy function ``Ai(x)`` from its Maclaurin series (moderate ``\|x\|``). |
-| `airy_bi` | `(x, terms: int = 60)` | Airy function ``Bi(x)`` from its Maclaurin series (moderate ``\|x\|``). |
+| `airy_ai` | `(x, terms: int = 60)` | Airy function ``Ai(x)``. |
+| `airy_bi` | `(x, terms: int = 60)` | Airy function ``Bi(x)``. |
 | `elliptic_k` | `(m, tol: float = 1e-15)` | Complete elliptic integral of the first kind by the AGM. |
 | `elliptic_e` | `(m, tol: float = 1e-15)` | Complete elliptic integral of the second kind by the AGM. |
 | `exponential_integral` | `(x, max_iter: int = 200, tol: float = 1e-15)` | Exponential integral ``Ei(x)`` for ``x != 0``. |

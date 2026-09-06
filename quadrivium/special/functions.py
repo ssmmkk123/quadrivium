@@ -536,10 +536,15 @@ def _betacf(a, b, x, tol, max_iter):
 
 
 # --------------------------------------------------------------------------
-# Bessel functions (Abramowitz & Stegun polynomial approximations)
+# Bessel functions (ascending series and the Hankel asymptotic expansion)
 # --------------------------------------------------------------------------
 # Below this the ascending series wins; above it the Hankel expansion does.
-_J_SERIES_LIMIT = 18.0
+# The ascending series loses roughly one digit per unit of x to cancellation
+# while the truncated asymptotic gains about two, and they cross near here:
+# both sides hold about 1e-11 relative accuracy at the boundary.
+_J_SERIES_LIMIT = 12.0
+
+_EULER_GAMMA = 0.577215664901532860606512090082
 
 
 def _j_series(nu: int, x, tol: float = 1e-17, max_terms: int = 60):
@@ -557,19 +562,34 @@ def _j_series(nu: int, x, tol: float = 1e-17, max_terms: int = 60):
 
 
 def _hankel_pq(nu: int, x):
-    """Leading Hankel asymptotic factors ``(P, Q)`` for large ``x``."""
+    """Hankel asymptotic factors ``(P, Q)`` for large ``x``.
+
+    ``P`` collects the even terms of ``a_k(nu)/x^k`` and ``Q`` the odd ones,
+    with ``a_k = a_{k-1} (4nu^2 - (2k-1)^2) / (8k)``.  The expansion diverges,
+    so each element is truncated at its own smallest term -- where an
+    asymptotic series is at its most accurate.  A fixed term count instead
+    leaves an error floor near ``1e-8`` just above the series cut-over.
+    """
     mu = 4.0 * nu * nu
-    z = 8.0 * x
-    z2 = z * z
-    # P ~ 1 - (mu-1)(mu-9)/(2!z^2) + (mu-1)(mu-9)(mu-25)(mu-49)/(4!z^4) - ...
-    p1 = (mu - 1) * (mu - 9)
-    p2 = p1 * (mu - 25) * (mu - 49)
-    p3 = p2 * (mu - 81) * (mu - 121)
-    P = 1.0 - p1 / (2 * z2) + p2 / (24 * z2 * z2) - p3 / (720 * z2 * z2 * z2)
-    q1 = mu - 1
-    q2 = q1 * (mu - 9) * (mu - 25)
-    q3 = q2 * (mu - 49) * (mu - 81)
-    Q = q1 / z - q2 / (6 * z * z2) + q3 / (120 * z * z2 * z2)
+    P = np.ones_like(x)
+    Q = np.zeros_like(x)
+    term = np.ones_like(x)                 # a_k / x^k for the current k
+    previous = np.full(x.shape, np.inf)    # size of the preceding term
+    live = np.ones(x.shape, dtype=bool)
+    for k in range(1, 40):
+        term = term * ((mu - (2 * k - 1) ** 2) / (8.0 * k)) / x
+        size = np.abs(term)
+        live &= size <= previous
+        if not live.any():
+            break
+        previous = size
+        contrib = np.where(live, term, 0.0)
+        if (k // 2) % 2:
+            contrib = -contrib
+        if k % 2:
+            Q = Q + contrib
+        else:
+            P = P + contrib
     return P, Q
 
 
@@ -606,54 +626,83 @@ def bessel_j1(x):
     return _ret(np.where(xa >= 0, out, -out), scalar, shape)
 
 
-def _y0_arr(x):
+def _y_asymptotic(nu: int, x):
+    """``Y_nu`` from the Hankel expansion; the companion of :func:`_j01_arr`."""
+    P, Q = _hankel_pq(nu, x)
+    omega = x - (0.25 if nu == 0 else 0.75) * math.pi
+    return np.sqrt(2.0 / (math.pi * x)) * (P * np.sin(omega) + Q * np.cos(omega))
+
+
+def _y0_series(x, tol: float = 1e-18, max_terms: int = 200):
+    """Ascending series for ``Y_0`` (A&S 9.1.13), exact term by term.
+
+    The rational fits this replaced were good to about ``1e-8`` absolute,
+    which is meaningless near a zero of ``Y_0``; this form carries the same
+    relative accuracy everywhere the sum does not cancel.  ``J_0`` shares the
+    term ``(x^2/4)^k / (k!)^2``, so both sums advance in the one loop.
+    """
+    quarter = x * x / 4.0
+    term = np.ones_like(x)              # (x^2/4)^k / (k!)^2, at k = 0
+    j0 = np.ones_like(x)                # sum (-1)^k term  ==  J_0(x)
+    weighted = np.zeros_like(x)         # sum (-1)^{k+1} H_k term
+    harmonic = 0.0
+    for k in range(1, max_terms):
+        term = term * quarter / (k * k)
+        harmonic += 1.0 / k
+        signed = -term if k % 2 else term
+        j0 = j0 + signed
+        weighted = weighted - signed * harmonic
+        if np.all(term * harmonic < tol * np.maximum(np.abs(weighted), 1e-300)):
+            break
+    return (2.0 / math.pi) * ((np.log(0.5 * x) + _EULER_GAMMA) * j0 + weighted)
+
+
+def _y1_series(x, tol: float = 1e-18, max_terms: int = 200):
+    """Ascending series for ``Y_1`` (A&S 9.1.11 with ``n = 1``).
+
+    ``J_1(x) = (x/2) sum (-1)^k t_k`` over the same ``t_k = (x^2/4)^k /
+    (k! (k+1)!)`` this sum needs, so the two are accumulated together.
+    """
+    quarter = x * x / 4.0
+    term = np.ones_like(x)              # (x^2/4)^k / (k! (k+1)!), at k = 0
+    alternating = np.ones_like(x)       # sum (-1)^k term
+    # k = 0 contributes psi(1) + psi(2) = H_0 + H_1 - 2 gamma.
+    weighted = np.full(x.shape, 1.0 - 2.0 * _EULER_GAMMA)
+    h_k, h_k1 = 0.0, 1.0                # H_k and H_{k+1}
+    for k in range(1, max_terms):
+        term = term * quarter / (k * (k + 1))
+        h_k += 1.0 / k
+        h_k1 += 1.0 / (k + 1)
+        signed = -term if k % 2 else term
+        alternating = alternating + signed
+        psi = h_k + h_k1 - 2.0 * _EULER_GAMMA
+        weighted = weighted + signed * psi
+        if np.all(term * psi < tol * np.maximum(np.abs(weighted), 1e-300)):
+            break
+    half = 0.5 * x
+    return ((2.0 / math.pi) * np.log(half) * (half * alternating)
+            - 2.0 / (math.pi * x) - (half / math.pi) * weighted)
+
+
+def _y01_arr(nu: int, x):
+    """``Y_0`` or ``Y_1`` of a positive array, by series then Hankel."""
     out = np.empty_like(x)
-    low = x < 8.0
+    low = x < _J_SERIES_LIMIT
     if low.any():
         v = x[low]
-        y = v * v
-        p = (-2957821389.0 + y * (7062834065.0 + y * (-512359803.6
-             + y * (10879881.29 + y * (-86327.92757 + y * 228.4622733)))))
-        q = (40076544269.0 + y * (745249964.8 + y * (7189466.438
-             + y * (47447.26470 + y * (226.1030244 + y)))))
-        out[low] = p / q + 0.636619772 * _j01_arr(0, v) * np.log(v)
+        out[low] = _y0_series(v) if nu == 0 else _y1_series(v)
     high = ~low
     if high.any():
-        v = x[high]
-        z = 8.0 / v
-        y = z * z
-        xx = v - 0.785398164
-        p = (1.0 + y * (-0.1098628627e-2 + y * (0.2734510407e-4
-             + y * (-0.2073370639e-5 + y * 0.2093887211e-6))))
-        q = (-0.1562499995e-1 + y * (0.1430488765e-3 + y * (-0.6911147651e-5
-             + y * (0.7621095161e-6 + y * (-0.934945152e-7)))))
-        out[high] = np.sqrt(0.636619772 / v) * (np.sin(xx) * p + z * np.cos(xx) * q)
+        out[high] = _y_asymptotic(nu, x[high])
     return out
+
+
+def _y0_arr(x):
+    return _y01_arr(0, x)
 
 
 def _y1_arr(x):
-    out = np.empty_like(x)
-    low = x < 8.0
-    if low.any():
-        v = x[low]
-        y = v * v
-        p = v * (-4900604943000.0 + y * (1275274390000.0 + y * (-51534381390.0
-                 + y * (734926455.1 + y * (-4237922.726 + y * 8511.937935)))))
-        q = (24995805700000.0 + y * (424441966400.0 + y * (3733650367.0
-             + y * (22459040.02 + y * (102042.605 + y * (354.9632885 + y))))))
-        out[low] = p / q + 0.636619772 * (_j01_arr(1, v) * np.log(v) - 1.0 / v)
-    high = ~low
-    if high.any():
-        v = x[high]
-        z = 8.0 / v
-        y = z * z
-        xx = v - 2.356194491
-        p = (1.0 + y * (0.183105e-2 + y * (-0.3516396496e-4
-             + y * (0.2457520174e-5 + y * (-0.240337019e-6)))))
-        q = (0.04687499995 + y * (-0.2002690873e-3 + y * (0.8449199096e-5
-             + y * (-0.88228987e-6 + y * 0.105787412e-6))))
-        out[high] = np.sqrt(0.636619772 / v) * (np.sin(xx) * p + z * np.cos(xx) * q)
-    return out
+    return _y01_arr(1, x)
 
 
 def bessel_y0(x):
@@ -737,6 +786,17 @@ def bessel_jn(n: int, x):
     return _ret(_jn_arr(n, xa), scalar, shape)
 
 
+def _growing_recurrence_step(lead, previous):
+    """``lead - previous`` for an upward recurrence, kept infinite on overflow.
+
+    Once both terms have overflowed, their difference is a NaN even though the
+    sequence is still growing monotonically; the leading term carries the sign
+    the limit actually has.
+    """
+    step = lead - previous
+    return np.where(np.isnan(step) & ~np.isnan(lead), lead, step)
+
+
 def bessel_yn(n: int, x):
     """Bessel ``Y_n`` by upward recurrence (stable for ``Y``)."""
     n = int(n)
@@ -750,7 +810,7 @@ def bessel_yn(n: int, x):
     tox = 2.0 / xa
     by, bym = _y1_arr(xa), _y0_arr(xa)
     for j in range(1, n):
-        bym, by = by, j * tox * by - bym
+        bym, by = by, _growing_recurrence_step(j * tox * by, bym)
     return _ret(by, scalar, shape)
 
 
@@ -956,19 +1016,137 @@ def _airy_series(x, terms: int):
 _AIRY_C1 = 0.355028053887817239
 _AIRY_C2 = 0.258819403792806798
 
+# Beyond this the Maclaurin sums cancel faster than they converge: the two
+# terms grow like e^{2|x|^{3/2}/3} while their difference oscillates with an
+# amplitude of only |x|^{-1/4}.
+_AIRY_SERIES_LIMIT = 7.0
+# On the positive side the two sums cancel far sooner, since Ai decays while
+# they grow; past this the modified-Bessel form takes over.
+_AIRY_DECAY_LIMIT = 4.0
+# Above this the growing asymptotic form of Bi is already at full precision,
+# well before the fixed term count of the series runs short.
+_AIRY_GROWTH_LIMIT = 10.0
+
+
+def _airy_u(count: int):
+    """The ``u_k`` of the Airy asymptotic expansions (A&S 10.4.58)."""
+    u = [1.0]
+    for k in range(1, count):
+        u.append(u[-1] * (6 * k - 5) * (6 * k - 3) * (6 * k - 1)
+                 / (216.0 * k * (2 * k - 1)))
+    return u
+
+
+_AIRY_U = _airy_u(40)
+
+
+def _airy_negative_asymptotic(z):
+    """``(Ai(-z), Bi(-z))`` for large positive ``z``; A&S 10.4.60 and 10.4.64.
+
+    Both share the same pair of sums over ``u_k / zeta^k``, split by parity
+    and truncated where the divergent expansion is tightest.
+    """
+    zeta = (2.0 / 3.0) * z ** 1.5
+    even = np.zeros_like(z)
+    odd = np.zeros_like(z)
+    term = np.ones_like(z)
+    previous = np.full(z.shape, np.inf)
+    live = np.ones(z.shape, dtype=bool)
+    for k in range(len(_AIRY_U)):
+        if k:
+            term = term * (_AIRY_U[k] / _AIRY_U[k - 1]) / zeta
+        size = np.abs(term)
+        live &= size <= previous
+        if not live.any():
+            break
+        previous = size
+        contrib = np.where(live, term, 0.0)
+        if (k // 2) % 2:
+            contrib = -contrib
+        if k % 2:
+            odd = odd + contrib
+        else:
+            even = even + contrib
+    phase = zeta + 0.25 * math.pi
+    scale = 1.0 / (math.sqrt(math.pi) * z ** 0.25)
+    sin_p, cos_p = np.sin(phase), np.cos(phase)
+    return (scale * (sin_p * even - cos_p * odd),
+            scale * (cos_p * even + sin_p * odd))
+
+
+def _airy_bi_asymptotic(z):
+    """``Bi(z)`` for large positive ``z`` (A&S 10.4.63).
+
+    The Maclaurin sums converge only once their index passes ``2 z^{3/2}/3``,
+    so a fixed 60 terms silently truncates ``Bi`` from about ``z = 31`` on.
+    """
+    zeta = (2.0 / 3.0) * z ** 1.5
+    total = np.ones_like(z)
+    term = np.ones_like(z)
+    previous = np.full(z.shape, np.inf)
+    live = np.ones(z.shape, dtype=bool)
+    for k in range(1, len(_AIRY_U)):
+        term = term * (_AIRY_U[k] / _AIRY_U[k - 1]) / zeta
+        size = np.abs(term)
+        live &= size <= previous
+        if not live.any():
+            break
+        previous = size
+        total = total + np.where(live, term, 0.0)
+    return np.exp(zeta) / (math.sqrt(math.pi) * z ** 0.25) * total
+
 
 def airy_ai(x, terms: int = 60):
-    """Airy function ``Ai(x)`` from its Maclaurin series (moderate ``|x|``)."""
+    """Airy function ``Ai(x)``.
+
+    Positive arguments use ``Ai(x) = sqrt(x/3) K_{1/3}(2 x^{3/2} / 3) / pi``,
+    which holds full relative accuracy where the Maclaurin series cannot:
+    that series has no correct digits left at ``x = 8`` and returns the wrong
+    sign at ``x = 10``.  Large negative arguments use the oscillatory
+    asymptotic form, and the series serves the moderate range between them.
+    """
     xa, scalar, shape = _arr(x)
-    f, g = _airy_series(xa, terms)
-    return _ret(_AIRY_C1 * f - _AIRY_C2 * g, scalar, shape)
+    out = np.empty_like(xa)
+    # The series only starts losing digits once the two sums outgrow their
+    # difference, which on the positive side happens just past here; below it
+    # the series is both exact and much cheaper than the quadrature.
+    decaying = xa > _AIRY_DECAY_LIMIT
+    if decaying.any():
+        v = xa[decaying]
+        out[decaying] = (np.sqrt(v / 3.0) / math.pi) * _bessel_k_de(
+            1.0 / 3.0, (2.0 / 3.0) * v ** 1.5)
+    far = xa < -_AIRY_SERIES_LIMIT
+    if far.any():
+        out[far] = _airy_negative_asymptotic(-xa[far])[0]
+    near = ~decaying & ~far
+    if near.any():
+        f, g = _airy_series(xa[near], terms)
+        out[near] = _AIRY_C1 * f - _AIRY_C2 * g
+    return _ret(out, scalar, shape)
 
 
 def airy_bi(x, terms: int = 60):
-    """Airy function ``Bi(x)`` from its Maclaurin series (moderate ``|x|``)."""
+    """Airy function ``Bi(x)``.
+
+    Nothing cancels for ``x >= 0``, where both sums are positive, so the
+    series serves the moderate range exactly; beyond it the two exponential
+    forms take over -- growing for large positive ``x``, where the series
+    would run out of terms, and oscillatory for large negative ``x``, which
+    cancels exactly as ``Ai`` does.
+    """
     xa, scalar, shape = _arr(x)
-    f, g = _airy_series(xa, terms)
-    return _ret(math.sqrt(3.0) * (_AIRY_C1 * f + _AIRY_C2 * g), scalar, shape)
+    out = np.empty_like(xa)
+    far = xa < -_AIRY_SERIES_LIMIT
+    if far.any():
+        out[far] = _airy_negative_asymptotic(-xa[far])[1]
+    growing = xa > _AIRY_GROWTH_LIMIT
+    if growing.any():
+        out[growing] = _airy_bi_asymptotic(xa[growing])
+    near = ~far & ~growing
+    if near.any():
+        f, g = _airy_series(xa[near], terms)
+        out[near] = math.sqrt(3.0) * (_AIRY_C1 * f + _AIRY_C2 * g)
+    return _ret(out, scalar, shape)
 
 
 def _agm_k(m, tol):
@@ -1602,10 +1780,14 @@ def polygamma(n: int, x):
     shift = np.zeros_like(y)
     sign_n = (-1.0) ** n
     fact_n = float(math.factorial(n))
+    # The Euler-Maclaurin terms below carry a rising factorial in s = n + 1,
+    # so the argument has to clear the order before they start shrinking; a
+    # fixed threshold of 15 leaves psi^(50) wrong in its fifth digit.
+    target = 15.0 + 1.5 * n
     # psi^(n)(x+1) = psi^(n)(x) + (-1)^n n! x^{-(n+1)}, so stepping *up* in x
     # accumulates the term with the opposite sign.
     for _ in range(4096):               # recur up into the asymptotic regime
-        low = y < 15.0
+        low = y < target
         if not low.any():
             break
         shift[low] -= sign_n * fact_n / y[low] ** (n + 1)
@@ -1695,7 +1877,7 @@ def spherical_bessel_y(n: int, x):
         return _ret(ym1, scalar, shape)
     y = -np.cos(xa) / (xa * xa) - np.sin(xa) / xa
     for k in range(1, n):
-        ym1, y = y, (2 * k + 1) / xa * y - ym1
+        ym1, y = y, _growing_recurrence_step((2 * k + 1) / xa * y, ym1)
     return _ret(y, scalar, shape)
 
 
@@ -1888,20 +2070,80 @@ def expint_n(n: int, x, tol: float = 1e-14, max_iter: int = 200):
     return _ret(out, scalar, shape)
 
 
-def struve_h0(x, tol: float = 1e-14, max_terms: int = 300):
-    """Struve function ``H_0(x)``: the particular solution of the driven Bessel equation."""
-    xa, scalar, shape = _arr(x)
-    term = np.full(xa.shape, 2.0 / math.pi)
+# The power series is exact and cheap while its terms stay small, which they do
+# up to here; past it cancellation grows and the quadrature takes over, and past
+# _STRUVE_QUADRATURE_LIMIT the asymptotic expansion is tighter still.
+_STRUVE_SERIES_LIMIT = 14.0
+_STRUVE_QUADRATURE_LIMIT = 25.0
+_STRUVE_NODES = None
+
+
+def _struve_h0_series(x, tol: float = 1e-16, max_terms: int = 300):
+    """Ascending series ``(2/pi) sum (-1)^k x^(2k+1) / ((2k+1)!!)^2``."""
+    term = np.full(x.shape, 2.0 / math.pi)
     total = term.copy()
-    x2 = xa * xa
-    live = np.ones(xa.shape, dtype=bool)
+    x2 = x * x
+    live = np.ones(x.shape, dtype=bool)
     for k in range(1, max_terms):
         term = term * (-x2 / ((2 * k + 1) ** 2))
         total = np.where(live, total + term, total)
         live &= np.abs(term) >= tol * np.maximum(np.abs(total), 1e-300)
         if not live.any():
             break
-    return _ret(total * xa, scalar, shape)
+    return total * x
+
+
+def _struve_h0_quadrature(x):
+    """``H_0(x) = (2/pi) int_0^{pi/2} sin(x cos t) dt`` for ``x >= 0``.
+
+    The integrand is bounded by one whatever ``x`` is, so unlike the power
+    series this loses nothing to cancellation: the series needs terms of
+    order ``1e25`` to produce ``H_0(50) = -0.085``.
+    """
+    global _STRUVE_NODES
+    if _STRUVE_NODES is None:
+        from ..approx.orthopoly import gauss_legendre_nodes
+        _STRUVE_NODES = gauss_legendre_nodes(64, 0.0, 0.5 * math.pi)
+    nodes, weights = _STRUVE_NODES
+    return (2.0 / math.pi) * (np.sin(np.reshape(x, (-1, 1)) * np.cos(nodes))
+                              @ weights)
+
+
+def _struve_h0_asymptotic(x):
+    """``H_0(x) - Y_0(x) ~ (2/pi x) sum (-1)^k ((2k-1)!!)^2 / x^{2k}``."""
+    total = np.ones_like(x)
+    term = np.ones_like(x)
+    inverse_square = 1.0 / (x * x)
+    previous = np.full(x.shape, np.inf)
+    live = np.ones(x.shape, dtype=bool)
+    for k in range(1, 200):
+        term = term * ((2 * k - 1) ** 2) * inverse_square
+        size = np.abs(term)
+        live &= size <= previous
+        if not live.any():
+            break
+        previous = size
+        contrib = np.where(live, term, 0.0)
+        total = total + (-contrib if k % 2 else contrib)
+    return _y0_arr(x) + (2.0 / (math.pi * x)) * total
+
+
+def struve_h0(x, tol: float = 1e-14, max_terms: int = 300):
+    """Struve function ``H_0(x)``: the particular solution of the driven Bessel equation."""
+    xa, scalar, shape = _arr(x)
+    magnitude = np.abs(xa)              # H_0 is odd, so work on |x| and re-sign
+    out = np.empty_like(xa)
+    small = magnitude < _STRUVE_SERIES_LIMIT
+    if small.any():
+        out[small] = _struve_h0_series(magnitude[small])
+    middle = ~small & (magnitude < _STRUVE_QUADRATURE_LIMIT)
+    if middle.any():
+        v = magnitude[middle]
+        out[middle] = np.reshape(_struve_h0_quadrature(v), v.shape)
+    far = magnitude >= _STRUVE_QUADRATURE_LIMIT
+    if far.any():
+        out[far] = _struve_h0_asymptotic(magnitude[far])
+    return _ret(np.where(xa < 0.0, -out, out), scalar, shape)
 
 
 def logistic(x):

@@ -41,6 +41,11 @@ You can run a single module while developing:
 python -m pytest -q tests/test_calculus.py
 ```
 
+Write local benchmark and audit output to `benchmarks/runs/` (create it first),
+which Git ignores. Keep reusable benchmark and audit scripts in `tools/`.
+The four published `benchmarks/scalability-*.json` baselines support
+`PERFORMANCE.md` and are the only benchmark data included in source releases.
+
 ## Numerical changes
 
 Numerical algorithms need evidence beyond a single expected value. Where

@@ -14,6 +14,7 @@ use std::f64::consts::PI;
 const PAR_THRESHOLD: usize = 8192;
 
 const LANCZOS_G: f64 = 7.0;
+const SQRT_TWO_PI: f64 = 2.506_628_274_631_000_2;
 // Transcribed verbatim from the table in `quadrivium.special.functions` so both
 // backends evaluate the identical approximation. Clippy flags the extra digits;
 // they are kept because the point is to match that table exactly.
@@ -30,18 +31,32 @@ const LANCZOS_COEF: [f64; 9] = [
     1.5056327351493116e-7,
 ];
 
+/// The Lanczos sum, accumulated in four independent partial sums.
+///
+/// Every term is a division, and a single running total chains eight of them
+/// back to back -- eight full division latencies that cannot overlap. Split
+/// this way they pipeline instead, for the same eight divisions of work.
+#[inline]
+fn lanczos_sum(z: f64) -> f64 {
+    let mut a0 = LANCZOS_COEF[0] + LANCZOS_COEF[1] / (z + 1.0);
+    let mut a1 = LANCZOS_COEF[2] / (z + 2.0);
+    let mut a2 = LANCZOS_COEF[3] / (z + 3.0);
+    let mut a3 = LANCZOS_COEF[4] / (z + 4.0);
+    a0 += LANCZOS_COEF[5] / (z + 5.0);
+    a1 += LANCZOS_COEF[6] / (z + 6.0);
+    a2 += LANCZOS_COEF[7] / (z + 7.0);
+    a3 += LANCZOS_COEF[8] / (z + 8.0);
+    (a0 + a1) + (a2 + a3)
+}
+
 pub fn log_gamma_scalar(v: f64) -> f64 {
     if v < 0.5 {
         // Reflection, so the series is only ever evaluated on its good side.
         (PI / (PI * v).sin().abs()).ln() - log_gamma_scalar(1.0 - v)
     } else {
         let z = v - 1.0;
-        let mut a = LANCZOS_COEF[0];
-        for (i, c) in LANCZOS_COEF.iter().enumerate().skip(1) {
-            a += c / (z + i as f64);
-        }
         let t = z + LANCZOS_G + 0.5;
-        0.5 * (2.0 * PI).ln() + (z + 0.5) * t.ln() - t + a.ln()
+        0.5 * (2.0 * PI).ln() + (z + 0.5) * t.ln() - t + lanczos_sum(z).ln()
     }
 }
 
@@ -51,7 +66,12 @@ pub fn gamma_scalar(v: f64) -> f64 {
     } else if v < 0.5 {
         PI / ((PI * v).sin() * gamma_scalar(1.0 - v))
     } else {
-        log_gamma_scalar(v).exp()
+        // sqrt(2pi) a t^(z+1/2) e^-t directly. Routing through log_gamma takes
+        // the logarithm of the Lanczos sum only to undo it with the exponential,
+        // a third transcendental call for nothing.
+        let z = v - 1.0;
+        let t = z + LANCZOS_G + 0.5;
+        SQRT_TWO_PI * lanczos_sum(z) * ((z + 0.5) * t.ln() - t).exp()
     }
 }
 

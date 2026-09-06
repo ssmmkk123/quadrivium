@@ -51,23 +51,40 @@ class PiecewisePolynomial:
 
     def __init__(self, x, coeffs, extrapolate: bool = True):
         self.x = as_vector(x)
-        self.coeffs = [np.asarray(c, dtype=float) for c in coeffs]
         self.extrapolate = extrapolate
-        if len(self.coeffs) != self.x.size - 1:
-            raise DimensionError(
-                f"{self.x.size} knots require {self.x.size - 1} coefficient sets, "
-                f"got {len(self.coeffs)}"
-            )
         # Every constructor in this module gives all pieces the same degree,
         # which lets evaluation run Horner over the whole query at once. A
         # hand-built ragged list is still accepted; it just takes the loop.
-        widths = {c.size for c in self.coeffs}
-        self._table = (np.array(self.coeffs, dtype=float)
-                       if len(widths) == 1 and self.coeffs else None)
+        if isinstance(coeffs, np.ndarray) and coeffs.ndim == 2:
+            # Already one row per interval.  Splitting it into an array per
+            # interval only to stack those back into the same table costs a
+            # per-knot pass over what is otherwise an O(n) construction.
+            self._table = np.asarray(coeffs, dtype=float)
+            self._coeffs = None
+            count = self._table.shape[0]
+        else:
+            self._coeffs = [np.asarray(c, dtype=float) for c in coeffs]
+            count = len(self._coeffs)
+            widths = {c.size for c in self._coeffs}
+            self._table = (np.array(self._coeffs, dtype=float)
+                           if len(widths) == 1 and self._coeffs else None)
+        self._count = count
+        if count != self.x.size - 1:
+            raise DimensionError(
+                f"{self.x.size} knots require {self.x.size - 1} coefficient sets, "
+                f"got {count}"
+            )
+
+    @property
+    def coeffs(self):
+        """Coefficients per interval, split out of the table when first asked."""
+        if self._coeffs is None:
+            self._coeffs = list(self._table)
+        return self._coeffs
 
     def _interval(self, t):
         idx = np.searchsorted(self.x, t, side="right") - 1
-        return np.clip(idx, 0, len(self.coeffs) - 1)
+        return np.clip(idx, 0, self._count - 1)
 
     def __call__(self, t):
         t_arr = np.atleast_1d(np.asarray(t, dtype=float))
@@ -146,8 +163,11 @@ class PiecewisePolynomial:
         return np.unique(np.round(out, 12))
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
-        deg = max(len(c) for c in self.coeffs) - 1 if self.coeffs else 0
-        return (f"PiecewisePolynomial(degree={deg}, intervals={len(self.coeffs)}, "
+        if self._table is not None:
+            deg = self._table.shape[1] - 1 if self._count else 0
+        else:
+            deg = max(len(c) for c in self.coeffs) - 1 if self.coeffs else 0
+        return (f"PiecewisePolynomial(degree={deg}, intervals={self._count}, "
                 f"domain=[{self.x[0]:.4g}, {self.x[-1]:.4g}])")
 
 

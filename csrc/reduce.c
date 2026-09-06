@@ -95,7 +95,13 @@ static int plan_build(RedPlan *p, QArray *a, PyObject *axis_obj, int keepdims) {
                 Py_DECREF(seq);
                 return -1;
             }
-            if (!red[ax]) { red[ax] = 1; nred++; }
+            if (red[ax]) {
+                Py_DECREF(seq);
+                PyErr_SetString(PyExc_ValueError, "duplicate value in 'axis'");
+                return -1;
+            }
+            red[ax] = 1;
+            nred++;
         }
         Py_DECREF(seq);
     } else {
@@ -175,24 +181,30 @@ static int reduce_run(int kind, int dtype, const char *p, qintp stride, qintp n,
     qintp es = stride / QNP_ITEMSIZE(dtype);
     switch (kind) {
         case QRED_SUM: case QRED_MEAN: {
+            /* The mean of nothing is undefined, not zero: an empty count has
+             * to surface as NaN so missing data cannot pass as a real value. */
             if (dtype == QNP_FLOAT64) {
                 double s = qnp_pairwise_sum_f64((const double *)p, n, es);
-                *(double *)out = (kind == QRED_MEAN && n) ? s / (double)n : s;
+                if (kind != QRED_MEAN) *(double *)out = s;
+                else *(double *)out = n ? s / (double)n : (double)NAN;
             } else if (dtype == QNP_COMPLEX128) {
                 qcomplex s = pairwise_sum_c128((const qcomplex *)p, n, es);
-                if (kind == QRED_MEAN && n) { s.re /= (double)n; s.im /= (double)n; }
+                if (kind == QRED_MEAN) {
+                    if (n) { s.re /= (double)n; s.im /= (double)n; }
+                    else { s.re = (double)NAN; s.im = (double)NAN; }
+                }
                 *(qcomplex *)out = s;
             } else if (dtype == QNP_INT64) {
                 int64_t s = 0;
                 const int64_t *v = (const int64_t *)p;
                 for (qintp i = 0; i < n; i++) s += v[i * es];
-                if (kind == QRED_MEAN) *(double *)out = n ? (double)s / (double)n : 0.0;
+                if (kind == QRED_MEAN) *(double *)out = n ? (double)s / (double)n : (double)NAN;
                 else *(int64_t *)out = s;
             } else {
                 int64_t s = 0;
                 const qbool *v = (const qbool *)p;
                 for (qintp i = 0; i < n; i++) s += v[i * es];
-                if (kind == QRED_MEAN) *(double *)out = n ? (double)s / (double)n : 0.0;
+                if (kind == QRED_MEAN) *(double *)out = n ? (double)s / (double)n : (double)NAN;
                 else *(int64_t *)out = s;
             }
             return 0;

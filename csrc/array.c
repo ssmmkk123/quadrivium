@@ -475,12 +475,90 @@ void qnp_cast_strided(char *dst, qintp dstride, int ddt,
 #undef CAST_LOOP
 }
 
+/* Half-open byte range an array's elements can touch, accounting for negative
+ * strides.  An empty array touches nothing and gets a zero-width range. */
+static void array_extent(QArray *a, const char **low, const char **high) {
+    const char *lo = a->data;
+    const char *hi = a->data + QNP_ITEMSIZE(a->dtype);
+    for (int i = 0; i < a->nd; i++) {
+        if (a->shape[i] == 0) { *low = a->data; *high = a->data; return; }
+        qintp span = a->strides[i] * (a->shape[i] - 1);
+        if (span < 0) lo += span; else hi += span;
+    }
+    *low = lo;
+    *high = hi;
+}
+
+/* Conservative test for shared storage: distinct allocations cannot produce
+ * intersecting address ranges, so comparing extents is sufficient. */
+int qnp_may_share_memory(QArray *x, QArray *y) {
+    const char *xl, *xh, *yl, *yh;
+    array_extent(x, &xl, &xh);
+    array_extent(y, &yl, &yh);
+    return xl < yh && yl < xh;
+}
+
+/* Do two same-shape, same-stride views provably miss each other?
+ *
+ * Such views sit at one constant byte offset `d`, so their element sets are
+ * decided by `d` alone -- overlapping address ranges say nothing, since the
+ * two can interleave (`blocks[:, :half]` against `blocks[:, half:]`).  When
+ * the axes nest, every stride at least the span of the axes inside it and a
+ * multiple of them, each element offset is congruent to an inner offset
+ * modulo the enclosing stride.  The two windows then miss exactly when their
+ * residues miss.  Returns 1 only for a proof; 0 means nothing was shown.
+ */
+static int parallel_views_disjoint(QArray *a, QArray *b) {
+    int axes[QNP_MAXDIMS];
+    int n = 0;
+    for (int i = 0; i < a->nd; i++) {
+        if (a->strides[i] <= 0) return 0;      /* reversed or broadcast: give up */
+        if (a->shape[i] > 1) axes[n++] = i;    /* a length-1 axis adds no offset */
+    }
+    for (int i = 1; i < n; i++) {              /* order by ascending stride */
+        int t = axes[i], j = i;
+        while (j > 0 && a->strides[axes[j - 1]] > a->strides[t]) {
+            axes[j] = axes[j - 1];
+            j--;
+        }
+        axes[j] = t;
+    }
+    qintp d = a->data > b->data ? a->data - b->data : b->data - a->data;
+    qintp span = QNP_ITEMSIZE(a->dtype);       /* byte width of the axes below */
+    for (int k = 0; k < n; k++) {
+        qintp s = a->strides[axes[k]];
+        if (s < span) return 0;                /* the axes interleave */
+        int nested = 1;
+        for (int j = k; j < n; j++)
+            if (a->strides[axes[j]] % s) { nested = 0; break; }
+        if (nested) {
+            qintp r = d % s;
+            if (r >= span && r <= s - span) return 1;
+        }
+        span += (a->shape[axes[k]] - 1) * s;
+    }
+    return 0;
+}
+
+/* Writing `out` disturbs a still-unread element of `in` unless the two share
+ * no storage at all, or they address exactly the same elements in the same
+ * order -- the ordinary `x += y` case, which stays copy-free. */
+int qnp_overlap_needs_copy(QArray *out, QArray *in) {
+    if (!qnp_may_share_memory(out, in)) return 0;
+    if (out->nd != in->nd || out->dtype != in->dtype) return 1;
+    for (int i = 0; i < out->nd; i++)
+        if (out->shape[i] != in->shape[i] || out->strides[i] != in->strides[i])
+            return 1;
+    if (out->data == in->data) return 0;       /* the same elements, in order */
+    return !parallel_views_disjoint(out, in);
+}
+
 /* Element-by-element copy from `src` into `dst`, broadcasting `src` up to the
  * destination shape and casting on the way. */
 int qnp_copy_into(QArray *dst, QArray *src) {
     QArray *bsrc = NULL;
     if (!(dst->nd == src->nd &&
-          !memcmp(dst->shape, src->shape, (size_t)dst->nd * sizeof(qintp)))) {
+          qnp_same_shape(dst->nd, dst->shape, src->shape))) {
         PyObject *b = qnp_broadcast_to((PyObject *)src, dst->shape, dst->nd);
         if (b == NULL) {
             PyErr_Clear();
@@ -493,6 +571,15 @@ int qnp_copy_into(QArray *dst, QArray *src) {
         }
         bsrc = (QArray *)b;
         src = bsrc;
+    }
+    /* Traversal order cannot preserve a source that shares storage with the
+     * destination, so snapshot it first (`x[:] = x[::-1]`). */
+    if (qnp_overlap_needs_copy(dst, src)) {
+        QArray *snap = qnp_astype(src, src->dtype, 1);
+        if (snap == NULL) { Py_XDECREF(bsrc); return -1; }
+        Py_XDECREF(bsrc);
+        bsrc = snap;
+        src = snap;
     }
     QArray *ops[2] = {dst, src};
     QIter it;

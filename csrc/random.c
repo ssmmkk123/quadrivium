@@ -309,9 +309,28 @@ static PyObject *fill_samples(QGenerator *self, PyObject *size, Sampler fn, void
 /* The parameterised path: every argument becomes a float64 array, the result
  * shape is `size` when given and the broadcast of the parameters otherwise,
  * and the output is filled in C order -- one draw per element, as NumPy does. */
+/* A distribution parameter confined to [0, inf) is checked before any variate
+ * is drawn, so an invalid scale cannot pass silently as a stream of samples. */
+static int reject_negative(QArray *p, const char *message) {
+    QArray *ops[1] = {p};
+    QIter it;
+    if (qnp_iter_init(&it, 1, ops, p->shape, p->nd) < 0) return -1;
+    while (qnp_iter_next(&it)) {
+        const char *q = it.ptr[0];
+        for (qintp i = 0; i < it.inner_len; i++, q += it.inner_stride[0]) {
+            if (*(const double *)q < 0.0) {
+                PyErr_SetString(PyExc_ValueError, message);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
 static PyObject *fill_with_params(QGenerator *self, PyObject *size, int nparams,
                                   PyObject **param_objs, ParamSampler fn,
-                                  int integral) {
+                                  int integral, int check_index,
+                                  const char *check_msg) {
     QArray *params[2] = {NULL, NULL};
     for (int i = 0; i < nparams; i++) {
         params[i] = qnp_from_any(param_objs[i], QNP_FLOAT64, 1);
@@ -320,6 +339,8 @@ static PyObject *fill_with_params(QGenerator *self, PyObject *size, int nparams,
             return NULL;
         }
     }
+    if (check_index >= 0 && reject_negative(params[check_index], check_msg) < 0)
+        goto fail;
     qintp shape[QNP_MAXDIMS];
     int nd = 0, scalar = 0;
     if (size == NULL || size == Py_None) {
@@ -438,7 +459,7 @@ static PyObject *gen_normal(QGenerator *self, PyObject *args, PyObject *kwds) {
     PyObject *zero = PyFloat_FromDouble(0.0), *one = PyFloat_FromDouble(1.0);
     if (zero == NULL || one == NULL) { Py_XDECREF(zero); Py_XDECREF(one); return NULL; }
     PyObject *params[2] = {loc ? loc : zero, scale ? scale : one};
-    PyObject *result = fill_with_params(self, size, 2, params, param_normal, 0);
+    PyObject *result = fill_with_params(self, size, 2, params, param_normal, 0, 1, "scale < 0");
     Py_DECREF(zero);
     Py_DECREF(one);
     return result;
@@ -452,7 +473,7 @@ static PyObject *gen_uniform(QGenerator *self, PyObject *args, PyObject *kwds) {
     PyObject *zero = PyFloat_FromDouble(0.0), *one = PyFloat_FromDouble(1.0);
     if (zero == NULL || one == NULL) { Py_XDECREF(zero); Py_XDECREF(one); return NULL; }
     PyObject *params[2] = {low ? low : zero, high ? high : one};
-    PyObject *result = fill_with_params(self, size, 2, params, param_uniform, 0);
+    PyObject *result = fill_with_params(self, size, 2, params, param_uniform, 0, -1, NULL);
     Py_DECREF(zero);
     Py_DECREF(one);
     return result;
@@ -466,7 +487,7 @@ static PyObject *gen_exponential(QGenerator *self, PyObject *args, PyObject *kwd
     PyObject *one = PyFloat_FromDouble(1.0);
     if (one == NULL) return NULL;
     PyObject *params[1] = {scale ? scale : one};
-    PyObject *result = fill_with_params(self, size, 1, params, param_expo, 0);
+    PyObject *result = fill_with_params(self, size, 1, params, param_expo, 0, 0, "scale < 0");
     Py_DECREF(one);
     return result;
 }
@@ -479,7 +500,7 @@ static PyObject *gen_poisson(QGenerator *self, PyObject *args, PyObject *kwds) {
     PyObject *one = PyFloat_FromDouble(1.0);
     if (one == NULL) return NULL;
     PyObject *params[1] = {lam ? lam : one};
-    PyObject *result = fill_with_params(self, size, 1, params, param_poisson, 1);
+    PyObject *result = fill_with_params(self, size, 1, params, param_poisson, 1, 0, "lam < 0");
     Py_DECREF(one);
     return result;
 }

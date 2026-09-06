@@ -220,6 +220,15 @@ static PyObject *fft_entry(PyObject *args, PyObject *kwds, int sign, const char 
         }
         len = requested;
     }
+    /* An empty transform axis is rejected the same way an explicit n <= 0 is;
+     * there is no spectrum of nothing, and numpy.fft refuses it too. */
+    if (len < 1) {
+        Py_DECREF(a0);
+        PyErr_Format(PyExc_ValueError,
+                     "%s: invalid number of data points (%zd) specified",
+                     name, (Py_ssize_t)len);
+        return NULL;
+    }
     qintp shape[QNP_MAXDIMS];
     for (int i = 0; i < a0->nd; i++) shape[i] = a0->shape[i];
     shape[axis] = len;

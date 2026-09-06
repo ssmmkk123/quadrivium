@@ -139,14 +139,18 @@ static qcomplex qc_expm1(qcomplex a) { return qc_sub(qc_exp(a), qc(1.0, 0.0)); }
 
 /* ---- integer helpers with Python's floor/modulo semantics ------------- */
 
+/* INT64_MIN / -1 is not representable and traps on x86 rather than wrapping,
+ * so it is special-cased to the two's-complement result NumPy reports. */
 static inline int64_t ifloordiv(int64_t x, int64_t y) {
     if (y == 0) return 0;
+    if (y == -1) return (int64_t)(0 - (uint64_t)x);
     int64_t q = x / y;
     if ((x % y != 0) && ((x < 0) != (y < 0))) q--;
     return q;
 }
 static inline int64_t imod(int64_t x, int64_t y) {
     if (y == 0) return 0;
+    if (y == -1) return 0;
     int64_t r = x % y;
     if (r != 0 && ((r < 0) != (y < 0))) r += y;
     return r;
@@ -512,7 +516,7 @@ static int copy_where(QArray *dst, QArray *src, QArray *mask) {
     qintp shape[QNP_MAXDIMS];
     int nd;
     if (qnp_broadcast_shapes(3, ops, shape, &nd) < 0) return -1;
-    if (nd != dst->nd || memcmp(shape, dst->shape, (size_t)nd * sizeof(qintp))) {
+    if (nd != dst->nd || !qnp_same_shape(nd, shape, dst->shape)) {
         PyErr_SetString(PyExc_ValueError, "where mask does not fit the output shape");
         return -1;
     }
@@ -637,7 +641,7 @@ PyObject *qnp_binary_op(int op, PyObject *ao, PyObject *bo, PyObject *outo,
             Py_DECREF(ca); Py_DECREF(cb); Py_XDECREF(where);
             return NULL;
         }
-        if (dest->nd == nd && !memcmp(dest->shape, shape, (size_t)nd * sizeof(qintp)) &&
+        if (dest->nd == nd && qnp_same_shape(nd, dest->shape, shape) &&
             dest->dtype == out_dt && where == NULL) {
             out = dest;
             Py_INCREF(out);
@@ -647,6 +651,22 @@ PyObject *qnp_binary_op(int op, PyObject *ao, PyObject *bo, PyObject *outo,
     if (out == NULL) {
         out = qnp_new(nd, shape, out_dt);
         if (out == NULL) { Py_DECREF(ca); Py_DECREF(cb); Py_XDECREF(where); return NULL; }
+    }
+
+    /* Writing straight into `out` would clobber an input that shares its
+     * storage before the loop reads it (`x[1:] += x[:-1]`). */
+    if (use_out_directly) {
+        QArray **aliased[2] = {&ca, &cb};
+        for (int i = 0; i < 2; i++) {
+            if (!qnp_overlap_needs_copy(out, *aliased[i])) continue;
+            QArray *snap = qnp_astype(*aliased[i], in_dt, 1);
+            if (snap == NULL) {
+                Py_DECREF(ca); Py_DECREF(cb); Py_DECREF(out); Py_XDECREF(where);
+                return NULL;
+            }
+            Py_DECREF(*aliased[i]);
+            *aliased[i] = snap;
+        }
     }
 
     QArray *ops[3] = {out, ca, cb};
@@ -797,7 +817,7 @@ PyObject *qnp_unary_op(int op, PyObject *ao, PyObject *outo) {
         QArray *dest = (QArray *)outo;
         if (check_out(dest, out_dt, un_names[op]) < 0) { Py_DECREF(ca); return NULL; }
         if (dest->nd == ca->nd && dest->dtype == out_dt &&
-            !memcmp(dest->shape, ca->shape, (size_t)ca->nd * sizeof(qintp))) {
+            qnp_same_shape(ca->nd, dest->shape, ca->shape)) {
             out = dest;
             Py_INCREF(out);
             use_out_directly = 1;
@@ -807,6 +827,15 @@ PyObject *qnp_unary_op(int op, PyObject *ao, PyObject *outo) {
         out = qnp_new(ca->nd, ca->shape, out_dt);
         if (out == NULL) { Py_DECREF(ca); return NULL; }
     }
+    /* As in the binary case, an output sharing storage with the input has to
+     * read from a snapshot (`negative(x[:-1], out=x[1:])`). */
+    if (use_out_directly && qnp_overlap_needs_copy(out, ca)) {
+        QArray *snap = qnp_astype(ca, in_dt, 1);
+        if (snap == NULL) { Py_DECREF(ca); Py_DECREF(out); return NULL; }
+        Py_DECREF(ca);
+        ca = snap;
+    }
+
     QArray *ops[2] = {out, ca};
     QIter it;
     if (qnp_iter_init(&it, 2, ops, ca->shape, ca->nd) < 0) {

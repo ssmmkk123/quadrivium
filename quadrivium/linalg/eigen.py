@@ -371,11 +371,20 @@ def jacobi_eigen(A, tol: float = 1e-12, max_sweeps: int = 100):
                 t = _safe_tangent(theta)
                 c = 1.0 / np.sqrt(t * t + 1.0)
                 s = t * c
-                J = np.eye(n)
-                J[p, p] = J[q, q] = c
-                J[p, q], J[q, p] = s, -s
-                D = J.T @ D @ J
-                V = V @ J
+                # A rotation in the (p, q) plane leaves every other row and
+                # column alone, so it is a rank-2 update costing O(n).
+                # Forming the full J and multiplying it through instead costs
+                # O(n^3) per rotation -- O(n^5) a sweep, which is what made
+                # this path take seconds where it should take milliseconds.
+                dp, dq = D[:, p].copy(), D[:, q].copy()
+                D[:, p] = c * dp - s * dq
+                D[:, q] = s * dp + c * dq
+                dp, dq = D[p, :].copy(), D[q, :].copy()
+                D[p, :] = c * dp - s * dq
+                D[q, :] = s * dp + c * dq
+                vp, vq = V[:, p].copy(), V[:, q].copy()
+                V[:, p] = c * vp - s * vq
+                V[:, q] = s * vp + c * vq
     idx = np.argsort(np.diag(D))
     return EigenResult(np.diag(D)[idx].copy(), V[:, idx], sweep, True, "jacobi")
 

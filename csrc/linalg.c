@@ -1858,7 +1858,128 @@ static PyObject *py_norm(PyObject *self, PyObject *args, PyObject *kwds) {
     return qnp_wrap_scalar_or_array(out);
 }
 
+/* ---- sparse kernels --------------------------------------------------- */
+
+static QArray *contiguous_as(PyObject *obj, int dtype) {
+    QArray *a = qnp_from_any(obj, dtype, 0);
+    if (a == NULL) return NULL;
+    QArray *c = qnp_ascontiguous(a);
+    Py_DECREF(a);
+    return c;
+}
+
+/* Check a CSR structure in one pass: row pointers start at zero, never go
+ * backwards and finish at nnz, and every column index is inside the matrix.
+ * The array formulation needs a boolean temporary per comparison; this needs
+ * none, which is what makes it worth having for construction as well. */
+static int csr_check(const int64_t *p, qintp rows, const int64_t *col,
+                     qintp nnz, qintp ncols) {
+    if (p[0] != 0 || p[rows] != (int64_t)nnz) {
+        PyErr_SetString(PyExc_ValueError,
+                        "indptr must start at zero, be nondecreasing and end at nnz");
+        return -1;
+    }
+    for (qintp r = 0; r < rows; r++) {
+        if (p[r] > p[r + 1] || p[r] < 0 || p[r + 1] > (int64_t)nnz) {
+            PyErr_SetString(PyExc_ValueError,
+                            "indptr must start at zero, be nondecreasing and end at nnz");
+            return -1;
+        }
+    }
+    for (qintp k = 0; k < nnz; k++) {
+        if (col[k] < 0 || col[k] >= (int64_t)ncols) {
+            PyErr_SetString(PyExc_ValueError, "sparse indices are outside the matrix shape");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* Validate a CSR structure without building anything. */
+static PyObject *py_csr_validate(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *po, *jo;
+    Py_ssize_t ncols;
+    if (!PyArg_ParseTuple(args, "OOn:csr_validate", &po, &jo, &ncols)) return NULL;
+    QArray *indptr = contiguous_as(po, QNP_INT64);
+    QArray *indices = contiguous_as(jo, QNP_INT64);
+    PyObject *result = NULL;
+    if (indptr == NULL || indices == NULL) goto out;
+    if (indptr->nd != 1 || indices->nd != 1 || indptr->shape[0] < 1) {
+        PyErr_SetString(PyExc_ValueError, "csr_validate: malformed index arrays");
+        goto out;
+    }
+    if (csr_check((const int64_t *)indptr->data, indptr->shape[0] - 1,
+                  (const int64_t *)indices->data, indices->shape[0], ncols) == 0) {
+        result = Py_NewRef(Py_None);
+    }
+out:
+    Py_XDECREF(indptr);
+    Py_XDECREF(indices);
+    return result;
+}
+
+/* Fused CSR matrix-vector product.
+ *
+ * Assembled from array operations this costs two nnz-sized temporaries -- the
+ * gather `v[indices]` and its product with `data` -- before the segment sum
+ * even starts, so a million-entry matrix touches far more memory than it
+ * holds.  One pass over the rows keeps the working set at the output vector.
+ * The row pointers and column indices are re-checked here because nothing
+ * stops this entry point being handed arrays the container never validated.
+ */
+static PyObject *py_csr_matvec(PyObject *self, PyObject *args) {
+    (void)self;
+    PyObject *po, *jo, *ao, *vo;
+    if (!PyArg_ParseTuple(args, "OOOO:csr_matvec", &po, &jo, &ao, &vo)) return NULL;
+    QArray *indptr = contiguous_as(po, QNP_INT64);
+    QArray *indices = contiguous_as(jo, QNP_INT64);
+    QArray *data = contiguous_as(ao, QNP_FLOAT64);
+    QArray *v = contiguous_as(vo, QNP_FLOAT64);
+    QArray *out = NULL;
+    if (indptr == NULL || indices == NULL || data == NULL || v == NULL) goto done;
+    if (indptr->nd != 1 || indices->nd != 1 || data->nd != 1 || v->nd != 1) {
+        PyErr_SetString(PyExc_ValueError, "csr_matvec: every input must be one-dimensional");
+        goto done;
+    }
+    if (indptr->shape[0] < 1) {
+        PyErr_SetString(PyExc_ValueError, "csr_matvec: indptr needs at least one entry");
+        goto done;
+    }
+    qintp rows = indptr->shape[0] - 1;
+    qintp nnz = data->shape[0];
+    qintp ncols = v->shape[0];
+    if (indices->shape[0] != nnz) {
+        PyErr_SetString(PyExc_ValueError,
+                        "csr_matvec: indices and data must have equal length");
+        goto done;
+    }
+    const int64_t *p = (const int64_t *)indptr->data;
+    const int64_t *col = (const int64_t *)indices->data;
+    const double *x = (const double *)data->data;
+    const double *b = (const double *)v->data;
+    if (csr_check(p, rows, col, nnz, ncols) < 0) goto done;
+    out = qnp_new(1, &rows, QNP_FLOAT64);
+    if (out == NULL) goto done;
+    double *o = (double *)out->data;
+    for (qintp r = 0; r < rows; r++) {
+        double acc = 0.0;
+        for (int64_t k = p[r]; k < p[r + 1]; k++) acc += x[k] * b[col[k]];
+        o[r] = acc;
+    }
+done:
+    Py_XDECREF(indptr);
+    Py_XDECREF(indices);
+    Py_XDECREF(data);
+    Py_XDECREF(v);
+    return (PyObject *)out;
+}
+
 PyMethodDef qnp_linalg_methods[] = {
+    {"csr_matvec", py_csr_matvec, METH_VARARGS,
+     "Fused compressed-sparse-row matrix-vector product."},
+    {"csr_validate", py_csr_validate, METH_VARARGS,
+     "Check CSR row pointers and column indices in one pass."},
     {"solve", py_solve, METH_VARARGS, "Solve a linear system."},
     {"inv", py_inv, METH_O, "Matrix inverse."},
     {"det", py_det, METH_O, "Determinant."},

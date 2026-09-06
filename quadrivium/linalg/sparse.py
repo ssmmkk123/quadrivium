@@ -14,6 +14,12 @@ from .. import numeric as np
 from ..core.exceptions import DimensionError
 from ..core.utils import as_vector
 
+from .. import _qnp as _core
+
+# Optional compiled kernels; the array formulations below stay as the fallback.
+_csr_matvec = getattr(_core.linalg, "csr_matvec", None)
+_csr_validate = getattr(_core.linalg, "csr_validate", None)
+
 __all__ = [
     "COOMatrix",
     "CSRMatrix",
@@ -47,6 +53,10 @@ def _integer_vector(values, name):
         raise DimensionError(f"{name} must be one-dimensional")
     if raw.size and raw.dtype.kind not in "iuf":
         raise ValueError(f"{name} must contain integer indices")
+    if raw.dtype == np.intp:
+        # Already the index type: the cast below is a no-op and the round-trip
+        # comparison would only be checking the array against itself.
+        return raw
     try:
         with np.errstate(invalid="raise", over="raise"):
             result = raw.astype(np.intp, copy=False)
@@ -73,11 +83,16 @@ def _compressed(indptr, indices, data, shape, axis):
         raise DimensionError("indptr length must equal the compressed dimension plus one")
     if indices.size != data.size:
         raise DimensionError("indices and data must have equal length")
-    if (indptr[0] != 0 or indptr[-1] != data.size
-            or np.any(indptr[1:] < indptr[:-1])):
-        raise ValueError("indptr must start at zero, be nondecreasing and end at nnz")
-    if np.any(indices < 0) or np.any(indices >= shape[1 - axis]):
-        raise ValueError("sparse indices are outside the matrix shape")
+    # Three array comparisons here each allocate a full-length boolean; the
+    # compiled check makes the same decisions in a single allocation-free pass.
+    if _csr_validate is not None:
+        _csr_validate(indptr, indices, shape[1 - axis])
+    else:
+        if (indptr[0] != 0 or indptr[-1] != data.size
+                or np.any(indptr[1:] < indptr[:-1])):
+            raise ValueError("indptr must start at zero, be nondecreasing and end at nnz")
+        if np.any(indices < 0) or np.any(indices >= shape[1 - axis]):
+            raise ValueError("sparse indices are outside the matrix shape")
     return indptr, indices, data, shape
 
 
@@ -104,6 +119,17 @@ class _SparseBase:
 
     def matvec(self, v):  # pragma: no cover - overridden
         raise NotImplementedError
+
+    @classmethod
+    def _from_parts(cls, indptr, indices, data, shape):
+        """Adopt arrays this module built itself, skipping revalidation.
+
+        Only for structures whose validity follows from how they were
+        constructed; anything reaching the public constructor is still checked.
+        """
+        self = cls.__new__(cls)
+        self.indptr, self.indices, self.data, self.shape = indptr, indices, data, shape
+        return self
 
     def __matmul__(self, v):
         v = np.asarray(v, dtype=float)
@@ -180,12 +206,19 @@ class CSRMatrix(_SparseBase):
         self.indptr, self.indices, self.data, self.shape = _compressed(
             indptr, indices, data, shape, axis=0)
 
+
     @property
     def nnz(self) -> int:
         return self.data.size
 
     def matvec(self, v):
         v = _vector(v, self.shape[1], self.shape)
+        # The compiled kernel walks the rows once; the array formulation below
+        # first materialises the gather and the product, two nnz-sized
+        # temporaries that dominate both the time and the memory at scale.
+        if (_csr_matvec is not None and self.data.dtype == np.float64
+                and v.dtype == np.float64):
+            return _csr_matvec(self.indptr, self.indices, self.data, v)
         return _segment_sum(self.indptr, self.data * v[self.indices])
 
     def rmatvec(self, v):
@@ -292,7 +325,9 @@ def identity_sparse(n: int, fmt: str = "csr"):
     if fmt == "coo":
         return COOMatrix(indices, indices, data, shape)
     cls = CSRMatrix if fmt == "csr" else CSCMatrix
-    return cls(np.arange(n + 1, dtype=np.intp), indices, data, shape)
+    # A diagonal built from aranges is valid by construction, so re-scanning
+    # three million-entry arrays to confirm it would be pure overhead.
+    return cls._from_parts(np.arange(n + 1, dtype=np.intp), indices, data, shape)
 
 
 def diags(diagonals, offsets, shape=None):

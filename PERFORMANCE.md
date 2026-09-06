@@ -250,6 +250,79 @@ uses it in a numerical operation. Timings vary with hardware, matrix shape,
 BLAS, and callback cost. Further native-language additions should follow
 profiling of the intended workload.
 
+## September 2026 audit remediation
+
+A third pass, whose baseline is the state after the work above. It fixes the
+defects the September 2026 audit reported and then the performance gaps its
+follow-up benchmark listed. Timings share that benchmark's conditions: one
+thread everywhere, a separate process per cell, eleven timed samples, median
+milliseconds per call.
+
+Four routines were doing asymptotically or structurally more work than the
+operation needs:
+
+| Routine | Workload | Before (ms) | After (ms) | Speedup |
+|---|---|---:|---:|---:|
+| `jacobi_eigen`, Python path | 128 x 128 | 16441.9 | 694.7 | 23.7x |
+| `interpolate.cubic_spline` construction | 10 000 knots | 3.544 | 0.440 | 8.1x |
+| `CSRMatrix.matvec` | 1 000 000 nonzeros | 9.905 | 2.554 | 3.9x |
+| `linalg.identity_sparse` | 1 000 000 | 11.866 | 7.086 | 1.7x |
+
+The Python Jacobi rotation built a full `n x n` rotation matrix and multiplied
+it through three times per rotation, making a sweep `O(n^5)` where the rotation
+touches only two rows and two columns. It is now a rank-2 update, which is what
+the Rust routine alongside it always did.
+
+Cubic-spline construction split its `(n, 4)` coefficient block into one array
+per interval and stacked those back into the same table, one `asarray` per
+knot. The split is now made only if something asks for it.
+
+`CSRMatrix.matvec` built the gather `v[indices]` and its product with `data` --
+two arrays the size of the nonzero count -- before the segment sum. A fused
+kernel walks the rows once instead, which also brings traced workspace for the
+million-entry case from 31.5 MiB to 7.63 MiB. Sparse construction checked its
+index arrays with three full-length boolean comparisons; one compiled pass
+replaces them, and `identity_sparse` no longer re-validates a diagonal it built
+itself.
+
+Against SciPy on the same machine the sparse ratios move from 7.35x to 1.83x
+for the million-entry matrix-vector product and from 3.92x to 1.90x for
+construction; spline construction goes from 6.39x slower to 0.60x, faster than
+SciPy. What remains in sparse construction is index width: these arrays are
+`int64` where SciPy's are `int32`, so the same matrix costs half again as much
+memory to touch.
+
+### Special functions rebuilt for accuracy
+
+The audit found several special functions returning wrong answers well inside
+their advertised domains. The replacements below are accuracy fixes first; the
+timing column records what they cost, since two of them are slower than the
+approximations they replace.
+
+| Function | Points | Before (ms) | After (ms) | Worst relative error, before -> after |
+|---|---:|---:|---:|---|
+| `airy_ai` | 5 000 | 0.711 | 0.652 | 1.1e+03 -> 4.0e-11 |
+| `struve_h0` | 5 000 | 0.290 | 0.456 | 2.9e+01 -> 3.7e-12 |
+| `bessel_j0` | 20 000 | 1.636 | 2.195 | 3.4e-08 -> 1.1e-11 |
+| `polygamma` | 5 000 | 1.120 | 1.072 | 2.5e-05 -> 4.1e-10 |
+
+Errors are worst-case relative against mpmath at 40 digits over the sampled
+domain. `airy_ai` had lost every digit by `x = 8` and returned the wrong sign
+at `x = 10`; `struve_h0` returned `-2.5` where the answer is `-0.085`. Both now
+switch between an ascending series, a quadrature or modified-Bessel form, and
+an asymptotic expansion, choosing by argument. `bessel_j0` and the `Y` family
+pay for truncating the Hankel expansion at its smallest term rather than at a
+fixed six terms. This supersedes the "Values are unchanged" note above for
+these functions: their values change, deliberately, where they were wrong.
+
+One gap was measured and left open. Element-wise `gamma` stays about 4x SciPy
+at a million points. Breaking the Lanczos division chain and dropping a
+redundant logarithm bought 4%, and removing the extension's boundary copies
+bought nothing measurable. At 10 000 points -- inside cache -- `erf` through
+the same path is already faster than SciPy's, and `erf` shares none of gamma's
+machinery, so what is left looks like vectorised ufunc inner loops rather than
+anything specific to gamma. Closing it means SIMD kernels.
+
 ## Reproduce
 
 Validation completed locally: 606 tests and 1709 subtests passed with the Rust

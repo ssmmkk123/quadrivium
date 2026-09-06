@@ -129,8 +129,14 @@ def fft_bluestein(x, inverse: bool = False):
         return a.copy()
     sign = 1.0 if inverse else -1.0
     m = next_power_of_two(2 * n - 1)
-    k = np.arange(n)
-    chirp = np.exp(sign * 1j * np.pi * k * k / n)
+    k = np.arange(n, dtype=np.int64)
+    # The chirp angle repeats every 2n in k^2, so k^2 is reduced modulo 2n in
+    # exact integer arithmetic first.  Forming k*k/n in floating point instead
+    # spends the mantissa on a quotient of order n and leaves the fractional
+    # part -- the only part that sets the phase -- good to about 1e-11, which
+    # is what limits a long transform such as the 65,536-point DCT-I.
+    residue = (k * k) % (2 * n)
+    chirp = np.exp(sign * 1j * np.pi * residue.astype(float) / n)
     A = np.zeros(m, dtype=complex)
     A[:n] = a * chirp
     B = np.zeros(m, dtype=complex)
@@ -230,10 +236,20 @@ def irfft(X, n=None):
     X = np.asarray(X, dtype=complex)
     if n is None:
         n = 2 * (X.size - 1)
+    if n < 1:
+        raise ValueError("Invalid number of FFT data points")
+    # A signal of length n keeps n//2 + 1 independent coefficients, so the
+    # supplied spectrum is padded or truncated to that many before its
+    # Hermitian counterpart is placed; using X.size instead misplaces the
+    # mirrored half whenever the caller asks for a different length.
+    keep = n // 2 + 1
+    half = np.zeros(keep, dtype=complex)
+    take = min(X.size, keep)
+    half[:take] = X[:take]
     full = np.zeros(n, dtype=complex)
-    full[: X.size] = X
+    full[:keep] = half
     # rebuild the redundant half by Hermitian symmetry
-    full[X.size :] = np.conj(X[1 : n - X.size + 1][::-1])
+    full[keep:] = np.conj(half[1 : n - keep + 1][::-1])
     return np.real(ifft(full))
 
 

@@ -514,6 +514,30 @@ def test_fft_with_explicit_length_and_axis():
                        np.fft.fft(values, None, 0), atol=1e-10)
 
 
+def test_empty_transform_axis_is_rejected_like_numpy():
+    """There is no spectrum of nothing, and this layer mirrors ``numpy.fft``.
+
+    Returning an empty array here used to hide the degenerate input instead of
+    reporting it; the policy is deliberate, so it is pinned rather than left
+    to whatever the transform happens to do with a zero-length axis.
+    """
+    empty = qp.array([])
+    for name in ("fft", "ifft", "rfft"):
+        with pytest.raises(ValueError, match="number of data points"):
+            getattr(qp.fft, name)(empty)
+        with pytest.raises(ValueError):
+            getattr(np.fft, name)(np.array([]))
+    # An explicit non-positive length is refused on non-empty input too.
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="number of data points"):
+            qp.fft.fft(qp.array([1.0, 2.0]), bad)
+    # A zero-length axis is only rejected when it is the transform axis.
+    block = qp.zeros((0, 4))
+    assert to_numpy(qp.fft.fft(block, None, 1)).shape == (0, 4)
+    with pytest.raises(ValueError, match="number of data points"):
+        qp.fft.fft(block, None, 0)
+
+
 @pytest.mark.parametrize("seed", [0, 1, 42, 20260905])
 def test_random_streams_match_numpy_exactly(seed):
     mine = qp.random.default_rng(seed)

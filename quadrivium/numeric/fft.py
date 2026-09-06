@@ -32,13 +32,36 @@ def rfft(a, n=None, axis=-1):
     return full[tuple(key)]
 
 
+def _resize_axis(values, axis, size):
+    """Truncate or zero-pad ``values`` along ``axis`` to exactly ``size``."""
+    have = values.shape[axis]
+    if have == size:
+        return values
+    key = [slice(None)] * values.ndim
+    if have > size:
+        key[axis] = slice(0, size)
+        return values[tuple(key)]
+    shape = list(values.shape)
+    shape[axis] = size - have
+    return _c.concatenate([values, _c.zeros(tuple(shape), dtype=values.dtype)],
+                          axis=axis)
+
+
 def irfft(a, n=None, axis=-1):
     """Inverse of :func:`rfft`, rebuilding the conjugate-symmetric half."""
     values = _c.asarray(a, dtype=complex)
     half = values.shape[axis]
     length = 2 * (half - 1) if n is None else n
+    if length < 1:
+        raise ValueError("Invalid number of FFT data points")
+    # A signal of `length` samples keeps `length // 2 + 1` independent
+    # coefficients.  The retained half has to be resized to that before the
+    # mirrored half is appended, or the Hermitian counterpart lands in the
+    # wrong place whenever the caller asks for a different length.
+    keep = length // 2 + 1
+    values = _resize_axis(values, axis, keep)
     key = [slice(None)] * values.ndim
-    key[axis] = slice(1, length - half + 1)
+    key[axis] = slice(1, length - keep + 1)
     mirror = values[tuple(key)]
     reverse = [slice(None)] * values.ndim
     reverse[axis] = slice(None, None, -1)

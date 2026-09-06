@@ -4,7 +4,13 @@
 
 include CHANGELOG.md
 include PERFORMANCE.md
-recursive-include benchmarks *.json
+# Ship only the published measurements linked from PERFORMANCE.md, including
+# when an older egg-info/SOURCES.txt still lists local experiment output.
+prune benchmarks
+include benchmarks/scalability-before.json
+include benchmarks/scalability-after.json
+include benchmarks/scalability-numpy-backend.json
+include benchmarks/scalability-c-backend.json
 include CODE_OF_CONDUCT.md
 include CONTRIBUTING.md
 include SECURITY.md

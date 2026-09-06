@@ -210,6 +210,15 @@ static int parse_one(IdxSpec *spec, QArray *a, PyObject *obj, int *dim) {
             return 0;
         }
         if (idx->dtype != QNP_INT64) {
+            /* Casting here would silently truncate 0.5 to 0.  An empty list
+             * carries no values to type, so it stays acceptable. */
+            if (!((PyList_Check(obj) || PyTuple_Check(obj)) && qnp_size(idx) == 0)) {
+                Py_DECREF(idx);
+                PyErr_SetString(PyExc_IndexError,
+                                "arrays used as indices must be of integer "
+                                "(or boolean) type");
+                return -1;
+            }
             QArray *cast = qnp_astype(idx, QNP_INT64, 0);
             Py_DECREF(idx);
             if (cast == NULL) return -1;
@@ -306,6 +315,18 @@ static int parse_key(IdxSpec *spec, QArray *a, PyObject *key) {
 
 /* ---- basic indexing: build a view ------------------------------------- */
 
+/* The key may name more result dimensions than an array header can hold; the
+ * limit must be enforced before anything is written to a QNP_MAXDIMS buffer. */
+static int too_many_dims(int nd) {
+    if (nd >= QNP_MAXDIMS) {
+        PyErr_Format(PyExc_IndexError,
+                     "number of dimensions produced by the index exceeds the "
+                     "maximum supported dimension of %d", QNP_MAXDIMS);
+        return 1;
+    }
+    return 0;
+}
+
 static PyObject *basic_view(QArray *a, IdxSpec *spec) {
     qintp shape[QNP_MAXDIMS] = {0}, strides[QNP_MAXDIMS] = {0};
     int nd = 0, dim = 0;
@@ -313,6 +334,7 @@ static PyObject *basic_view(QArray *a, IdxSpec *spec) {
     for (int i = 0; i < spec->n; i++) {
         IdxEntry *e = &spec->entries[i];
         if (e->kind == IDX_NEWAXIS) {
+            if (too_many_dims(nd)) return NULL;
             shape[nd] = 1;
             strides[nd] = 0;
             nd++;
@@ -323,6 +345,7 @@ static PyObject *basic_view(QArray *a, IdxSpec *spec) {
             dim++;
             continue;
         }
+        if (too_many_dims(nd)) return NULL;
         offset += e->start * a->strides[dim];
         shape[nd] = e->len;
         strides[nd] = e->step * a->strides[dim];
@@ -358,6 +381,8 @@ typedef struct {
     int out_nd;
     int adv_out_pos;              /* where the advanced block sits in the output */
 } AdvPlan;
+
+static void plan_release(AdvPlan *p);
 
 static int build_plan(QArray *a, IdxSpec *spec, AdvPlan *p) {
     p->nadv = 0;
@@ -404,11 +429,13 @@ static int build_plan(QArray *a, IdxSpec *spec, AdvPlan *p) {
             p->nadv++;
         } else if (e->kind == IDX_NEWAXIS) {
             if (first_adv >= 0 && last_adv >= 0 && i > last_adv) { /* after group */ }
+            if (too_many_dims(p->basic_nd)) return -1;
             p->basic_shape[p->basic_nd] = 1;
             p->basic_src_stride[p->basic_nd] = 0;
             p->basic_nd++;
             if (first_adv < 0) basic_before++;
         } else {
+            if (too_many_dims(p->basic_nd)) return -1;
             p->base_offset += e->start * a->strides[dim];
             p->basic_shape[p->basic_nd] = e->len;
             p->basic_src_stride[p->basic_nd] = e->step * a->strides[dim];
@@ -430,6 +457,13 @@ static int build_plan(QArray *a, IdxSpec *spec, AdvPlan *p) {
     }
     p->adv_out_pos = seen_basic_between ? 0 : adv_result_pos;
     p->out_nd = p->basic_nd + p->bnd;
+    if (p->out_nd > QNP_MAXDIMS) {
+        PyErr_Format(PyExc_IndexError,
+                     "number of dimensions produced by the index exceeds the "
+                     "maximum supported dimension of %d", QNP_MAXDIMS);
+        plan_release(p);
+        return -1;
+    }
     int w = 0;
     for (int i = 0; i < p->adv_out_pos; i++) p->out_shape[w++] = p->basic_shape[i];
     for (int i = 0; i < p->bnd; i++) p->out_shape[w++] = p->bshape[i];
