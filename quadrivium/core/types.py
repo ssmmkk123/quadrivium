@@ -1,7 +1,8 @@
 """Lightweight result containers returned by the solvers.
 
-Every container behaves like a small immutable record with a readable ``repr``
-so results stay legible at an interactive prompt.
+These mutable dataclass records collect values, status and diagnostics with a
+readable ``repr``. Their arrays and histories may also be mutable; copy data
+when an independent snapshot is needed.
 """
 
 from __future__ import annotations
@@ -72,8 +73,8 @@ class IterationResult:
 class QuadratureResult:
     """Outcome of a quadrature rule."""
 
-    value: float
-    error_estimate: Optional[float] = None
+    value: Any
+    error_estimate: Any = None
     function_calls: int = 0
     subintervals: int = 0
     converged: bool = True
@@ -107,6 +108,7 @@ class ODESolution:
     message: str = ""
     interpolant: Optional[Callable] = None
     dydt: Optional[np.ndarray] = None
+    checkpoint: Any = None
 
     def __call__(self, t_query):
         """Evaluate the solution at ``t_query`` (scalar or array).
@@ -153,7 +155,7 @@ class ODESolution:
 
     @property
     def y_final(self):
-        return self.y[-1]
+        return self._final_state if hasattr(self, "_final_state") else self.y[-1]
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
         return (
@@ -217,6 +219,7 @@ class PDESolution:
     iterations: int = 0
     converged: bool = True
     residuals: list = field(default_factory=list)
+    checkpoint: Any = None
 
     @property
     def x(self):
@@ -229,6 +232,8 @@ class PDESolution:
     @property
     def final(self):
         """Last time level for time-dependent problems, else the field itself."""
+        if hasattr(self, "_final_state"):
+            return self._final_state
         return self.u[-1] if self.t is not None else self.u
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic

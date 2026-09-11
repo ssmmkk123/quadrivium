@@ -7,17 +7,19 @@ DFT/FFT family, signal processing, wavelets.
 
 For worked examples and guidance on choosing between these routines, see the [transforms guide](../guides/transforms.md).
 
-**57 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**69 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.transforms import dft
-import quadrivium as qd            # qd.dft, if re-exported
+from quadrivium import transforms
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
 - [`fourier`](#fourier) &mdash; discrete transforms: the dft and its fast algorithms (20)
 - [`signal`](#signal) &mdash; signal processing built on the transforms: convolution, correlation, filtering and spectral estimation (17)
+- [`streaming`](#streaming) &mdash; causal filters, polyphase resampling, and reconstructable time-frequency transforms (12)
 - [`wavelet`](#wavelet) &mdash; wavelet transforms: discrete, stationary and continuous (20)
 
 ## `fourier`
@@ -28,28 +30,213 @@ Discrete transforms: the DFT and its fast algorithms.
 
 The direct DFT costs ``O(n^2)``; the Cooley-Tukey factorization brings that to ``O(n log n)``, and Bluestein's algorithm extends the speedup to lengths with no small factors.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `dft` | `(x)` | Direct discrete Fourier transform, ``O(n^2)``. |
-| `idft` | `(X)` | Direct inverse discrete Fourier transform. |
-| `dft_matrix` | `(n: int, inverse: bool = False)` | Explicit DFT matrix ``W`` with ``W[j,k] = exp(-2 pi i j k / n)``. |
-| `fft` | `(x)` | Fast Fourier transform for any length. |
-| `ifft` | `(X)` | Inverse fast Fourier transform for any length. |
-| `fft_radix2` | `(x, inverse: bool = False)` | Iterative radix-2 Cooley-Tukey FFT. Length must be a power of two. |
-| `fft_bluestein` | `(x, inverse: bool = False)` | Bluestein's chirp-z algorithm: an FFT for any length. |
-| `fft_mixed_radix` | `(x, inverse: bool = False)` | Recursive mixed-radix FFT with a radix-2 base case. |
-| `rfft` | `(x)` | FFT of real input, returning the non-redundant half spectrum. |
-| `irfft` | `(X, n=None)` | Inverse of ``rfft`` for a real signal of length ``n``. |
-| `fft2` | `(A)` | Two-dimensional FFT: transform the rows, then the columns. |
-| `ifft2` | `(A)` | Two-dimensional inverse FFT. |
-| `fftfreq` | `(n: int, d: float = 1.0)` | Frequencies matching the output ordering of ``fft``. |
-| `fftshift` | `(x)` | Shift the zero frequency to the centre of the spectrum. |
-| `dct` | `(x, kind: int = 2, norm: bool = False)` | Discrete cosine transform, types 1-4 (unnormalized conventions). |
-| `idct` | `(X, kind: int = 2)` | Inverse discrete cosine transform. |
-| `dst` | `(x, kind: int = 1)` | Discrete sine transform, types 1 and 2. |
-| `hartley` | `(x)` | Discrete Hartley transform: a real-valued relative of the DFT. |
-| `next_power_of_two` | `(n: int) -> int` | Smallest power of two at least ``n``. |
-| `bit_reverse_permutation` | `(n: int)` | Bit-reversal permutation used by the iterative radix-2 FFT. |
+| [`dft`](#api-dft) | function | Direct discrete Fourier transform, ``O(n^2)``. |
+| [`idft`](#api-idft) | function | Direct inverse discrete Fourier transform. |
+| [`dft_matrix`](#api-dft_matrix) | function | Explicit DFT matrix ``W`` with ``W[j,k] = exp(-2 pi i j k / n)``. |
+| [`fft`](#api-fft) | function | Fast Fourier transform for any length. |
+| [`ifft`](#api-ifft) | function | Inverse fast Fourier transform for any length. |
+| [`fft_radix2`](#api-fft_radix2) | function | Iterative radix-2 Cooley-Tukey FFT. Length must be a power of two. |
+| [`fft_bluestein`](#api-fft_bluestein) | function | Bluestein's chirp-z algorithm: an FFT for any length. |
+| [`fft_mixed_radix`](#api-fft_mixed_radix) | function | Recursive mixed-radix FFT with a radix-2 base case. |
+| [`rfft`](#api-rfft) | function | FFT of real input, returning the non-redundant half spectrum. |
+| [`irfft`](#api-irfft) | function | Inverse of ``rfft`` for a real signal of length ``n``. |
+| [`fft2`](#api-fft2) | function | Two-dimensional FFT: transform the rows, then the columns. |
+| [`ifft2`](#api-ifft2) | function | Two-dimensional inverse FFT. |
+| [`fftfreq`](#api-fftfreq) | function | Frequencies matching the output ordering of ``fft``. |
+| [`fftshift`](#api-fftshift) | function | Shift the zero frequency to the centre of the spectrum. |
+| [`dct`](#api-dct) | function | Discrete cosine transform, types 1-4 (unnormalized conventions). |
+| [`idct`](#api-idct) | function | Inverse discrete cosine transform. |
+| [`dst`](#api-dst) | function | Discrete sine transform, types 1 and 2. |
+| [`hartley`](#api-hartley) | function | Discrete Hartley transform: a real-valued relative of the DFT. |
+| [`next_power_of_two`](#api-next_power_of_two) | function | Smallest power of two at least ``n``. |
+| [`bit_reverse_permutation`](#api-bit_reverse_permutation) | function | Bit-reversal permutation used by the iterative radix-2 FFT. |
+
+### `dft` {#api-dft}
+
+```python
+dft(x)
+```
+
+Direct discrete Fourier transform, `O(n^2)`.
+
+Kept for reference and for testing the fast algorithms against.
+
+### `idft` {#api-idft}
+
+```python
+idft(X)
+```
+
+Direct inverse discrete Fourier transform.
+
+### `dft_matrix` {#api-dft_matrix}
+
+```python
+dft_matrix(n: int, inverse: bool = False)
+```
+
+Explicit DFT matrix `W` with `W[j,k] = exp(-2 pi i j k / n)`.
+
+### `fft` {#api-fft}
+
+```python
+fft(x)
+```
+
+Fast Fourier transform for any length.
+
+Dispatches to the radix-2 algorithm when possible and to Bluestein's
+otherwise, so no length is penalized with `O(n^2)` work.
+
+### `ifft` {#api-ifft}
+
+```python
+ifft(X)
+```
+
+Inverse fast Fourier transform for any length.
+
+### `fft_radix2` {#api-fft_radix2}
+
+```python
+fft_radix2(x, inverse: bool = False)
+```
+
+Iterative radix-2 Cooley-Tukey FFT. Length must be a power of two.
+
+Works in place over a bit-reversed copy, doubling the transform size each
+stage -- the classic decimation-in-time formulation.
+
+### `fft_bluestein` {#api-fft_bluestein}
+
+```python
+fft_bluestein(x, inverse: bool = False)
+```
+
+Bluestein's chirp-z algorithm: an FFT for any length.
+
+Rewrites the DFT as a convolution, which is then evaluated with a
+power-of-two FFT -- so prime lengths still cost `O(n log n)`.
+
+### `fft_mixed_radix` {#api-fft_mixed_radix}
+
+```python
+fft_mixed_radix(x, inverse: bool = False)
+```
+
+Recursive mixed-radix FFT with a radix-2 base case.
+
+Small odd factors are split first to leave power-of-two subtransforms.
+Falls back to Bluestein when the remaining length is prime.
+
+### `rfft` {#api-rfft}
+
+```python
+rfft(x)
+```
+
+FFT of real input, returning the non-redundant half spectrum.
+
+A real signal has a Hermitian spectrum, so only `n//2 + 1` values carry
+information.
+
+### `irfft` {#api-irfft}
+
+```python
+irfft(X, n=None)
+```
+
+Inverse of `rfft` for a real signal of length `n`.
+
+### `fft2` {#api-fft2}
+
+```python
+fft2(A)
+```
+
+Two-dimensional FFT: transform the rows, then the columns.
+
+### `ifft2` {#api-ifft2}
+
+```python
+ifft2(A)
+```
+
+Two-dimensional inverse FFT.
+
+### `fftfreq` {#api-fftfreq}
+
+```python
+fftfreq(n: int, d: float = 1.0)
+```
+
+Frequencies matching the output ordering of `fft`.
+
+### `fftshift` {#api-fftshift}
+
+```python
+fftshift(x)
+```
+
+Shift the zero frequency to the centre of the spectrum.
+
+### `dct` {#api-dct}
+
+```python
+dct(x, kind: int = 2, norm: bool = False)
+```
+
+Discrete cosine transform, types 1-4 (unnormalized conventions).
+
+Types 1 and 2 are evaluated through the FFT of a symmetric extension;
+types 3 and 4 are formed directly. `idct` supplies the matching inverse
+scaling.
+
+### `idct` {#api-idct}
+
+```python
+idct(X, kind: int = 2)
+```
+
+Inverse discrete cosine transform.
+
+With the unnormalized conventions used by `dct`, type 2 and type 3
+are inverses of each other up to `1/(2N)`, while types 1 and 4 are their
+own inverses up to `1/(2(N-1))` and `1/(2N)` respectively.
+
+### `dst` {#api-dst}
+
+```python
+dst(x, kind: int = 1)
+```
+
+Discrete sine transform, types 1 and 2.
+
+### `hartley` {#api-hartley}
+
+```python
+hartley(x)
+```
+
+Discrete Hartley transform: a real-valued relative of the DFT.
+
+### `next_power_of_two` {#api-next_power_of_two}
+
+```python
+next_power_of_two(n: int) -> int
+```
+
+Smallest power of two at least `n`.
+
+### `bit_reverse_permutation` {#api-bit_reverse_permutation}
+
+```python
+bit_reverse_permutation(n: int)
+```
+
+Bit-reversal permutation used by the iterative radix-2 FFT.
 
 ## `signal`
 
@@ -57,25 +244,473 @@ The direct DFT costs ``O(n^2)``; the Cooley-Tukey factorization brings that to `
 
 Signal processing built on the transforms: convolution, correlation, filtering and spectral estimation.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `convolve` | `(a, b, mode: str = 'full')` | Direct convolution, ``O(nm)``. |
-| `convolve_fft` | `(a, b, mode: str = 'full')` | Convolution by the FFT: ``O((n+m) log(n+m))``. |
-| `correlate` | `(a, b, mode: str = 'full')` | Cross-correlation ``sum a[n+k] b[n]`` (convolution with a reversed kernel). |
-| `autocorrelation` | `(x, normalize: bool = True, max_lag=None)` | Autocorrelation of a signal (mean removed), for lags ``0..max_lag``. |
-| `cross_correlation` | `(a, b, normalize: bool = False)` | Full cross-correlation with the corresponding lag vector. |
-| `deconvolve` | `(y, h, regularization: float = 1e-08)` | Wiener-regularized deconvolution: recover ``x`` from ``y = x * h``. |
-| `power_spectrum` | `(x, dt: float = 1.0, win: str = 'hann', detrend: bool = True)` | One-sided power spectral density estimate. |
-| `periodogram` | `(x, dt: float = 1.0)` | Raw (unwindowed) periodogram. |
-| `welch` | `(x, segment: int = 256, overlap: float = 0.5, dt: float = 1.0, win: str = 'hann')` | Welch's method: average periodograms of overlapping segments. |
-| `window` | `(n: int, kind: str = 'hann', sym: bool = True, beta: float = 8.6, alpha: float = 0.5)` | Window functions for spectral analysis. |
-| `spectrogram` | `(x, segment: int = 128, overlap: float = 0.5, dt: float = 1.0, win: str = 'hann')` | Short-time Fourier transform magnitudes. |
-| `hilbert` | `(x)` | Analytic signal via the Hilbert transform. |
-| `resample` | `(x, num: int)` | Band-limited resampling by truncating or zero padding the spectrum. |
-| `moving_average` | `(x, window_size: int = 5, mode: str = 'same')` | Simple moving average (a boxcar FIR filter). |
-| `savitzky_golay_filter` | `(x, window_size: int = 11, poly_order: int = 3)` | Savitzky-Golay smoothing: local least squares polynomial fitting. |
-| `lowpass_filter` | `(x, cutoff: float, dt: float = 1.0, order: int = 4, kind: str = 'brickwall')` | Low-pass filter in the frequency domain. |
-| `zero_pad` | `(x, n: int)` | Zero pad (or truncate) a signal to length ``n``. |
+| [`convolve`](#api-convolve) | function | Direct convolution, ``O(nm)``. |
+| [`convolve_fft`](#api-convolve_fft) | function | Convolution by the FFT: ``O((n+m) log(n+m))``. |
+| [`correlate`](#api-correlate) | function | Cross-correlation ``sum a[n+k] b[n]`` (convolution with a reversed kernel). |
+| [`autocorrelation`](#api-autocorrelation) | function | Autocorrelation of a signal (mean removed), for lags ``0..max_lag``. |
+| [`cross_correlation`](#api-cross_correlation) | function | Full cross-correlation with the corresponding lag vector. |
+| [`deconvolve`](#api-deconvolve) | function | Wiener-regularized deconvolution: recover ``x`` from ``y = x * h``. |
+| [`power_spectrum`](#api-power_spectrum) | function | One-sided power spectral density estimate. |
+| [`periodogram`](#api-periodogram) | function | Raw (unwindowed) periodogram. |
+| [`welch`](#api-welch) | function | Welch's method: average periodograms of overlapping segments. |
+| [`window`](#api-window) | function | Window functions for spectral analysis. |
+| [`spectrogram`](#api-spectrogram) | function | Short-time Fourier transform magnitudes. |
+| [`hilbert`](#api-hilbert) | function | Analytic signal via the Hilbert transform. |
+| [`resample`](#api-resample) | function | Band-limited resampling by truncating or zero padding the spectrum. |
+| [`moving_average`](#api-moving_average) | function | Simple moving average (a boxcar FIR filter). |
+| [`savitzky_golay_filter`](#api-savitzky_golay_filter) | function | Savitzky-Golay smoothing: local least squares polynomial fitting. |
+| [`lowpass_filter`](#api-lowpass_filter) | function | Low-pass filter in the frequency domain. |
+| [`zero_pad`](#api-zero_pad) | function | Zero pad (or truncate) a signal to length ``n``. |
+
+### `convolve` {#api-convolve}
+
+```python
+convolve(a, b, mode: str = 'full')
+```
+
+Direct convolution, `O(nm)`.
+
+Use `convolve_fft` when both signals are long.
+
+### `convolve_fft` {#api-convolve_fft}
+
+```python
+convolve_fft(a, b, mode: str = 'full')
+```
+
+Convolution by the FFT: `O((n+m) log(n+m))`.
+
+Both signals are zero padded to at least `n+m-1` so the circular
+convolution the FFT computes equals the linear one.
+
+### `correlate` {#api-correlate}
+
+```python
+correlate(a, b, mode: str = 'full')
+```
+
+Cross-correlation `sum a[n+k] b[n]` (convolution with a reversed kernel).
+
+### `autocorrelation` {#api-autocorrelation}
+
+```python
+autocorrelation(x, normalize: bool = True, max_lag=None)
+```
+
+Autocorrelation of a signal (mean removed), for lags `0..max_lag`.
+
+### `cross_correlation` {#api-cross_correlation}
+
+```python
+cross_correlation(a, b, normalize: bool = False)
+```
+
+Full cross-correlation with the corresponding lag vector.
+
+### `deconvolve` {#api-deconvolve}
+
+```python
+deconvolve(y, h, regularization: float = 1e-08)
+```
+
+Wiener-regularized deconvolution: recover `x` from `y = x * h`.
+
+Deconvolution is ill-posed -- the transfer function's small values amplify
+noise -- so the inverse filter is damped by `regularization`.
+
+### `power_spectrum` {#api-power_spectrum}
+
+```python
+power_spectrum(x, dt: float = 1.0, win: str = 'hann', detrend: bool = True)
+```
+
+One-sided power spectral density estimate.
+
+Returns `(frequencies, psd)`, normalized so that integrating the PSD
+over frequency recovers the signal variance.
+
+### `periodogram` {#api-periodogram}
+
+```python
+periodogram(x, dt: float = 1.0)
+```
+
+Raw (unwindowed) periodogram.
+
+### `welch` {#api-welch}
+
+```python
+welch(x, segment: int = 256, overlap: float = 0.5, dt: float = 1.0, win: str = 'hann')
+```
+
+Welch's method: average periodograms of overlapping segments.
+
+Trades frequency resolution for a large reduction in estimator variance.
+
+### `window` {#api-window}
+
+```python
+window(
+    n: int,
+    kind: str = 'hann',
+    sym: bool = True,
+    beta: float = 8.6,
+    alpha: float = 0.5,
+)
+```
+
+Window functions for spectral analysis.
+
+Available: rectangular/boxcar, hann, hamming, blackman, blackman_harris,
+nuttall, blackman_nuttall, flattop, bartlett, triangular, tukey, kaiser,
+gaussian, welch, cosine/sine, lanczos, bohman, parzen.
+
+`sym=True` gives the symmetric window used for filter design.  `sym=False`
+gives the *periodic* (DFT-even) window, which is what spectral estimation
+wants: a symmetric window repeats its endpoint when the segment is treated
+as one period, and that discontinuity leaks energy across the spectrum.
+
+`beta` shapes the Kaiser window (larger is more sidelobe suppression at
+the cost of a wider main lobe); `alpha` is the Tukey taper fraction and
+the Gaussian width.
+
+### `spectrogram` {#api-spectrogram}
+
+```python
+spectrogram(
+    x,
+    segment: int = 128,
+    overlap: float = 0.5,
+    dt: float = 1.0,
+    win: str = 'hann',
+)
+```
+
+Short-time Fourier transform magnitudes.
+
+Returns `(times, frequencies, S)` with `S` of shape `(n_freq, n_time)`.
+A signal shorter than `segment` has no complete frames and returns an
+empty time axis with `S.shape == (segment // 2 + 1, 0)`.
+
+### `hilbert` {#api-hilbert}
+
+```python
+hilbert(x)
+```
+
+Analytic signal via the Hilbert transform.
+
+`abs` of the result is the envelope and `angle` the instantaneous phase.
+
+### `resample` {#api-resample}
+
+```python
+resample(x, num: int)
+```
+
+Band-limited resampling by truncating or zero padding the spectrum.
+
+### `moving_average` {#api-moving_average}
+
+```python
+moving_average(x, window_size: int = 5, mode: str = 'same')
+```
+
+Simple moving average (a boxcar FIR filter).
+
+### `savitzky_golay_filter` {#api-savitzky_golay_filter}
+
+```python
+savitzky_golay_filter(x, window_size: int = 11, poly_order: int = 3)
+```
+
+Savitzky-Golay smoothing: local least squares polynomial fitting.
+
+Preserves peak heights and widths far better than a moving average.
+
+### `lowpass_filter` {#api-lowpass_filter}
+
+```python
+lowpass_filter(
+    x,
+    cutoff: float,
+    dt: float = 1.0,
+    order: int = 4,
+    kind: str = 'brickwall',
+)
+```
+
+Low-pass filter in the frequency domain.
+
+`'brickwall'` zeroes everything above the cutoff; `'butterworth'`
+applies a smooth roll-off that avoids ringing.
+
+### `zero_pad` {#api-zero_pad}
+
+```python
+zero_pad(x, n: int)
+```
+
+Zero pad (or truncate) a signal to length `n`.
+
+## `streaming`
+
+<small>`quadrivium.transforms.streaming`</small>
+
+Causal filters, polyphase resampling, and reconstructable time-frequency transforms.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`IIRFilter`](#api-IIRFilter) | class | Direct-form II transposed filter; process chunks without retaining inputs. |
+| [`FIRFilter`](#api-FIRFilter) | class | Direct-form II transposed filter; process chunks without retaining inputs. |
+| [`SOSFilter`](#api-SOSFilter) | class | Cascade of biquads, with rows [b0,b1,b2,a0,a1,a2]. |
+| [`lfilter`](#api-lfilter) | function | Filter once; with ``zi``, return ``(output, final_state)``. |
+| [`sosfilt`](#api-sosfilt) | function | Filter a signal through a cascade of second-order sections. |
+| [`firwin`](#api-firwin) | function | Windowed-sinc low/high-pass FIR design, normalized at DC/Nyquist. |
+| [`butterworth_sos`](#api-butterworth_sos) | function | Digital Butterworth low-pass using prewarped bilinear poles and biquads. |
+| [`PolyphaseResampler`](#api-PolyphaseResampler) | class | Causal rational resampling retaining only FIR overlap between chunks. |
+| [`resample_poly`](#api-resample_poly) | function | Zero-phase rational resampling with finite-support polyphase FIR filtering. |
+| [`STFTResult`](#api-STFTResult) | class | Dataclass record storing the fields listed in its constructor signature. |
+| [`stft`](#api-stft) | function | Complex STFT coefficients plus metadata for exact overlap-add inversion. |
+| [`istft`](#api-istft) | function | Reconstruct an STFTResult, optionally with edited complex coefficients. |
+
+### `IIRFilter` {#api-IIRFilter}
+
+```python
+IIRFilter(b, a=(1.0,), *, state=None)
+```
+
+Direct-form II transposed filter; process chunks without retaining inputs.
+
+`state` can be copied or restored between chunks. Complex coefficients and
+signals are supported. Coefficients use ascending powers of z**-1.
+
+#### `IIRFilter.state` {#api-IIRFilter.state}
+
+Property.
+
+#### `IIRFilter.reset` {#api-IIRFilter.reset}
+
+```python
+IIRFilter.reset(self)
+```
+
+#### `IIRFilter.process` {#api-IIRFilter.process}
+
+```python
+IIRFilter.process(self, x)
+```
+
+#### `IIRFilter.__call__` {#api-IIRFilter.__call__}
+
+```python
+IIRFilter.__call__(self, x)
+```
+
+### `FIRFilter` {#api-FIRFilter}
+
+```python
+FIRFilter(taps, *, state=None)
+```
+
+Direct-form II transposed filter; process chunks without retaining inputs.
+
+`state` can be copied or restored between chunks. Complex coefficients and
+signals are supported. Coefficients use ascending powers of z**-1.
+
+Base classes: [`IIRFilter`](transforms.md#api-IIRFilter).
+
+#### `FIRFilter.state` {#api-FIRFilter.state}
+
+Inherited from [`IIRFilter`](transforms.md#api-IIRFilter).
+
+Property.
+
+#### `FIRFilter.reset` {#api-FIRFilter.reset}
+
+Inherited from [`IIRFilter`](transforms.md#api-IIRFilter).
+
+```python
+FIRFilter.reset(self)
+```
+
+#### `FIRFilter.process` {#api-FIRFilter.process}
+
+Inherited from [`IIRFilter`](transforms.md#api-IIRFilter).
+
+```python
+FIRFilter.process(self, x)
+```
+
+#### `FIRFilter.__call__` {#api-FIRFilter.__call__}
+
+Inherited from [`IIRFilter`](transforms.md#api-IIRFilter).
+
+```python
+FIRFilter.__call__(self, x)
+```
+
+### `SOSFilter` {#api-SOSFilter}
+
+```python
+SOSFilter(sos, *, state=None)
+```
+
+Cascade of biquads, with rows [b0,b1,b2,a0,a1,a2].
+
+#### `SOSFilter.state` {#api-SOSFilter.state}
+
+Property.
+
+#### `SOSFilter.reset` {#api-SOSFilter.reset}
+
+```python
+SOSFilter.reset(self)
+```
+
+#### `SOSFilter.process` {#api-SOSFilter.process}
+
+```python
+SOSFilter.process(self, x)
+```
+
+#### `SOSFilter.__call__` {#api-SOSFilter.__call__}
+
+```python
+SOSFilter.__call__(self, x)
+```
+
+### `lfilter` {#api-lfilter}
+
+```python
+lfilter(b, a, x, zi=None)
+```
+
+Filter once; with `zi`, return `(output, final_state)`.
+
+### `sosfilt` {#api-sosfilt}
+
+```python
+sosfilt(sos, x, zi=None)
+```
+
+Filter a signal through a cascade of second-order sections.
+
+`sos` has shape `(sections, 6)` with each row ordered as
+`[b0, b1, b2, a0, a1, a2]`. With `zi=None`, sections start from
+zero state and only the filtered signal is returned. Supplying `zi`
+with shape `(sections, 2)` returns `(signal, final_state)` so the
+state can be passed to a subsequent chunk.
+
+### `firwin` {#api-firwin}
+
+```python
+firwin(numtaps, cutoff, *, fs=2.0, window='hamming', pass_zero=True)
+```
+
+Windowed-sinc low/high-pass FIR design, normalized at DC/Nyquist.
+
+### `butterworth_sos` {#api-butterworth_sos}
+
+```python
+butterworth_sos(order, cutoff, *, fs=2.0)
+```
+
+Digital Butterworth low-pass using prewarped bilinear poles and biquads.
+
+### `PolyphaseResampler` {#api-PolyphaseResampler}
+
+```python
+PolyphaseResampler(up, down, *, taps=None)
+```
+
+Causal rational resampling retaining only FIR overlap between chunks.
+
+This streaming form includes the FIR group delay (`delay` in input samples).
+Unlike `resample_poly`, no future samples are assumed. Append zeros explicitly
+to flush the tail. State is a portable dictionary of counters and overlap.
+
+#### `PolyphaseResampler.reset` {#api-PolyphaseResampler.reset}
+
+```python
+PolyphaseResampler.reset(self)
+```
+
+#### `PolyphaseResampler.state` {#api-PolyphaseResampler.state}
+
+Property.
+
+#### `PolyphaseResampler.process` {#api-PolyphaseResampler.process}
+
+```python
+PolyphaseResampler.process(self, x)
+```
+
+#### `PolyphaseResampler.__call__` {#api-PolyphaseResampler.__call__}
+
+```python
+PolyphaseResampler.__call__(self, x)
+```
+
+### `resample_poly` {#api-resample_poly}
+
+```python
+resample_poly(x, up, down, *, taps=None)
+```
+
+Zero-phase rational resampling with finite-support polyphase FIR filtering.
+
+The signal is zero outside its extent. Output length is ceil(len(x)*up/down).
+Custom taps are interpreted at the expanded sample rate with unity DC gain.
+
+### `STFTResult` {#api-STFTResult}
+
+```python
+STFTResult(
+    coefficients: object,
+    frequencies: object,
+    times: object,
+    window: object,
+    hop: int,
+    nfft: int,
+    length: int,
+    padding: int,
+    onesided: bool,
+    fs: float,
+) -> None
+```
+
+Dataclass record storing the fields listed in its constructor signature.
+
+#### `STFTResult.__iter__` {#api-STFTResult.__iter__}
+
+```python
+STFTResult.__iter__(self)
+```
+
+### `stft` {#api-stft}
+
+```python
+stft(x, *, segment=256, hop=None, nfft=None, window='hann', fs=1.0, boundary=True)
+```
+
+Complex STFT coefficients plus metadata for exact overlap-add inversion.
+
+Coefficients have shape (frequency, frame). Boundary padding and a final
+partial frame are included by default to preserve every input sample.
+Complex windows use the full spectrum even for a real input signal.
+
+### `istft` {#api-istft}
+
+```python
+istft(result, *, coefficients=None)
+```
+
+Reconstruct an STFTResult, optionally with edited complex coefficients.
+
+Raises if the window/hop leaves any original sample with zero overlap weight.
 
 ## `wavelet`
 
@@ -85,25 +720,329 @@ Wavelet transforms: discrete, stationary and continuous.
 
 Where the Fourier transform trades all time information for perfect frequency resolution, wavelets keep both at a fixed trade-off set by scale. That is what makes them the tool for transient and non-stationary signals -- a step edge is a handful of large coefficients here and an infinite Fourier tail there.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `WAVELET_FILTERS` | &mdash; | `{'haar': [0.7071067811865476, 0.7071067811865476], 'db1': [0.7071067811865476, 0.7071067811865476], 'db2': [0.48296291314469025, 0.836516303737469, 0.22414386804185735, -0.12940952255092145], 'db3': [0.3326705529509569, 0.8068915093133388, 0.4598775021193313, -0.13501102001039084, -0.08544127388224149, 0.035226291882100656], 'db4': [0.23037781330885523, 0.7148465705525415, 0.6308807679295904, -0.02798376941698385, -0.18703481171888114, 0.030841381835986965, 0.032883011666982945, -0.010597401784997278], 'db5': [0.160102397974125, 0.6038292697974729, 0.7243085284385744, 0.13842814590110342, -0.24229488706619015, -0.03224486958502952, 0.07757149384006515, -0.006241490213011705, -0.012580751999015526, 0.003335725285001549], 'db6': [0.11154074335008017, 0.4946238903983854, 0.7511339080215775, 0.3152503517092432, -0.22626469396516913, -0.12976686756709563, 0.09750160558707936, 0.02752286553001629, -0.031582039318031156, 0.0005538422009938016, 0.004777257511010651, -0.001077301085308479], 'db8': [0.05441584224308161, 0.3128715909144659, 0.6756307362980128, 0.5853546836548691, -0.015829105256023893, -0.2840155429624281, 0.00047248457399797254, 0.128747426620186, -0.01736930100202211, -0.04408825393106472, 0.013981027917015516, 0.008746094047015655, -0.00487035299301066, -0.000391740373376942, 0.0006754494059985568, -0.00011747678400228192], 'sym2': [0.48296291314469025, 0.836516303737469, 0.22414386804185735, -0.12940952255092145], 'sym4': [0.0322231006040427, -0.012603967262037833, -0.09921954357684723, 0.29785779560527736, 0.8037387518059161, 0.49761866763201545, -0.02963552764599941, -0.07576571478927333], 'coif1': [-0.015655728135465, -0.072732619512854, 0.384864846864203, 0.852572020212255, 0.337897662457809, -0.072732619512854], 'coif2': [-0.000720549445365, -0.001823208870703, 0.005611434819394, 0.023680171946334, -0.059434418646457, -0.076488599078311, 0.417005184423784, 0.812723635449569, 0.386110066823092, -0.067372554721963, -0.041464936781959, 0.016387336463522]}` |
-| `wavelet_filters` | `(wavelet='haar')` | Return the four filters ``(dec_lo, dec_hi, rec_lo, rec_hi)``. |
-| `dwt` | `(x, wavelet='haar')` | One level of the periodic discrete wavelet transform. |
-| `idwt` | `(cA, cD, wavelet='haar', length=None)` | Invert one level of ``dwt``. |
-| `wavedec` | `(x, wavelet='haar', level=None)` | Multi-level decomposition. |
-| `waverec` | `(coeffs, wavelet='haar', length=None)` | Rebuild a signal from ``wavedec`` coefficients. |
-| `dwt2` | `(X, wavelet='haar')` | One level of the 2-D (separable) DWT. |
-| `idwt2` | `(cA, details, wavelet='haar', shape=None)` | Invert one level of ``dwt2``. |
-| `swt` | `(x, wavelet='haar', level=1)` | Stationary (undecimated) wavelet transform, "a trous" algorithm. |
-| `iswt` | `(coeffs, wavelet='haar')` | Invert ``swt`` by averaging the two reconstruction phases. |
-| `wavelet_denoise` | `(x, wavelet='db4', level=None, threshold=None, mode: str = 'soft')` | Denoise by thresholding wavelet detail coefficients. |
-| `universal_threshold` | `(detail, n=None)` | Donoho-Johnstone universal threshold ``sigma sqrt(2 ln n)``. |
-| `soft_threshold_array` | `(x, t)` | Soft (shrinkage) threshold: ``sign(x) max(\|x\| - t, 0)``. |
-| `hard_threshold_array` | `(x, t)` | Hard threshold: keep coefficients above ``t``, zero the rest. |
-| `cwt` | `(x, scales, wavelet=morlet, dt: float = 1.0, **kwargs)` | Continuous wavelet transform by FFT convolution. |
-| `scale_to_frequency` | `(scales, dt: float = 1.0, w0: float = 6.0)` | Fourier frequency corresponding to each Morlet CWT scale. |
-| `morlet` | `(t, w0: float = 6.0)` | Complex Morlet wavelet, normalized to unit energy. |
-| `mexican_hat` | `(t, sigma: float = 1.0)` | Ricker ("Mexican hat") wavelet: the second derivative of a Gaussian. |
-| `goertzel` | `(x, k: int)` | Single DFT bin by the Goertzel algorithm. |
-| `wavelet_energy` | `(coeffs)` | Energy in each band of a ``wavedec`` result. |
+| [`WAVELET_FILTERS`](#api-WAVELET_FILTERS) | value | Dictionary with 12 entries: `haar`, `db1`, `db2`, `db3`, `db4`, `db5`, .... |
+| [`wavelet_filters`](#api-wavelet_filters) | function | Return the four filters ``(dec_lo, dec_hi, rec_lo, rec_hi)``. |
+| [`dwt`](#api-dwt) | function | One level of the periodic discrete wavelet transform. |
+| [`idwt`](#api-idwt) | function | Invert one level of ``dwt``. |
+| [`wavedec`](#api-wavedec) | function | Multi-level decomposition. |
+| [`waverec`](#api-waverec) | function | Rebuild a signal from ``wavedec`` coefficients. |
+| [`dwt2`](#api-dwt2) | function | One level of the 2-D (separable) DWT. |
+| [`idwt2`](#api-idwt2) | function | Invert one level of ``dwt2``. |
+| [`swt`](#api-swt) | function | Stationary (undecimated) wavelet transform, "a trous" algorithm. |
+| [`iswt`](#api-iswt) | function | Invert ``swt`` by averaging the two reconstruction phases. |
+| [`wavelet_denoise`](#api-wavelet_denoise) | function | Denoise by thresholding wavelet detail coefficients. |
+| [`universal_threshold`](#api-universal_threshold) | function | Donoho-Johnstone universal threshold ``sigma sqrt(2 ln n)``. |
+| [`soft_threshold_array`](#api-soft_threshold_array) | function | Soft (shrinkage) threshold: ``sign(x) max(\|x\| - t, 0)``. |
+| [`hard_threshold_array`](#api-hard_threshold_array) | function | Hard threshold: keep coefficients above ``t``, zero the rest. |
+| [`cwt`](#api-cwt) | function | Continuous wavelet transform by FFT convolution. |
+| [`scale_to_frequency`](#api-scale_to_frequency) | function | Fourier frequency corresponding to each Morlet CWT scale. |
+| [`morlet`](#api-morlet) | function | Complex Morlet wavelet, normalized to unit energy. |
+| [`mexican_hat`](#api-mexican_hat) | function | Ricker ("Mexican hat") wavelet: the second derivative of a Gaussian. |
+| [`goertzel`](#api-goertzel) | function | Single DFT bin by the Goertzel algorithm. |
+| [`wavelet_energy`](#api-wavelet_energy) | function | Energy in each band of a ``wavedec`` result. |
+
+### `WAVELET_FILTERS` {#api-WAVELET_FILTERS}
+
+```python
+{'haar': [0.7071067811865476, 0.7071067811865476],
+ 'db1': [0.7071067811865476, 0.7071067811865476],
+ 'db2': [0.48296291314469025,
+         0.836516303737469,
+         0.22414386804185735,
+         -0.12940952255092145],
+ 'db3': [0.3326705529509569,
+         0.8068915093133388,
+         0.4598775021193313,
+         -0.13501102001039084,
+         -0.08544127388224149,
+         0.035226291882100656],
+ 'db4': [0.23037781330885523,
+         0.7148465705525415,
+         0.6308807679295904,
+         -0.02798376941698385,
+         -0.18703481171888114,
+         0.030841381835986965,
+         0.032883011666982945,
+         -0.010597401784997278],
+ 'db5': [0.160102397974125,
+         0.6038292697974729,
+         0.7243085284385744,
+         0.13842814590110342,
+         -0.24229488706619015,
+         -0.03224486958502952,
+         0.07757149384006515,
+         -0.006241490213011705,
+         -0.012580751999015526,
+         0.003335725285001549],
+ 'db6': [0.11154074335008017,
+         0.4946238903983854,
+         0.7511339080215775,
+         0.3152503517092432,
+         -0.22626469396516913,
+         -0.12976686756709563,
+         0.09750160558707936,
+         0.02752286553001629,
+         -0.031582039318031156,
+         0.0005538422009938016,
+         0.004777257511010651,
+         -0.001077301085308479],
+ 'db8': [0.05441584224308161,
+         0.3128715909144659,
+         0.6756307362980128,
+         0.5853546836548691,
+         -0.015829105256023893,
+         -0.2840155429624281,
+         0.00047248457399797254,
+         0.128747426620186,
+         -0.01736930100202211,
+         -0.04408825393106472,
+         0.013981027917015516,
+         0.008746094047015655,
+         -0.00487035299301066,
+         -0.000391740373376942,
+         0.0006754494059985568,
+         -0.00011747678400228192],
+ 'sym2': [0.48296291314469025,
+          0.836516303737469,
+          0.22414386804185735,
+          -0.12940952255092145],
+ 'sym4': [0.0322231006040427,
+          -0.012603967262037833,
+          -0.09921954357684723,
+          0.29785779560527736,
+          0.8037387518059161,
+          0.49761866763201545,
+          -0.02963552764599941,
+          -0.07576571478927333],
+ 'coif1': [-0.015655728135465,
+           -0.072732619512854,
+           0.384864846864203,
+           0.852572020212255,
+           0.337897662457809,
+           -0.072732619512854],
+ 'coif2': [-0.000720549445365,
+           -0.001823208870703,
+           0.005611434819394,
+           0.023680171946334,
+           -0.059434418646457,
+           -0.076488599078311,
+           0.417005184423784,
+           0.812723635449569,
+           0.386110066823092,
+           -0.067372554721963,
+           -0.041464936781959,
+           0.016387336463522]}
+```
+
+### `wavelet_filters` {#api-wavelet_filters}
+
+```python
+wavelet_filters(wavelet='haar')
+```
+
+Return the four filters `(dec_lo, dec_hi, rec_lo, rec_hi)`.
+
+The high-pass filter is the *quadrature mirror* of the low-pass one --
+reversed with alternating signs -- which is what makes the pair split the
+spectrum in half without losing information.  `wavelet` may also be given
+as an explicit list of scaling coefficients.
+
+### `dwt` {#api-dwt}
+
+```python
+dwt(x, wavelet='haar')
+```
+
+One level of the periodic discrete wavelet transform.
+
+Returns `(approx, detail)`, each of length `n // 2`.  The analysis
+operator is `cA[j] = sum_k h[k] x[2j+k]` with circular indexing, whose
+rows are orthonormal when `h` is an orthogonal scaling filter -- which is
+what lets `idwt` be the exact transpose rather than an approximate
+inverse filter.  Odd-length input is extended by one sample.
+
+### `idwt` {#api-idwt}
+
+```python
+idwt(cA, cD, wavelet='haar', length=None)
+```
+
+Invert one level of `dwt`.
+
+Exactly the transpose of the analysis operator: upsample by two, then
+circularly convolve with the same filters and add.  For an orthogonal
+wavelet the transpose *is* the inverse, so reconstruction is exact to
+round-off with no boundary correction.
+
+### `wavedec` {#api-wavedec}
+
+```python
+wavedec(x, wavelet='haar', level=None)
+```
+
+Multi-level decomposition.
+
+Returns `[cA_n, cD_n, ..., cD_1]` -- the coarsest approximation followed
+by the detail bands from coarse to fine, the ordering `waverec`
+expects.
+
+### `waverec` {#api-waverec}
+
+```python
+waverec(coeffs, wavelet='haar', length=None)
+```
+
+Rebuild a signal from `wavedec` coefficients.
+
+### `dwt2` {#api-dwt2}
+
+```python
+dwt2(X, wavelet='haar')
+```
+
+One level of the 2-D (separable) DWT.
+
+Returns `(cA, (cH, cV, cD))`: approximation plus the horizontal, vertical
+and diagonal detail bands, obtained by transforming rows then columns.
+
+### `idwt2` {#api-idwt2}
+
+```python
+idwt2(cA, details, wavelet='haar', shape=None)
+```
+
+Invert one level of `dwt2`.
+
+### `swt` {#api-swt}
+
+```python
+swt(x, wavelet='haar', level=1)
+```
+
+Stationary (undecimated) wavelet transform, "a trous" algorithm.
+
+Skips the downsampling and dilates the filters instead, so the transform is
+shift-invariant: translating the input translates the coefficients.  The
+ordinary DWT is not, which is why denoising with it can leave visible
+artefacts that depend on where the signal happens to start.  The price is
+redundancy -- every level keeps the full length.
+
+### `iswt` {#api-iswt}
+
+```python
+iswt(coeffs, wavelet='haar')
+```
+
+Invert `swt` by averaging the two reconstruction phases.
+
+### `wavelet_denoise` {#api-wavelet_denoise}
+
+```python
+wavelet_denoise(x, wavelet='db4', level=None, threshold=None, mode: str = 'soft')
+```
+
+Denoise by thresholding wavelet detail coefficients.
+
+The approximation band is left untouched -- it holds the signal's coarse
+structure, and thresholding it would remove the signal rather than the
+noise.
+
+### `universal_threshold` {#api-universal_threshold}
+
+```python
+universal_threshold(detail, n=None)
+```
+
+Donoho-Johnstone universal threshold `sigma sqrt(2 ln n)`.
+
+`sigma` is estimated from the *median absolute deviation* of the finest
+detail band, divided by 0.6745 to make it consistent for Gaussian noise.
+The median is used rather than the standard deviation precisely because a
+few large signal coefficients would inflate the latter and under-threshold
+everything else.
+
+### `soft_threshold_array` {#api-soft_threshold_array}
+
+```python
+soft_threshold_array(x, t)
+```
+
+Soft (shrinkage) threshold: `sign(x) max(|x| - t, 0)`.
+
+### `hard_threshold_array` {#api-hard_threshold_array}
+
+```python
+hard_threshold_array(x, t)
+```
+
+Hard threshold: keep coefficients above `t`, zero the rest.
+
+### `cwt` {#api-cwt}
+
+```python
+cwt(x, scales, wavelet=morlet, dt: float = 1.0, **kwargs)
+```
+
+Continuous wavelet transform by FFT convolution.
+
+`scales` are in *samples*, the usual convention: a scale `s` picks out
+the Fourier frequency `f = fc / (s * dt)`, where `fc` is the wavelet's
+centre frequency (`w0 / 2 pi`, so ~0.955 for the default Morlet).
+`scale_to_frequency` does that conversion.
+
+Returns an array of shape `(len(scales), len(x))`, normalized by
+`1/sqrt(s)` so that power is comparable across scales.
+
+### `scale_to_frequency` {#api-scale_to_frequency}
+
+```python
+scale_to_frequency(scales, dt: float = 1.0, w0: float = 6.0)
+```
+
+Fourier frequency corresponding to each Morlet CWT scale.
+
+### `morlet` {#api-morlet}
+
+```python
+morlet(t, w0: float = 6.0)
+```
+
+Complex Morlet wavelet, normalized to unit energy.
+
+The correction term `exp(-w0^2/2)` enforces the admissibility condition
+(zero mean); it is negligible for `w0 >= 6`, which is why that is the
+conventional choice.
+
+### `mexican_hat` {#api-mexican_hat}
+
+```python
+mexican_hat(t, sigma: float = 1.0)
+```
+
+Ricker ("Mexican hat") wavelet: the second derivative of a Gaussian.
+
+### `goertzel` {#api-goertzel}
+
+```python
+goertzel(x, k: int)
+```
+
+Single DFT bin by the Goertzel algorithm.
+
+Computes `X[k]` in `O(n)` with two real multiplies per sample, against
+`O(n log n)` for a whole FFT.  When only a handful of bins are wanted --
+tone detection, DTMF decoding -- this is the cheaper route.
+
+### `wavelet_energy` {#api-wavelet_energy}
+
+```python
+wavelet_energy(coeffs)
+```
+
+Energy in each band of a `wavedec` result.
+
+For an orthogonal wavelet these sum to the signal energy -- Parseval's
+theorem holds band by band, which is what makes the decomposition an
+energy budget rather than just a filter bank.

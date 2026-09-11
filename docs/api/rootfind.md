@@ -7,18 +7,81 @@ Scalar equations, nonlinear systems, and polynomial roots.
 
 For worked examples and guidance on choosing between these routines, see the [root finding guide](../guides/rootfind.md).
 
-**45 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**47 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.rootfind import bisection
-import quadrivium as qd            # qd.bisection, if re-exported
+from quadrivium import rootfind
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
+- [`continuation`](#continuation) &mdash; pseudo-arclength continuation through folds of nonlinear equilibrium branches (2)
 - [`polynomial`](#polynomial) &mdash; polynomial evaluation, deflation, and root finding (15)
 - [`scalar`](#scalar) &mdash; root finding for scalar equations ``f(x) = 0`` (18)
 - [`systems`](#systems) &mdash; root finding for systems ``f(x) = 0`` in several variables (12)
+
+## `continuation`
+
+<small>`quadrivium.rootfind.continuation`</small>
+
+Pseudo-arclength continuation through folds of nonlinear equilibrium branches.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`ContinuationResult`](#api-ContinuationResult) | class | Dataclass record storing the fields listed in its constructor signature. |
+| [`pseudo_arclength`](#api-pseudo_arclength) | function | Track ``f(x, parameter)=0`` with a bordered predictor-corrector solve. |
+
+### `ContinuationResult` {#api-ContinuationResult}
+
+```python
+ContinuationResult(
+    x: object,
+    parameters: object,
+    tangents: object,
+    residuals: object,
+    converged: bool,
+    message: str,
+    function_calls: int,
+    bifurcations: list = <factory>,
+    eigenvalues: object = None,
+    stable: object = None,
+) -> None
+```
+
+Dataclass record storing the fields listed in its constructor signature.
+
+### `pseudo_arclength` {#api-pseudo_arclength}
+
+```python
+pseudo_arclength(
+    f,
+    x0,
+    parameter0,
+    *,
+    jac=None,
+    parameter_derivative=None,
+    ds=0.05,
+    max_steps=100,
+    direction=1,
+    tol=1e-09,
+    min_step=1e-06,
+    max_step=0.2,
+    max_newton=12,
+    stability=False,
+    callback=None,
+)
+```
+
+Track `f(x, parameter)=0` with a bordered predictor-corrector solve.
+
+`jac` supplies dF/dx and `parameter_derivative` supplies dF/dparameter;
+finite differences are used otherwise. Tangent orientation is continuous
+through folds. Step sizes adapt to corrector work. `stability=True` treats
+F as a dynamical-system RHS and classifies Re(eigenvalue(dF/dx)) < 0.
+Fold and stability-change locations are interpolated candidates, not certified
+bifurcation points. A callback returning True stops after an accepted point.
 
 ## `polynomial`
 
@@ -28,23 +91,159 @@ Polynomial evaluation, deflation, and root finding.
 
 Coefficients are ordered from the highest degree down, matching ``numpy.polyval``: ``[a_n, ..., a_1, a_0]`` represents ``a_n x^n + ... + a_1 x + a_0``.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `horner` | `(coeffs, x)` | Evaluate a polynomial by Horner's rule (``n`` multiplications). |
-| `horner_derivative` | `(coeffs, x)` | Evaluate ``(p(x), p'(x))`` in a single pass of synthetic division. |
-| `synthetic_division` | `(coeffs, r)` | Divide by ``(x - r)``; returns ``(quotient, remainder)``. |
-| `deflate` | `(coeffs, root)` | Remove a known root, returning the deflated coefficient array. |
-| `durand_kerner` | `(coeffs, tol: float = 1e-14, max_iter: int = 500)` | Durand-Kerner (Weierstrass): all roots at once by simultaneous iteration. |
-| `aberth_ehrlich` | `(coeffs, tol: float = 1e-14, max_iter: int = 500)` | Aberth-Ehrlich: cubically convergent simultaneous root iteration. |
-| `bairstow` | `(coeffs, r: float = 1.0, s: float = 1.0, tol: float = 1e-14, max_iter: int = 500)` | Bairstow's method: extracts real quadratic factors, so complex pairs are found without leaving real arithmetic. |
-| `laguerre_root` | `(coeffs, x0=0.0, tol: float = 1e-14, max_iter: int = 200)` | Laguerre's method for a single polynomial root. |
-| `companion_roots` | `(coeffs)` | Roots as eigenvalues of the companion matrix (the standard approach). |
-| `jenkins_traub_like` | `(coeffs, tol: float = 1e-14)` | Deflation-based solver: Laguerre for one root, deflate, repeat. |
-| `polynomial_roots` | `(coeffs, method: str = 'companion')` | Find all roots. ``method`` selects the algorithm. |
-| `sturm_chain` | `(coeffs)` | Sturm chain of a squarefree polynomial, for isolating real roots. |
-| `count_real_roots` | `(coeffs, a: float, b: float) -> int` | Number of distinct real roots in ``(a, b]`` by Sturm's theorem. |
-| `root_bounds` | `(coeffs)` | Cauchy and Fujiwara bounds on the moduli of all roots. |
-| `newton_polynomial` | `(coeffs, x0: float, tol: float = 1e-14, max_iter: int = 200)` | Newton's method specialised to polynomials via Horner's rule. |
+| [`horner`](#api-horner) | function | Evaluate a polynomial by Horner's rule (``n`` multiplications). |
+| [`horner_derivative`](#api-horner_derivative) | function | Evaluate ``(p(x), p'(x))`` in a single pass of synthetic division. |
+| [`synthetic_division`](#api-synthetic_division) | function | Divide by ``(x - r)``; returns ``(quotient, remainder)``. |
+| [`deflate`](#api-deflate) | function | Remove a known root, returning the deflated coefficient array. |
+| [`durand_kerner`](#api-durand_kerner) | function | Durand-Kerner (Weierstrass): all roots at once by simultaneous iteration. |
+| [`aberth_ehrlich`](#api-aberth_ehrlich) | function | Aberth-Ehrlich: cubically convergent simultaneous root iteration. |
+| [`bairstow`](#api-bairstow) | function | Bairstow's method: extracts real quadratic factors, so complex pairs are found without leaving real arithmetic. |
+| [`laguerre_root`](#api-laguerre_root) | function | Laguerre's method for a single polynomial root. |
+| [`companion_roots`](#api-companion_roots) | function | Roots as eigenvalues of the companion matrix (the standard approach). |
+| [`jenkins_traub_like`](#api-jenkins_traub_like) | function | Deflation-based solver: Laguerre for one root, deflate, repeat. |
+| [`polynomial_roots`](#api-polynomial_roots) | function | Find all roots. ``method`` selects the algorithm. |
+| [`sturm_chain`](#api-sturm_chain) | function | Sturm chain of a squarefree polynomial, for isolating real roots. |
+| [`count_real_roots`](#api-count_real_roots) | function | Number of distinct real roots in ``(a, b]`` by Sturm's theorem. |
+| [`root_bounds`](#api-root_bounds) | function | Cauchy and Fujiwara bounds on the moduli of all roots. |
+| [`newton_polynomial`](#api-newton_polynomial) | function | Newton's method specialised to polynomials via Horner's rule. |
+
+### `horner` {#api-horner}
+
+```python
+horner(coeffs, x)
+```
+
+Evaluate a polynomial by Horner's rule (`n` multiplications).
+
+Works for real or complex coefficients and for scalar or array `x`.
+
+### `horner_derivative` {#api-horner_derivative}
+
+```python
+horner_derivative(coeffs, x)
+```
+
+Evaluate `(p(x), p'(x))` in a single pass of synthetic division.
+
+### `synthetic_division` {#api-synthetic_division}
+
+```python
+synthetic_division(coeffs, r)
+```
+
+Divide by `(x - r)`; returns `(quotient, remainder)`.
+
+### `deflate` {#api-deflate}
+
+```python
+deflate(coeffs, root)
+```
+
+Remove a known root, returning the deflated coefficient array.
+
+### `durand_kerner` {#api-durand_kerner}
+
+```python
+durand_kerner(coeffs, tol: float = 1e-14, max_iter: int = 500)
+```
+
+Durand-Kerner (Weierstrass): all roots at once by simultaneous iteration.
+
+### `aberth_ehrlich` {#api-aberth_ehrlich}
+
+```python
+aberth_ehrlich(coeffs, tol: float = 1e-14, max_iter: int = 500)
+```
+
+Aberth-Ehrlich: cubically convergent simultaneous root iteration.
+
+### `bairstow` {#api-bairstow}
+
+```python
+bairstow(
+    coeffs,
+    r: float = 1.0,
+    s: float = 1.0,
+    tol: float = 1e-14,
+    max_iter: int = 500,
+)
+```
+
+Bairstow's method: extracts real quadratic factors, so complex pairs
+are found without leaving real arithmetic.
+
+### `laguerre_root` {#api-laguerre_root}
+
+```python
+laguerre_root(coeffs, x0=0.0, tol: float = 1e-14, max_iter: int = 200)
+```
+
+Laguerre's method for a single polynomial root.
+
+Cubically convergent and near-globally convergent for polynomials with real
+roots. Named `laguerre_root` to keep the bare name `laguerre` for the
+Laguerre *polynomial* in `quadrivium.approx.orthopoly`.
+
+### `companion_roots` {#api-companion_roots}
+
+```python
+companion_roots(coeffs)
+```
+
+Roots as eigenvalues of the companion matrix (the standard approach).
+
+### `jenkins_traub_like` {#api-jenkins_traub_like}
+
+```python
+jenkins_traub_like(coeffs, tol: float = 1e-14)
+```
+
+Deflation-based solver: Laguerre for one root, deflate, repeat.
+
+Shares the shape of Jenkins-Traub (find, deflate, polish) without the
+three-stage shift strategy.
+
+### `polynomial_roots` {#api-polynomial_roots}
+
+```python
+polynomial_roots(coeffs, method: str = 'companion')
+```
+
+Find all roots. `method` selects the algorithm.
+
+### `sturm_chain` {#api-sturm_chain}
+
+```python
+sturm_chain(coeffs)
+```
+
+Sturm chain of a squarefree polynomial, for isolating real roots.
+
+### `count_real_roots` {#api-count_real_roots}
+
+```python
+count_real_roots(coeffs, a: float, b: float) -> int
+```
+
+Number of distinct real roots in `(a, b]` by Sturm's theorem.
+
+### `root_bounds` {#api-root_bounds}
+
+```python
+root_bounds(coeffs)
+```
+
+Cauchy and Fujiwara bounds on the moduli of all roots.
+
+### `newton_polynomial` {#api-newton_polynomial}
+
+```python
+newton_polynomial(coeffs, x0: float, tol: float = 1e-14, max_iter: int = 200)
+```
+
+Newton's method specialised to polynomials via Horner's rule.
 
 ## `scalar`
 
@@ -52,28 +251,416 @@ Coefficients are ordered from the highest degree down, matching ``numpy.polyval`
 
 Root finding for scalar equations ``f(x) = 0``.
 
-Bracketing methods (guaranteed but linear), open methods (fast but local), and the hybrids that combine both.
+Bracketed methods preserve a sign change and can provide reliable progress for continuous functions. Open methods can converge rapidly from suitable initial guesses; hybrids combine interpolation with safeguarded bracket updates. Convergence rates and stopping rules depend on the chosen method.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `bisection` | `(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200)` | Interval halving. Always converges; gains exactly one bit per iteration. |
-| `false_position` | `(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200)` | Regula falsi: secant through the bracket endpoints. |
-| `illinois` | `(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200)` | Illinois variant: halve the retained endpoint's value to stop stalling. |
-| `pegasus` | `(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200)` | Pegasus variant: scale by ``f_c/(f_c+f_new)``; faster than Illinois. |
-| `ridders` | `(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200)` | Ridders' method: exponential correction, quadratic convergence, bracketed. |
-| `brent` | `(f, a: float, b: float, tol: float = 1e-14, max_iter: int = 200)` | Brent's method: inverse quadratic interpolation with a bisection fallback. |
-| `secant` | `(f, x0: float, x1=None, tol: float = 1e-12, max_iter: int = 200)` | Secant method: derivative-free, order ~1.618. |
-| `newton` | `(f, x0: float, df=None, tol: float = 1e-12, max_iter: int = 200, damping: float = 1.0, multiplicity: int = 1)` | Newton-Raphson, optionally damped and corrected for a known multiplicity. |
-| `halley` | `(f, x0: float, df=None, d2f=None, tol: float = 1e-12, max_iter: int = 100)` | Halley's method: cubic convergence using the second derivative. |
-| `steffensen` | `(f, x0: float, tol: float = 1e-12, max_iter: int = 200)` | Steffensen's method: Newton-like quadratic order without a derivative. |
-| `muller` | `(f, x0: float, x1=None, x2=None, tol: float = 1e-12, max_iter: int = 200)` | Muller's method: parabolic interpolation; finds complex roots naturally. |
-| `fixed_point` | `(g, x0: float, tol: float = 1e-12, max_iter: int = 1000, relaxation: float = 1.0)` | Fixed point iteration ``x <- g(x)``, optionally relaxed. |
-| `aitken_accelerated` | `(g, x0: float, tol: float = 1e-12, max_iter: int = 200)` | Aitken's delta-squared acceleration of a fixed point iteration. |
-| `inverse_quadratic` | `(f, x0: float, x1: float, x2: float, tol: float = 1e-12, max_iter: int = 200)` | Inverse quadratic interpolation through three iterates. |
-| `chebyshev_method` | `(f, x0: float, df=None, d2f=None, tol: float = 1e-12, max_iter: int = 100)` | Chebyshev's third-order method (Newton plus a curvature correction). |
-| `bracket_root` | `(f, a: float, b: float, factor: float = 1.6, max_iter: int = 60)` | Expand ``[a, b]`` outward until it brackets a sign change. |
-| `find_all_roots` | `(f, a: float, b: float, n: int = 200, tol: float = 1e-12, method=brent)` | Scan ``[a, b]`` on a grid and refine every sign change found. |
-| `itp` | `(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200, k1: float = 0.1, k2: float = 2.0, n0: int, ...)` | ITP (Interpolate-Truncate-Project): superlinear with a bisection guarantee. |
+| [`bisection`](#api-bisection) | function | Interval halving. Always converges; gains exactly one bit per iteration. |
+| [`false_position`](#api-false_position) | function | Regula falsi: secant through the bracket endpoints. |
+| [`illinois`](#api-illinois) | function | Illinois variant: halve the retained endpoint's value to stop stalling. |
+| [`pegasus`](#api-pegasus) | function | Pegasus variant: scale by ``f_c/(f_c+f_new)``; faster than Illinois. |
+| [`ridders`](#api-ridders) | function | Ridders' method: exponential correction, quadratic convergence, bracketed. |
+| [`brent`](#api-brent) | function | Brent's method: inverse quadratic interpolation with a bisection fallback. |
+| [`secant`](#api-secant) | function | Secant method: derivative-free, order ~1.618. |
+| [`newton`](#api-newton) | function | Newton-Raphson, optionally damped and corrected for a known multiplicity. |
+| [`halley`](#api-halley) | function | Halley's method: cubic convergence using the second derivative. |
+| [`steffensen`](#api-steffensen) | function | Steffensen's method: Newton-like quadratic order without a derivative. |
+| [`muller`](#api-muller) | function | Muller's method: parabolic interpolation; finds complex roots naturally. |
+| [`fixed_point`](#api-fixed_point) | function | Fixed point iteration ``x <- g(x)``, optionally relaxed. |
+| [`aitken_accelerated`](#api-aitken_accelerated) | function | Aitken's delta-squared acceleration of a fixed point iteration. |
+| [`inverse_quadratic`](#api-inverse_quadratic) | function | Inverse quadratic interpolation through three iterates. |
+| [`chebyshev_method`](#api-chebyshev_method) | function | Chebyshev's third-order method (Newton plus a curvature correction). |
+| [`bracket_root`](#api-bracket_root) | function | Expand ``[a, b]`` outward until it brackets a sign change. |
+| [`find_all_roots`](#api-find_all_roots) | function | Scan ``[a, b]`` on a grid and refine every sign change found. |
+| [`itp`](#api-itp) | function | ITP (Interpolate-Truncate-Project): superlinear with a bisection guarantee. |
+
+### `bisection` {#api-bisection}
+
+```python
+bisection(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Interval halving. Always converges; gains exactly one bit per iteration.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `false_position` {#api-false_position}
+
+```python
+false_position(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Regula falsi: secant through the bracket endpoints.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `illinois` {#api-illinois}
+
+```python
+illinois(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Illinois variant: halve the retained endpoint's value to stop stalling.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `pegasus` {#api-pegasus}
+
+```python
+pegasus(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Pegasus variant: scale by `f_c/(f_c+f_new)`; faster than Illinois.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `ridders` {#api-ridders}
+
+```python
+ridders(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Ridders' method: exponential correction, quadratic convergence, bracketed.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `brent` {#api-brent}
+
+```python
+brent(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-14,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Brent's method: inverse quadratic interpolation with a bisection fallback.
+
+The standard general-purpose bracketed solver -- superlinear in practice,
+never slower than bisection in the worst case.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `secant` {#api-secant}
+
+```python
+secant(
+    f,
+    x0: float,
+    x1=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Secant method: derivative-free, order ~1.618.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `newton` {#api-newton}
+
+```python
+newton(
+    f,
+    x0: float,
+    df=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    damping: float = 1.0,
+    multiplicity: int = 1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton-Raphson, optionally damped and corrected for a known multiplicity.
+
+`df=None` falls back to a central difference derivative.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `halley` {#api-halley}
+
+```python
+halley(
+    f,
+    x0: float,
+    df=None,
+    d2f=None,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Halley's method: cubic convergence using the second derivative.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `steffensen` {#api-steffensen}
+
+```python
+steffensen(
+    f,
+    x0: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Steffensen's method: Newton-like quadratic order without a derivative.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `muller` {#api-muller}
+
+```python
+muller(
+    f,
+    x0: float,
+    x1=None,
+    x2=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Muller's method: parabolic interpolation; finds complex roots naturally.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `fixed_point` {#api-fixed_point}
+
+```python
+fixed_point(
+    g,
+    x0: float,
+    tol: float = 1e-12,
+    max_iter: int = 1000,
+    relaxation: float = 1.0,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Fixed point iteration `x <- g(x)`, optionally relaxed.
+
+Converges when `|g'(x*)| < 1`; relaxation can create that condition.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `aitken_accelerated` {#api-aitken_accelerated}
+
+```python
+aitken_accelerated(
+    g,
+    x0: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Aitken's delta-squared acceleration of a fixed point iteration.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `inverse_quadratic` {#api-inverse_quadratic}
+
+```python
+inverse_quadratic(
+    f,
+    x0: float,
+    x1: float,
+    x2: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Inverse quadratic interpolation through three iterates.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `chebyshev_method` {#api-chebyshev_method}
+
+```python
+chebyshev_method(
+    f,
+    x0: float,
+    df=None,
+    d2f=None,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Chebyshev's third-order method (Newton plus a curvature correction).
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `bracket_root` {#api-bracket_root}
+
+```python
+bracket_root(f, a: float, b: float, factor: float = 1.6, max_iter: int = 60)
+```
+
+Expand `[a, b]` outward until it brackets a sign change.
+
+### `find_all_roots` {#api-find_all_roots}
+
+```python
+find_all_roots(f, a: float, b: float, n: int = 200, tol: float = 1e-12, method=brent)
+```
+
+Scan `[a, b]` on a grid and refine every sign change found.
+
+Roots separated by less than `(b-a)/n` may be missed; increase `n` for
+oscillatory functions.
+
+### `itp` {#api-itp}
+
+```python
+itp(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    k1: float = 0.1,
+    k2: float = 2.0,
+    n0: int = 1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+ITP (Interpolate-Truncate-Project): superlinear with a bisection guarantee.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ## `systems`
 
@@ -81,17 +668,328 @@ Bracketing methods (guaranteed but linear), open methods (fast but local), and t
 
 Root finding for systems ``F(x) = 0`` in several variables.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `newton_system` | `(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 100)` | Newton's method for systems: solve ``J(x) s = -F(x)`` and step. |
-| `damped_newton_system` | `(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 100, max_backtracks: int = 30)` | Newton with an Armijo line search on ``\|\|F\|\|^2`` -- far more robust globally. |
-| `broyden_good` | `(F, x0, J0=None, tol: float = 1e-12, max_iter: int = 200)` | Broyden's "good" method: rank-one secant update of the Jacobian. |
-| `broyden_bad` | `(F, x0, B0=None, tol: float = 1e-12, max_iter: int = 200)` | Broyden's "bad" method: updates the inverse Jacobian directly (no solves). |
-| `secant_system` | `(F, x0, x1=None, tol: float = 1e-12, max_iter: int = 200)` | Wolfe-Bittner sequential secant method. |
-| `fixed_point_system` | `(G, x0, tol: float = 1e-12, max_iter: int = 1000, relaxation: float = 1.0)` | Vector fixed point iteration ``x <- G(x)`` with optional relaxation. |
-| `nonlinear_gauss_seidel` | `(F, x0, tol: float = 1e-10, max_iter: int = 200, inner_tol: float = 1e-12)` | Solve one equation at a time for its own unknown, sweeping repeatedly. |
-| `continuation` | `(F, x0, steps: int = 10, tol: float = 1e-12, max_iter: int = 100)` | Natural parameter continuation from ``F(x) - (1-t) F(x0)``. |
-| `homotopy` | `(F, x0, steps: int = 20, tol: float = 1e-12)` | Newton homotopy ``H(x,t) = F(x) - (1-t)F(x0)`` tracked by predictor-corrector. |
-| `trust_region_dogleg_root` | `(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 200, delta0: float = 1.0, delta_max: float = 100.0)` | Powell's dogleg trust region applied to ``min \|\|F(x)\|\|^2``. |
-| `anderson_acceleration` | `(g, x0, m: int = 5, beta: float = 1.0, tol: float = 1e-10, max_iter: int = 500, reg: float = 1e-12)` | Anderson acceleration of the fixed-point iteration ``x = g(x)``. |
-| `newton_krylov` | `(F, x0, tol: float = 1e-10, max_iter: int = 100, inner_tol: float = 0.001, inner_maxiter: int = 50, inner_r, ...)` | Jacobian-free Newton-Krylov (Newton-GMRES). |
+| [`newton_system`](#api-newton_system) | function | Newton's method for systems: solve ``J(x) s = -F(x)`` and step. |
+| [`damped_newton_system`](#api-damped_newton_system) | function | Newton with an Armijo line search on ``\|\|F\|\|^2`` -- far more robust globally. |
+| [`broyden_good`](#api-broyden_good) | function | Broyden's "good" method: rank-one secant update of the Jacobian. |
+| [`broyden_bad`](#api-broyden_bad) | function | Broyden's "bad" method: updates the inverse Jacobian directly (no solves). |
+| [`secant_system`](#api-secant_system) | function | Wolfe-Bittner sequential secant method. |
+| [`fixed_point_system`](#api-fixed_point_system) | function | Vector fixed point iteration ``x <- G(x)`` with optional relaxation. |
+| [`nonlinear_gauss_seidel`](#api-nonlinear_gauss_seidel) | function | Solve one equation at a time for its own unknown, sweeping repeatedly. |
+| [`continuation`](#api-continuation) | function | Natural parameter continuation from ``F(x) - (1-t) F(x0)``. |
+| [`homotopy`](#api-homotopy) | function | Newton homotopy ``H(x,t) = F(x) - (1-t)F(x0)`` tracked by predictor-corrector. |
+| [`trust_region_dogleg_root`](#api-trust_region_dogleg_root) | function | Powell's dogleg trust region applied to ``min \|\|F(x)\|\|^2``. |
+| [`anderson_acceleration`](#api-anderson_acceleration) | function | Anderson acceleration of the fixed-point iteration ``x = g(x)``. |
+| [`newton_krylov`](#api-newton_krylov) | function | Jacobian-free Newton-Krylov (Newton-GMRES). |
+
+### `newton_system` {#api-newton_system}
+
+```python
+newton_system(
+    F,
+    x0,
+    jac=None,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton's method for systems: solve `J(x) s = -F(x)` and step.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `damped_newton_system` {#api-damped_newton_system}
+
+```python
+damped_newton_system(
+    F,
+    x0,
+    jac=None,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    max_backtracks: int = 30,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton with an Armijo line search on `||F||^2` -- far more robust globally.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `broyden_good` {#api-broyden_good}
+
+```python
+broyden_good(
+    F,
+    x0,
+    J0=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Broyden's "good" method: rank-one secant update of the Jacobian.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `broyden_bad` {#api-broyden_bad}
+
+```python
+broyden_bad(
+    F,
+    x0,
+    B0=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Broyden's "bad" method: updates the inverse Jacobian directly (no solves).
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `secant_system` {#api-secant_system}
+
+```python
+secant_system(
+    F,
+    x0,
+    x1=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Wolfe-Bittner sequential secant method.
+
+Keeps `n+1` points, fits the affine model interpolating `F` at all of
+them, and takes its root -- the direct generalization of the scalar secant
+method, needing no derivatives.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `fixed_point_system` {#api-fixed_point_system}
+
+```python
+fixed_point_system(
+    G,
+    x0,
+    tol: float = 1e-12,
+    max_iter: int = 1000,
+    relaxation: float = 1.0,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Vector fixed point iteration `x <- G(x)` with optional relaxation.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `nonlinear_gauss_seidel` {#api-nonlinear_gauss_seidel}
+
+```python
+nonlinear_gauss_seidel(
+    F,
+    x0,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+    inner_tol: float = 1e-12,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Solve one equation at a time for its own unknown, sweeping repeatedly.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `continuation` {#api-continuation}
+
+```python
+continuation(
+    F,
+    x0,
+    steps: int = 10,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Natural parameter continuation from `F(x) - (1-t) F(x0)`.
+
+Solves a sequence of easier problems, using each solution to start the next.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `homotopy` {#api-homotopy}
+
+```python
+homotopy(
+    F,
+    x0,
+    steps: int = 20,
+    tol: float = 1e-12,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton homotopy `H(x,t) = F(x) - (1-t)F(x0)` tracked by predictor-corrector.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `trust_region_dogleg_root` {#api-trust_region_dogleg_root}
+
+```python
+trust_region_dogleg_root(
+    F,
+    x0,
+    jac=None,
+    tol: float = 1e-12,
+    max_iter: int = 200,
+    delta0: float = 1.0,
+    delta_max: float = 100.0,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Powell's dogleg trust region applied to `min ||F(x)||^2`.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `anderson_acceleration` {#api-anderson_acceleration}
+
+```python
+anderson_acceleration(
+    g,
+    x0,
+    m: int = 5,
+    beta: float = 1.0,
+    tol: float = 1e-10,
+    max_iter: int = 500,
+    reg: float = 1e-12,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Anderson acceleration of the fixed-point iteration `x = g(x)`.
+
+Picture Picard iteration as producing a sequence of residuals
+`f_k = g(x_k) - x_k`.  Anderson forms the next iterate from a *linear
+combination* of the last `m` steps, choosing the weights to minimize the
+combined residual.  That turns a linearly convergent fixed point into
+something close to a quasi-Newton method -- without ever forming a
+Jacobian.
+
+`m=0` reduces to plain Picard; `beta` mixes the accelerated point with
+the raw `g` value (damping, useful when the iteration is fragile).  The
+least-squares system is regularized because the difference matrix becomes
+rank deficient exactly as the iteration converges.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `newton_krylov` {#api-newton_krylov}
+
+```python
+newton_krylov(
+    F,
+    x0,
+    tol: float = 1e-10,
+    max_iter: int = 100,
+    inner_tol: float = 0.001,
+    inner_maxiter: int = 50,
+    inner_restarts: int = 40,
+    eps: float = None,
+    line_search: bool = True,
+    precond=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Jacobian-free Newton-Krylov (Newton-GMRES).
+
+Solves the Newton equation `J s = -F` with GMRES, supplying the
+Jacobian only through directional derivatives approximated as
+`J v ~ (F(x + eps v) - F(x)) / eps`.  Nothing of size `n^2` is ever
+formed, which is what makes it the method of choice for the large systems
+coming out of PDE discretizations.
+
+The inner tolerance is *inexact by design* -- solving the Newton equation
+to high precision far from the solution is wasted work, since the Newton
+direction itself is only approximate there.
+
+`precond` applies an approximate inverse Jacobian `M^-1` on the left.
+Without one, GMRES converges at the rate set by the Jacobian's condition
+number, which for a PDE discretization grows with the mesh -- so the
+unpreconditioned method needs steadily more Krylov steps as the grid is
+refined, even though each is cheap.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.

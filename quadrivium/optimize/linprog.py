@@ -7,6 +7,8 @@ transportation and assignment special cases.
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -200,12 +202,12 @@ def interior_point_lp(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None,
     x = np.ones(n)
     lam = np.zeros(m)
     s = np.ones(n)
-    history = []
+    history = History()
     for k in range(1, max_iter + 1):
         r_p = A @ x - b
         r_d = A.T @ lam + s - c_std
         mu = float(x @ s) / n
-        history.append(mu)
+        history.append(mu, x=x)
         if (np.linalg.norm(r_p) < tol and np.linalg.norm(r_d) < tol and mu < tol):
             break
         # Newton step on the perturbed KKT system
@@ -309,3 +311,8 @@ def assignment_problem(cost, maximize: bool = False):
     cols = np.array(cols)[order]
     total = float(np.array(cost, dtype=float)[rows, cols].sum())
     return rows, cols, total
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['interior_point_lp']:
+    globals()[_name] = monitor(globals()[_name])

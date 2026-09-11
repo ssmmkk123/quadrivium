@@ -3,32 +3,34 @@
 
 # API reference
 
-Every public name in the library, grouped by subpackage, with its real signature and a one-line summary. These pages are generated from the installed package by `tools/gen_docs.py`, so they cannot drift from the code.
+Every exported name in the numerical-method subpackages, with its real complete signature, source documentation, and public class methods. These pages are generated from this checkout by `tools/gen_docs.py`. The generation check catches changes to exports, defaults, and docstrings; the guides explain the numerical assumptions behind the calls.
 
 The narrative [guides](../guides/linalg.md) explain when to reach for which method; this reference tells you what to call.
 
-<figure markdown="span">
-  ![Public names by subpackage](../assets/figures/api-public-names.svg#only-light)
-  ![Public names by subpackage](../assets/figures/api-public-names-dark.svg#only-dark)
-  <figcaption>Every public name, by subpackage, with the portion re-exported at the top level. The counts are read from the package's own <code>__all__</code> lists when the figure is generated.</figcaption>
-</figure>
+## How to read an entry
+
+A signature without `*` accepts ordinary positional arguments; arguments after `*` are keyword-only. `None` often requests an automatic choice, but its meaning is method-specific. A `**kwargs` parameter forwards options to a selected implementation. Missing return annotations do not imply that a routine returns `None`. In class method signatures, `self` denotes the instance. An uppercase private default such as `_UNSET` is an internal omission sentinel, and `<factory>` creates a fresh dataclass default; callers normally omit these arguments rather than importing the placeholder.
+
+Some routines return an array or scalar; others return a record with status and diagnostics. Read [result contracts](../getting-started.md#result-records) before interpreting tolerances or convergence flags. The [array guide](../guides/numeric.md) documents `quadrivium.numeric`, whose C-backed primitives are separate from the method catalogue below.
+
+## Subpackages
 
 | Subpackage | Public names | Covers |
 | --- | --- | --- |
-| [`core`](core.md) | 35 | Result records, exceptions, norms, and shared numerical helpers |
-| [`linalg`](linalg.md) | 124 | Factorizations, eigenvalues, Krylov solvers, least squares, sparse storage, matrix functions and equations, randomized methods |
-| [`rootfind`](rootfind.md) | 45 | Scalar equations, nonlinear systems, and polynomial roots |
-| [`interpolate`](interpolate.md) | 60 | Polynomial, spline, rational, and multivariate interpolation |
-| [`approx`](approx.md) | 38 | Orthogonal polynomials, Gauss nodes, least squares, Pade, minimax, Fourier |
-| [`diff`](diff.md) | 41 | Finite differences, automatic differentiation, spectral differentiation |
-| [`integrate`](integrate.md) | 66 | Newton-Cotes, Gauss, adaptive, Monte Carlo, oscillatory, singular, and multidimensional quadrature |
-| [`ode`](ode.md) | 76 | One-step, multistep, symplectic, exponential, extrapolation, events, BVPs, DAEs, delay equations |
-| [`pde`](pde.md) | 72 | Parabolic, hyperbolic, elliptic, multigrid, FEM, FVM, spectral, WENO, incompressible Navier-Stokes |
-| [`optimize`](optimize.md) | 95 | Line searches, quasi-Newton, trust region, derivative-free, global, constrained, proximal, linear programming |
-| [`transforms`](transforms.md) | 57 | DFT/FFT family, signal processing, wavelets |
-| [`stochastic`](stochastic.md) | 75 | Random generation, sampling, MCMC, statistics, SDE solvers |
+| [`core`](core.md) | 39 | Result records, exceptions, norms, and shared numerical helpers |
+| [`linalg`](linalg.md) | 136 | Factorizations, eigenvalues, Krylov solvers, least squares, sparse storage, matrix functions and equations, randomized methods |
+| [`rootfind`](rootfind.md) | 47 | Scalar equations, nonlinear systems, and polynomial roots |
+| [`interpolate`](interpolate.md) | 65 | Polynomial, spline, rational, and multivariate interpolation |
+| [`approx`](approx.md) | 40 | Orthogonal polynomials, Gauss nodes, least squares, Pade, minimax, Fourier |
+| [`diff`](diff.md) | 46 | Finite differences, automatic differentiation, spectral differentiation |
+| [`integrate`](integrate.md) | 67 | Newton-Cotes, Gauss, adaptive, Monte Carlo, oscillatory, singular, and multidimensional quadrature |
+| [`ode`](ode.md) | 83 | One-step, multistep, symplectic, exponential, extrapolation, events, BVPs, DAEs, delay equations |
+| [`pde`](pde.md) | 78 | Parabolic, hyperbolic, elliptic, multigrid, FEM, FVM, spectral, WENO, incompressible Navier-Stokes |
+| [`optimize`](optimize.md) | 96 | Line searches, quasi-Newton, trust region, derivative-free, global, constrained, proximal, linear programming |
+| [`transforms`](transforms.md) | 69 | DFT/FFT family, signal processing, wavelets |
+| [`stochastic`](stochastic.md) | 93 | Random generation, sampling, MCMC, statistics, SDE solvers |
 | [`special`](special.md) | 52 | Gamma, beta, error, Bessel, Airy, elliptic, hypergeometric, Lambert W, zeta, spherical harmonics |
-| **Total** | **836** | |
+| **Total** | **911** | |
 
 ## Top-level namespace
 
@@ -63,7 +65,14 @@ SQRT_EPS, SingularMatrixError, StepSizeError, absolute_error, as_matrix,
 as_vector, check_square, condition_number, is_diagonally_dominant,
 is_positive_definite, is_symmetric, machine_epsilon, matrix_norm, norm,
 numerical_derivative, numerical_gradient, numerical_hessian,
-numerical_jacobian, relative_error, unit_roundoff, wrap_scalar_function
+numerical_jacobian, relative_error, unit_roundoff, wrap_scalar_function,
+OutputRecorder, SolverCheckpoint, resume_ode, resume_pde,
+ChebyshevApproximation, chebfun, Tensor, array_gradient,
+array_value_and_grad, jvp, vjp, quad_vec, LinearOperator, aslinearoperator,
+lu_factor, cholesky_factor, qr_factor, bdf_adaptive, radau_adaptive,
+solve_ivp_sensitivities, adjoint_sensitivity, least_squares, adaptive_fem,
+pseudo_arclength, Sobol, Normal, randomized_qmc, mcmc_diagnostics,
+spawn_rngs, stft, istft, FIRFilter, IIRFilter, SOSFilter, resample_poly
 ```
 
-That is 146 names at the top level out of 836 public names in total.
+That is 181 names at the top level out of 911 exported names in the method catalogue.

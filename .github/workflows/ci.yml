@@ -33,18 +33,14 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install the package and test dependencies
-        env:
-          QUADRIVIUM_REQUIRE_RUST: "1"
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[test]"
 
-      # The compiled backend is built by the install above when a Rust
-      # toolchain is present. Both paths are exercised: a wheel that silently
-      # fell back to pure Python, or a fallback that has quietly rotted, are
-      # both defects and both show up here.
+      # Installation compiles the C array core and all numerical kernels.
+      # Exercise both the compiled kernels and their Python references.
       - name: Report which backend is active
-        run: python -c "import quadrivium; print(quadrivium.accel.show_config()); assert quadrivium.accel.available()"
+        run: python -c "import quadrivium; print(quadrivium.accel.show_config()); assert quadrivium.accel.backend() == 'c'"
 
       - name: Run tests (compiled backend)
         run: python -m pytest -q
@@ -53,29 +49,6 @@ jobs:
         env:
           QUADRIVIUM_NO_ACCEL: "1"
         run: python -m pytest -q
-
-  rust:
-    name: Rust kernels
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install the Rust toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-
-      - name: Check formatting
-        run: cargo fmt --manifest-path rust/Cargo.toml --check
-
-      - name: Lint
-        run: cargo clippy --manifest-path rust/Cargo.toml --release --all-targets -- -D warnings
-
-      # The kernels are checked against the definitions they implement --
-      # P A = L U, Q'Q = I, A V = V diag(lambda), the naive DFT -- so a
-      # regression is caught here before it reaches the Python layer.
-      - name: Test the kernels
-        run: cargo test --manifest-path rust/Cargo.toml --release
 
   docs:
     name: Documentation
@@ -122,7 +95,7 @@ jobs:
 
       - name: Build and check distributions
         run: |
-          python -m pip install --upgrade pip build twine "pytest>=7.0"
+          python -m pip install --upgrade pip build twine "pytest>=7.0" "numpy>=1.20"
           python -m build
           python -m twine check dist/*
 
@@ -130,9 +103,11 @@ jobs:
         run: |
           python -m pip install --force-reinstall dist/*.whl
           cd /tmp
-          python -c "import quadrivium; print(quadrivium.__version__)"
+          python -c "import quadrivium; print(quadrivium.__version__); assert quadrivium.accel.backend() == 'c'"
 
       - name: Check the sdist carries the tests and can run them
         run: |
           mkdir -p /tmp/sdist && tar xzf dist/*.tar.gz -C /tmp/sdist --strip-components=1
-          cd /tmp/sdist && python -m pytest -q
+          cd /tmp/sdist
+          python -m pip install -e ".[test]"
+          python -m pytest -q

@@ -7,12 +7,13 @@ One-step, multistep, symplectic, exponential, extrapolation, events, BVPs, DAEs,
 
 For worked examples and guidance on choosing between these routines, see the [ordinary differential equations guide](../guides/ode.md).
 
-**76 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**83 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.ode import euler
-import quadrivium as qd            # qd.euler, if re-exported
+from quadrivium import ode
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
@@ -22,6 +23,8 @@ import quadrivium as qd            # qd.euler, if re-exported
 - [`exponential`](#exponential) &mdash; exponential integrators for semilinear problems ``y' = a y + g(t, y)`` (7)
 - [`implicit`](#implicit) &mdash; implicit methods for stiff initial value problems (13)
 - [`multistep`](#multistep) &mdash; linear multistep methods (8)
+- [`sensitivity`](#sensitivity) &mdash; forward variational equations and checkpointed continuous adjoints (4)
+- [`stiff`](#stiff) &mdash; adaptive bdf and radau with reusable simplified-newton linear solves (3)
 - [`symplectic`](#symplectic) &mdash; geometric integrators for hamiltonian and separable systems (11)
 
 ## `advanced`
@@ -32,22 +35,331 @@ Extrapolation methods, event location, second-order systems, DAEs and DDEs.
 
 The parts of initial-value problem solving that sit outside the plain ``y' = f(t, y)`` picture: getting arbitrary order from a low-order scheme by extrapolation, stopping exactly when a condition is met, exploiting the structure of ``y'' = f(t, y, y')``, and handling algebraic constraints or retarded arguments.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `modified_midpoint` | `(f, t, y, h, n: int, fc=None)` | Gragg's modified midpoint rule: ``n`` substeps across one interval ``h``. |
-| `bulirsch_stoer` | `(f, t_span, y0, **kwargs)` | Alias for ``gragg_bulirsch_stoer``. |
-| `gragg_bulirsch_stoer` | `(f, t_span, y0, rtol: float = 1e-10, atol: float = 1e-12, h0=None, max_order: int = 8, max_steps: int = 100, ...)` | Gragg-Bulirsch-Stoer: adaptive order *and* step size by extrapolation. |
-| `richardson_ode` | `(method, f, t_span, y0, order: int, levels: int = 4, n0: int = 16, **kwargs)` | Richardson-extrapolate any fixed-step solver to higher order. |
-| `solve_ivp_events` | `(f, t_span, y0, events=None, terminal=None, solver=None, **kwargs)` | Integrate with event detection, optionally stopping at a terminal event. |
-| `find_events` | `(sol, event, tol: float = 1e-12, max_iter: int = 100, direction: int = 0)` | Locate the roots of ``event(t, y)`` along an existing solution. |
-| `rk_nystrom` | `(f, t_span, y0, dy0, n: int = 100)` | Runge-Kutta-Nystrom for ``y'' = f(t, y, y')``, order 4. |
-| `runge_kutta_nystrom` | `(f, t_span, y0, dy0, n: int = 100)` | Alias for ``rk_nystrom``. |
-| `stormer_cowell` | `(f, t_span, y0, dy0, n: int = 100)` | Stormer-Cowell multistep for ``y'' = f(t, y)`` (no velocity dependence). |
-| `dae_index1_bdf` | `(f, g, t_span, y0, z0, n: int = 200, order: int = 2, tol: float = 1e-12, max_iter: int = 60)` | Semi-explicit index-1 DAE ``y' = f(t, y, z)``, ``0 = g(t, y, z)``. |
-| `mass_matrix_ode` | `(M, f, t_span, y0, n: int = 200, theta: float = 0.5)` | Solve ``M y' = f(t, y)`` for a constant (possibly singular) ``M``. |
-| `dde_method_of_steps` | `(f, history, delays, t_span, n: int = 400, solver=None, max_step=None, **kwargs)` | Delay differential equations by the method of steps. |
-| `stiffness_ratio` | `(jac, t, y)` | Ratio of largest to smallest eigenvalue modulus of the Jacobian. |
-| `detect_stiffness` | `(f, t, y, threshold: float = 1000.0)` | Estimate stiffness from a numerical Jacobian at one point. |
+| [`modified_midpoint`](#api-modified_midpoint) | function | Gragg's modified midpoint rule: ``n`` substeps across one interval ``h``. |
+| [`bulirsch_stoer`](#api-bulirsch_stoer) | function | Alias for ``gragg_bulirsch_stoer``. |
+| [`gragg_bulirsch_stoer`](#api-gragg_bulirsch_stoer) | function | Gragg-Bulirsch-Stoer: adaptive order *and* step size by extrapolation. |
+| [`richardson_ode`](#api-richardson_ode) | function | Richardson-extrapolate any fixed-step solver to higher order. |
+| [`solve_ivp_events`](#api-solve_ivp_events) | function | Integrate with event detection, optionally stopping at a terminal event. |
+| [`find_events`](#api-find_events) | function | Locate the roots of ``event(t, y)`` along an existing solution. |
+| [`rk_nystrom`](#api-rk_nystrom) | function | Runge-Kutta-Nystrom for ``y'' = f(t, y, y')``, order 4. |
+| [`runge_kutta_nystrom`](#api-runge_kutta_nystrom) | function | Alias for ``rk_nystrom``. |
+| [`stormer_cowell`](#api-stormer_cowell) | function | Stormer-Cowell multistep for ``y'' = f(t, y)`` (no velocity dependence). |
+| [`dae_index1_bdf`](#api-dae_index1_bdf) | function | Semi-explicit index-1 DAE ``y' = f(t, y, z)``, ``0 = g(t, y, z)``. |
+| [`mass_matrix_ode`](#api-mass_matrix_ode) | function | Solve ``M y' = f(t, y)`` for a constant (possibly singular) ``M``. |
+| [`dde_method_of_steps`](#api-dde_method_of_steps) | function | Delay differential equations by the method of steps. |
+| [`stiffness_ratio`](#api-stiffness_ratio) | function | Ratio of largest to smallest eigenvalue modulus of the Jacobian. |
+| [`detect_stiffness`](#api-detect_stiffness) | function | Estimate stiffness from a numerical Jacobian at one point. |
+
+### `modified_midpoint` {#api-modified_midpoint}
+
+```python
+modified_midpoint(f, t, y, h, n: int, fc=None)
+```
+
+Gragg's modified midpoint rule: `n` substeps across one interval `h`.
+
+The final smoothing step is what makes this special.  It cancels the
+oscillatory parasitic mode of the leapfrog recursion and leaves an error
+expansion in *even* powers of `h` alone -- so each extrapolation stage
+gains two orders instead of one, which is what makes Bulirsch-Stoer
+efficient.
+
+### `bulirsch_stoer` {#api-bulirsch_stoer}
+
+```python
+bulirsch_stoer(
+    f,
+    t_span,
+    y0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Alias for `gragg_bulirsch_stoer`.
+
+### `gragg_bulirsch_stoer` {#api-gragg_bulirsch_stoer}
+
+```python
+gragg_bulirsch_stoer(
+    f,
+    t_span,
+    y0,
+    rtol: float = 1e-10,
+    atol: float = 1e-12,
+    h0=None,
+    max_order: int = 8,
+    max_steps: int = 100000,
+    min_step: float = 1e-14,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Gragg-Bulirsch-Stoer: adaptive order *and* step size by extrapolation.
+
+Repeats the modified midpoint rule with more and more substeps and
+extrapolates the results to zero step size.  Because the error expansion
+has only even powers, the `k`-th column of the tableau is accurate to
+order `2k` -- so on a smooth problem this reaches tolerances that would
+need absurdly small steps from a fixed-order method.  On a non-smooth one
+it is the wrong tool, since extrapolation assumes the expansion exists.
+
+### `richardson_ode` {#api-richardson_ode}
+
+```python
+richardson_ode(
+    method,
+    f,
+    t_span,
+    y0,
+    order: int,
+    levels: int = 4,
+    n0: int = 16,
+    **kwargs,
+)
+```
+
+Richardson-extrapolate any fixed-step solver to higher order.
+
+Runs `method` with `n0, 2 n0, 4 n0, ...` steps and eliminates the
+leading error terms.  Returns `(value, table)`; the table's diagonal
+shows the order climbing one step per column.
+
+### `solve_ivp_events` {#api-solve_ivp_events}
+
+```python
+solve_ivp_events(f, t_span, y0, events=None, terminal=None, solver=None, **kwargs)
+```
+
+Integrate with event detection, optionally stopping at a terminal event.
+
+`events` is a callable or list of callables `g(t, y)`; a root of any of
+them is an event.  `terminal` marks which of them stop the integration
+(a bool or list of bools).  The integration is *not* restarted at the
+event -- the solution is truncated there and the event time located on the
+dense output, which is exact to the solver's own accuracy.
+
+Returns `(solution, t_events, y_events)`.
+
+### `find_events` {#api-find_events}
+
+```python
+find_events(sol, event, tol: float = 1e-12, max_iter: int = 100, direction: int = 0)
+```
+
+Locate the roots of `event(t, y)` along an existing solution.
+
+Sign changes are found on the stored grid and then refined by bisection
+*against the solution's own interpolant*, so the located time is as
+accurate as the solver -- not as accurate as the output grid.
+
+`direction` selects which crossings count: `+1` increasing, `-1`
+decreasing, `0` both.  Returns `(t_events, y_events)`.
+
+### `rk_nystrom` {#api-rk_nystrom}
+
+```python
+rk_nystrom(
+    f,
+    t_span,
+    y0,
+    dy0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Runge-Kutta-Nystrom for `y'' = f(t, y, y')`, order 4.
+
+Integrates the second-order equation directly rather than converting it to
+a first-order system of twice the size.  For the special case `y'' = f(t, y)`
+-- no velocity dependence -- this needs three function evaluations per step
+where the converted RK4 needs four, and its position error constant is
+smaller.
+
+### `runge_kutta_nystrom` {#api-runge_kutta_nystrom}
+
+```python
+runge_kutta_nystrom(
+    f,
+    t_span,
+    y0,
+    dy0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Alias for `rk_nystrom`.
+
+### `stormer_cowell` {#api-stormer_cowell}
+
+```python
+stormer_cowell(
+    f,
+    t_span,
+    y0,
+    dy0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Stormer-Cowell multistep for `y'' = f(t, y)` (no velocity dependence).
+
+Uses the four-step coefficients `(14, -5, 4, -1)/12`.  The familiar
+three-step form `(13, -2, 1)/12` leaves an `h^3` term in its Taylor
+expansion and is only *third* order globally, despite often being quoted
+as fourth; the four-step coefficients are chosen precisely so that term
+cancels.
+
+Acting on positions only makes it very cheap -- one force evaluation per
+step -- but also means the velocity it reports is a difference estimate
+rather than an integrated quantity.
+
+### `dae_index1_bdf` {#api-dae_index1_bdf}
+
+```python
+dae_index1_bdf(
+    f,
+    g,
+    t_span,
+    y0,
+    z0,
+    n: int = 200,
+    order: int = 2,
+    tol: float = 1e-12,
+    max_iter: int = 60,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Semi-explicit index-1 DAE `y' = f(t, y, z)`, `0 = g(t, y, z)`.
+
+Index 1 means `dg/dz` is nonsingular, so the algebraic variables are
+locally determined by the differential ones.  BDF discretizes `y'` and
+the coupled nonlinear system is solved by Newton at each step -- the
+algebraic constraint is enforced *exactly* at every step rather than
+integrated, which is what distinguishes a DAE solver from applying an ODE
+solver to a stiff approximation.
+
+Returns an `ODESolution` for `y` with the algebraic trajectory on
+its `.z` attribute.
+
+### `mass_matrix_ode` {#api-mass_matrix_ode}
+
+```python
+mass_matrix_ode(
+    M,
+    f,
+    t_span,
+    y0,
+    n: int = 200,
+    theta: float = 0.5,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Solve `M y' = f(t, y)` for a constant (possibly singular) `M`.
+
+A singular `M` makes this a DAE rather than an ODE, which is why the
+theta method is applied to the whole pencil `M - theta h J` instead of
+inverting `M` first: with `M` singular that inverse does not exist,
+but the pencil is still nonsingular for small `h`.
+
+### `dde_method_of_steps` {#api-dde_method_of_steps}
+
+```python
+dde_method_of_steps(
+    f,
+    history,
+    delays,
+    t_span,
+    n: int = 400,
+    solver=None,
+    max_step=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Delay differential equations by the method of steps.
+
+`f(t, y, ylags)` receives the delayed states, `history(t)` supplies
+`y` for `t <= t0`, and `delays` is the list of lags.  The interval is
+split at multiples of the smallest lag, and on each piece the equation is
+an ODE in terms of the already-computed past -- which is the whole idea of
+the method.
+
+Solutions of DDEs have derivative discontinuities that propagate from the
+initial point and smooth out one order per lag; stepping across those
+breakpoints rather than landing on them is what wrecks a naive
+integration, so they are used as segment boundaries here.
+
+Accuracy is capped by the *dense output* of the underlying solver, not by
+its tolerance: the delayed value is read from an interpolant, so a cubic
+Hermite interpolant limits the whole solution to O(h^4) no matter how
+tightly each segment is integrated.  `max_step` therefore defaults to
+one twentieth of the shortest lag, which keeps h small enough for that to
+stop mattering.
+
+### `stiffness_ratio` {#api-stiffness_ratio}
+
+```python
+stiffness_ratio(jac, t, y)
+```
+
+Ratio of largest to smallest eigenvalue modulus of the Jacobian.
+
+A large ratio is the classic signature of stiffness: the fastest mode sets
+the step an explicit method may take, while the slowest sets how long the
+integration must run.
+
+### `detect_stiffness` {#api-detect_stiffness}
+
+```python
+detect_stiffness(f, t, y, threshold: float = 1000.0)
+```
+
+Estimate stiffness from a numerical Jacobian at one point.
+
+Returns `(is_stiff, ratio)`.  Only a local indicator -- a problem can be
+stiff over part of its trajectory and not elsewhere -- but it answers the
+practical question of whether an explicit solver is about to crawl.
 
 ## `bvp`
 
@@ -57,16 +369,141 @@ Two-point boundary value problems.
 
 Three classical strategies: shooting (reduce to an IVP plus a root find), finite differences (discretize into an algebraic system), and collocation / Galerkin (expand in basis functions).
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `shooting` | `(f, t_span, bc_left: float, bc_right: float, guess_range=(-10.0, 10.0), n: int = 200, tol: float = 1e-10, m, ...)` | Single shooting for ``y'' = f(t, y, y')`` with Dirichlet conditions. |
-| `multiple_shooting` | `(f, t_span, bc_left, bc_right, segments: int = 4, n: int = 100, tol: float = 1e-10)` | Multiple shooting: split the interval and match at the junctions. |
-| `linear_shooting` | `(p, q, r, t_span, bc_left: float, bc_right: float, n: int = 200)` | Shooting for the linear problem ``y'' = p(t) y' + q(t) y + r(t)``. |
-| `finite_difference_bvp` | `(p, q, r, t_span, bc_left: float, bc_right: float, n: int = 100, bc_type: str = 'dirichlet', bc_coeffs=None)` | Finite differences for the linear BVP ``y'' = p(t)y' + q(t)y + r(t)``. |
-| `nonlinear_fd_bvp` | `(f, t_span, bc_left: float, bc_right: float, n: int = 100, tol: float = 1e-12, max_iter: int = 100, y_guess, ...)` | Finite differences plus Newton for the nonlinear BVP ``y'' = f(t, y, y')``. |
-| `collocation_bvp` | `(f, t_span, bc_left: float, bc_right: float, n: int = 12, tol: float = 1e-12)` | Spectral collocation for ``y'' = f(t, y, y')`` on Chebyshev points. |
-| `galerkin_bvp` | `(p, q, r, t_span, bc_left: float, bc_right: float, n: int = 20)` | Galerkin finite elements for ``-(y')' + q y = -r`` with hat functions. |
-| `sturm_liouville` | `(p, q, w, t_span, n: int = 100, n_eigen: int = 5)` | Sturm-Liouville eigenproblem ``-(p y')' + q y = lambda w y``. |
+| [`shooting`](#api-shooting) | function | Single shooting for ``y'' = f(t, y, y')`` with Dirichlet conditions. |
+| [`multiple_shooting`](#api-multiple_shooting) | function | Multiple shooting: split the interval and match at the junctions. |
+| [`linear_shooting`](#api-linear_shooting) | function | Shooting for the linear problem ``y'' = p(t) y' + q(t) y + r(t)``. |
+| [`finite_difference_bvp`](#api-finite_difference_bvp) | function | Finite differences for the linear BVP ``y'' = p(t)y' + q(t)y + r(t)``. |
+| [`nonlinear_fd_bvp`](#api-nonlinear_fd_bvp) | function | Finite differences plus Newton for the nonlinear BVP ``y'' = f(t, y, y')``. |
+| [`collocation_bvp`](#api-collocation_bvp) | function | Spectral collocation for ``y'' = f(t, y, y')`` on Chebyshev points. |
+| [`galerkin_bvp`](#api-galerkin_bvp) | function | Galerkin finite elements for ``-(y')' + q y = -r`` with hat functions. |
+| [`sturm_liouville`](#api-sturm_liouville) | function | Sturm-Liouville eigenproblem ``-(p y')' + q y = lambda w y``. |
+
+### `shooting` {#api-shooting}
+
+```python
+shooting(
+    f,
+    t_span,
+    bc_left: float,
+    bc_right: float,
+    guess_range=(-10.0, 10.0),
+    n: int = 200,
+    tol: float = 1e-10,
+    method='rk4',
+)
+```
+
+Single shooting for `y'' = f(t, y, y')` with Dirichlet conditions.
+
+Solves the initial slope that makes the right boundary condition hold; the
+inner IVP solves are done with a fixed-step Runge-Kutta method.
+
+### `multiple_shooting` {#api-multiple_shooting}
+
+```python
+multiple_shooting(
+    f,
+    t_span,
+    bc_left,
+    bc_right,
+    segments: int = 4,
+    n: int = 100,
+    tol: float = 1e-10,
+)
+```
+
+Multiple shooting: split the interval and match at the junctions.
+
+Far more stable than single shooting when the IVP grows rapidly, because no
+single trajectory is integrated over the whole interval.
+
+### `linear_shooting` {#api-linear_shooting}
+
+```python
+linear_shooting(p, q, r, t_span, bc_left: float, bc_right: float, n: int = 200)
+```
+
+Shooting for the linear problem `y'' = p(t) y' + q(t) y + r(t)`.
+
+Exploits linearity: two IVP solves suffice, with no iteration at all.
+
+### `finite_difference_bvp` {#api-finite_difference_bvp}
+
+```python
+finite_difference_bvp(
+    p,
+    q,
+    r,
+    t_span,
+    bc_left: float,
+    bc_right: float,
+    n: int = 100,
+    bc_type: str = 'dirichlet',
+    bc_coeffs=None,
+)
+```
+
+Finite differences for the linear BVP `y'' = p(t)y' + q(t)y + r(t)`.
+
+Produces a tridiagonal system solved in `O(n)` by the Thomas algorithm.
+`bc_type` may be `'dirichlet'` or `'neumann'`.
+
+### `nonlinear_fd_bvp` {#api-nonlinear_fd_bvp}
+
+```python
+nonlinear_fd_bvp(
+    f,
+    t_span,
+    bc_left: float,
+    bc_right: float,
+    n: int = 100,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    y_guess=None,
+)
+```
+
+Finite differences plus Newton for the nonlinear BVP `y'' = f(t, y, y')`.
+
+### `collocation_bvp` {#api-collocation_bvp}
+
+```python
+collocation_bvp(
+    f,
+    t_span,
+    bc_left: float,
+    bc_right: float,
+    n: int = 12,
+    tol: float = 1e-12,
+)
+```
+
+Spectral collocation for `y'' = f(t, y, y')` on Chebyshev points.
+
+Converges exponentially for smooth solutions.
+
+### `galerkin_bvp` {#api-galerkin_bvp}
+
+```python
+galerkin_bvp(p, q, r, t_span, bc_left: float, bc_right: float, n: int = 20)
+```
+
+Galerkin finite elements for `-(y')' + q y = -r` with hat functions.
+
+Solves the weak form on a uniform mesh of linear elements.
+
+### `sturm_liouville` {#api-sturm_liouville}
+
+```python
+sturm_liouville(p, q, w, t_span, n: int = 100, n_eigen: int = 5)
+```
+
+Sturm-Liouville eigenproblem `-(p y')' + q y = lambda w y`.
+
+Discretized by finite differences into a generalized symmetric eigenproblem
+with Dirichlet conditions at both ends.
 
 ## `explicit`
 
@@ -76,31 +513,366 @@ Explicit one-step methods for initial value problems ``y' = f(t, y)``.
 
 The Runge-Kutta family, from Euler up to the embedded adaptive pairs. All solvers accept scalar or vector ``y`` and return an ``ODESolution``.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `euler` | `(f, t_span, y0, n: int = 100)` | Forward Euler, order 1. The simplest method and the least accurate. |
-| `heun` | `(f, t_span, y0, n: int = 100)` | Heun's method (explicit trapezoid), order 2. |
-| `midpoint_method` | `(f, t_span, y0, n: int = 100)` | Explicit midpoint method, order 2. |
-| `ralston` | `(f, t_span, y0, n: int = 100)` | Ralston's method: the order-2 RK with minimal truncation error. |
-| `rk3` | `(f, t_span, y0, n: int = 100)` | Classical third-order Runge-Kutta. |
-| `rk4` | `(f, t_span, y0, n: int = 100)` | Classical fourth-order Runge-Kutta -- the default workhorse. |
-| `rk38` | `(f, t_span, y0, n: int = 100)` | The 3/8-rule fourth-order Runge-Kutta. |
-| `rk_general` | `(f, t_span, y0, A, b, c, n: int = 100)` | Run any explicit Runge-Kutta method from its Butcher tableau. |
-| `rkf45` | `(f, t_span, y0, **kwargs)` | Runge-Kutta-Fehlberg 4(5) with adaptive step size. |
-| `cash_karp` | `(f, t_span, y0, **kwargs)` | Cash-Karp 4(5) embedded pair. |
-| `dormand_prince` | `(f, t_span, y0, **kwargs)` | Dormand-Prince 5(4) -- the method behind most ``ode45`` implementations. |
-| `bogacki_shampine` | `(f, t_span, y0, **kwargs)` | Bogacki-Shampine 3(2) embedded pair, good at loose tolerances. |
-| `adaptive_rk` | `(f, t_span, y0, tableau: str = 'dormand_prince', rtol: float = 1e-08, atol: float = 1e-10, h0=None, max_ste, ...)` | Embedded Runge-Kutta with PI step size control. |
-| `solve_ivp` | `(f, t_span, y0, method: str = 'dormand_prince', **kwargs)` | Solve an initial value problem with the requested method. |
-| `BUTCHER_TABLEAUX` | &mdash; | `{'rkf45': (array([0.        , 0.25      , 0.375     , 0.92307692, 1.        ,
-       0.5       ]), [[], [0.25], [0.09375, 0.28125], [0.8793809740555303, -3.277196176604461, 3.3208921256258535], [2.0324074074074074, -8.0, 7.173489278752436, -0.20589668615984405], [-0.2962962962962963, 2.0, -1.3816764132553607, 0.4529727095516569, -0.275]], array([ 0.11851852,  0.        ,  0.51898635,  0.50613149, -0.18      ,
-        0.03636364]), array([ 0.11574074,  0.        ,  0.54892788,  0.53533138, -0.2       ,
-        0.        ]), 5), 'cash_karp': (array([0.   , 0.2  , 0.3  , 0.6  , 1.   , 0.875]), [[], [0.2], [0.075, 0.225], [0.3, -0.9, 1.2], [-0.2037037037037037, 2.5, -2.5925925925925926, 1.2962962962962963], [0.029495804398148147, 0.341796875, 0.041594328703703706, 0.40034541377314814, 0.061767578125]], array([0.0978836 , 0.        , 0.40257649, 0.21043771, 0.        ,
-       0.2891022 ]), array([0.10217737, 0.        , 0.3839079 , 0.24459274, 0.01932199,
-       0.25      ]), 5), 'dormand_prince': (array([0.        , 0.2       , 0.3       , 0.8       , 0.88888889,
-       1.        , 1.        ]), [[], [0.2], [0.075, 0.225], [0.9777777777777777, -3.7333333333333334, 3.5555555555555554], [2.9525986892242035, -11.595793324188385, 9.822892851699436, -0.2908093278463649], [2.8462752525252526, -10.757575757575758, 8.906422717743473, 0.2784090909090909, -0.2735313036020583], [0.09114583333333333, 0.0, 0.44923629829290207, 0.6510416666666666, -0.322376179245283, 0.13095238095238096]], array([ 0.09114583,  0.        ,  0.4492363 ,  0.65104167, -0.32237618,
-        0.13095238,  0.        ]), array([ 0.08991319,  0.        ,  0.45348907,  0.6140625 , -0.27151238,
-        0.08904762,  0.025     ]), 5), 'bogacki_shampine': (array([0.  , 0.5 , 0.75, 1.  ]), [[], [0.5], [0.0, 0.75], [0.2222222222222222, 0.3333333333333333, 0.4444444444444444]], array([0.22222222, 0.33333333, 0.44444444, 0.        ]), array([0.29166667, 0.25      , 0.33333333, 0.125     ]), 3)}` |
+| [`euler`](#api-euler) | function | Forward Euler, order 1. The simplest method and the least accurate. |
+| [`heun`](#api-heun) | function | Heun's method (explicit trapezoid), order 2. |
+| [`midpoint_method`](#api-midpoint_method) | function | Explicit midpoint method, order 2. |
+| [`ralston`](#api-ralston) | function | Ralston's method: the order-2 RK with minimal truncation error. |
+| [`rk3`](#api-rk3) | function | Classical third-order Runge-Kutta. |
+| [`rk4`](#api-rk4) | function | Classical fourth-order Runge-Kutta -- the default workhorse. |
+| [`rk38`](#api-rk38) | function | The 3/8-rule fourth-order Runge-Kutta. |
+| [`rk_general`](#api-rk_general) | function | Run any explicit Runge-Kutta method from its Butcher tableau. |
+| [`rkf45`](#api-rkf45) | function | Runge-Kutta-Fehlberg 4(5) with adaptive step size. |
+| [`cash_karp`](#api-cash_karp) | function | Cash-Karp 4(5) embedded pair. |
+| [`dormand_prince`](#api-dormand_prince) | function | Dormand-Prince 5(4) -- the method behind most ``ode45`` implementations. |
+| [`bogacki_shampine`](#api-bogacki_shampine) | function | Bogacki-Shampine 3(2) embedded pair, good at loose tolerances. |
+| [`adaptive_rk`](#api-adaptive_rk) | function | Embedded Runge-Kutta with PI step size control. |
+| [`solve_ivp`](#api-solve_ivp) | function | Solve an initial value problem with the requested method. |
+| [`BUTCHER_TABLEAUX`](#api-BUTCHER_TABLEAUX) | value | Dictionary with 4 entries: `rkf45`, `cash_karp`, `dormand_prince`, `bogacki_shampine`. |
+
+### `euler` {#api-euler}
+
+```python
+euler(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Forward Euler, order 1. The simplest method and the least accurate.
+
+### `heun` {#api-heun}
+
+```python
+heun(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Heun's method (explicit trapezoid), order 2.
+
+### `midpoint_method` {#api-midpoint_method}
+
+```python
+midpoint_method(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Explicit midpoint method, order 2.
+
+### `ralston` {#api-ralston}
+
+```python
+ralston(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Ralston's method: the order-2 RK with minimal truncation error.
+
+### `rk3` {#api-rk3}
+
+```python
+rk3(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Classical third-order Runge-Kutta.
+
+### `rk4` {#api-rk4}
+
+```python
+rk4(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Classical fourth-order Runge-Kutta -- the default workhorse.
+
+### `rk38` {#api-rk38}
+
+```python
+rk38(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+The 3/8-rule fourth-order Runge-Kutta.
+
+### `rk_general` {#api-rk_general}
+
+```python
+rk_general(
+    f,
+    t_span,
+    y0,
+    A,
+    b,
+    c,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Run any explicit Runge-Kutta method from its Butcher tableau.
+
+### `rkf45` {#api-rkf45}
+
+```python
+rkf45(
+    f,
+    t_span,
+    y0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Runge-Kutta-Fehlberg 4(5) with adaptive step size.
+
+### `cash_karp` {#api-cash_karp}
+
+```python
+cash_karp(
+    f,
+    t_span,
+    y0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Cash-Karp 4(5) embedded pair.
+
+### `dormand_prince` {#api-dormand_prince}
+
+```python
+dormand_prince(
+    f,
+    t_span,
+    y0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Dormand-Prince 5(4) -- the method behind most `ode45` implementations.
+
+### `bogacki_shampine` {#api-bogacki_shampine}
+
+```python
+bogacki_shampine(
+    f,
+    t_span,
+    y0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Bogacki-Shampine 3(2) embedded pair, good at loose tolerances.
+
+### `adaptive_rk` {#api-adaptive_rk}
+
+```python
+adaptive_rk(
+    f,
+    t_span,
+    y0,
+    tableau: str = 'dormand_prince',
+    rtol: float = 1e-08,
+    atol: float = 1e-10,
+    h0=None,
+    max_step=inf,
+    min_step: float = 1e-14,
+    max_steps: int = 1000000,
+    dense_output: bool = False,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Embedded Runge-Kutta with PI step size control.
+
+The two embedded solutions give a local error estimate at no extra cost;
+the step size is then adjusted to keep that estimate at the tolerance.
+Exhausting `max_steps` returns a partial solution with `success=False`.
+A step that cannot satisfy the tolerance at `min_step` raises
+`StepSizeError`.
+
+### `solve_ivp` {#api-solve_ivp}
+
+```python
+solve_ivp(
+    f,
+    t_span,
+    y0,
+    method: str = 'dormand_prince',
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Solve an initial value problem with the requested method.
+
+Fixed-step methods take `n`; adaptive ones take `rtol`/`atol`.
+
+### `BUTCHER_TABLEAUX` {#api-BUTCHER_TABLEAUX}
+
+```python
+{'rkf45': (array([0.        , 0.25      , 0.375     , 0.92307692, 1.        ,
+       0.5       ]),
+           [[],
+            [0.25],
+            [0.09375, 0.28125],
+            [0.8793809740555303, -3.277196176604461, 3.3208921256258535],
+            [2.0324074074074074, -8.0, 7.173489278752436, -0.20589668615984405],
+            [-0.2962962962962963,
+             2.0,
+             -1.3816764132553607,
+             0.4529727095516569,
+             -0.275]],
+           array([ 0.11851852,  0.        ,  0.51898635,  0.50613149, -0.18      ,
+        0.03636364]),
+           array([ 0.11574074,  0.        ,  0.54892788,  0.53533138, -0.2       ,
+        0.        ]),
+           5),
+ 'cash_karp': (array([0.   , 0.2  , 0.3  , 0.6  , 1.   , 0.875]),
+               [[],
+                [0.2],
+                [0.075, 0.225],
+                [0.3, -0.9, 1.2],
+                [-0.2037037037037037, 2.5, -2.5925925925925926, 1.2962962962962963],
+                [0.029495804398148147,
+                 0.341796875,
+                 0.041594328703703706,
+                 0.40034541377314814,
+                 0.061767578125]],
+               array([0.0978836 , 0.        , 0.40257649, 0.21043771, 0.        ,
+       0.2891022 ]),
+               array([0.10217737, 0.        , 0.3839079 , 0.24459274, 0.01932199,
+       0.25      ]),
+               5),
+ 'dormand_prince': (array([0.        , 0.2       , 0.3       , 0.8       , 0.88888889,
+       1.        , 1.        ]),
+                    [[],
+                     [0.2],
+                     [0.075, 0.225],
+                     [0.9777777777777777, -3.7333333333333334, 3.5555555555555554],
+                     [2.9525986892242035,
+                      -11.595793324188385,
+                      9.822892851699436,
+                      -0.2908093278463649],
+                     [2.8462752525252526,
+                      -10.757575757575758,
+                      8.906422717743473,
+                      0.2784090909090909,
+                      -0.2735313036020583],
+                     [0.09114583333333333,
+                      0.0,
+                      0.44923629829290207,
+                      0.6510416666666666,
+                      -0.322376179245283,
+                      0.13095238095238096]],
+                    array([ 0.09114583,  0.        ,  0.4492363 ,  0.65104167, -0.32237618,
+        0.13095238,  0.        ]),
+                    array([ 0.08991319,  0.        ,  0.45348907,  0.6140625 , -0.27151238,
+        0.08904762,  0.025     ]),
+                    5),
+ 'bogacki_shampine': (array([0.  , 0.5 , 0.75, 1.  ]),
+                      [[],
+                       [0.5],
+                       [0.0, 0.75],
+                       [0.2222222222222222, 0.3333333333333333, 0.4444444444444444]],
+                      array([0.22222222, 0.33333333, 0.44444444, 0.        ]),
+                      array([0.29166667, 0.25      , 0.33333333, 0.125     ]),
+                      3)}
+```
 
 ## `exponential`
 
@@ -110,15 +882,147 @@ Exponential integrators for semilinear problems ``y' = A y + g(t, y)``.
 
 These treat the stiff linear part exactly through the matrix exponential, so they stay stable at step sizes an explicit method could never take.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `phi_function` | `(A, k: int = 1)` | Matrix ``phi`` function ``phi_k(A)`` of the exponential integrators. |
-| `exponential_euler` | `(A, g, t_span, y0, n: int = 100)` | Exponential Euler: ``y_{n+1} = e^{hA} y_n + h phi_1(hA) g(t_n, y_n)``. |
-| `etd_rk2` | `(A, g, t_span, y0, n: int = 100)` | Exponential time differencing with a second-order Runge-Kutta correction. |
-| `etd_rk4` | `(A, g, t_span, y0, n: int = 100)` | Cox-Matthews ETDRK4: fourth-order exponential time differencing. |
-| `exponential_rosenbrock` | `(f, t_span, y0, n: int = 100, jac=None)` | Exponential Rosenbrock-Euler: linearize at each step, then exponentiate. |
-| `magnus_second_order` | `(A_of_t, t_span, y0, n: int = 100)` | Second-order Magnus expansion for linear systems ``y' = A(t) y``. |
-| `krylov_expm_multiply` | `(A, v, t: float = 1.0, m: int = 30)` | Compute ``exp(tA) v`` in a Krylov subspace, without forming the exponential. |
+| [`phi_function`](#api-phi_function) | function | Matrix ``phi`` function ``phi_k(A)`` of the exponential integrators. |
+| [`exponential_euler`](#api-exponential_euler) | function | Exponential Euler: ``y_{n+1} = e^{hA} y_n + h phi_1(hA) g(t_n, y_n)``. |
+| [`etd_rk2`](#api-etd_rk2) | function | Exponential time differencing with a second-order Runge-Kutta correction. |
+| [`etd_rk4`](#api-etd_rk4) | function | Cox-Matthews ETDRK4: fourth-order exponential time differencing. |
+| [`exponential_rosenbrock`](#api-exponential_rosenbrock) | function | Exponential Rosenbrock-Euler: linearize at each step, then exponentiate. |
+| [`magnus_second_order`](#api-magnus_second_order) | function | Second-order Magnus expansion for linear systems ``y' = A(t) y``. |
+| [`krylov_expm_multiply`](#api-krylov_expm_multiply) | function | Compute ``exp(tA) v`` in a Krylov subspace, without forming the exponential. |
+
+### `phi_function` {#api-phi_function}
+
+```python
+phi_function(A, k: int = 1)
+```
+
+Matrix `phi` function `phi_k(A)` of the exponential integrators.
+
+`phi_0(z) = e^z` and `phi_{k+1}(z) = (phi_k(z) - 1/k!)/z`. Computed from
+a single exponential of the augmented block matrix
+
+`[[A, I, 0, ...], [0, 0, I, ...], ..., [0, ..., 0]]`
+
+whose top-right block is exactly `phi_k(A)`. That formulation inherits the
+scaling-and-squaring accuracy of the exponential and avoids both the
+cancellation of the defining quotient near `A = 0` and the cancellation of
+a raw Taylor series for large `||A||`.
+
+### `exponential_euler` {#api-exponential_euler}
+
+```python
+exponential_euler(
+    A,
+    g,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Exponential Euler: `y_{n+1} = e^{hA} y_n + h phi_1(hA) g(t_n, y_n)`.
+
+Exact when `g` is zero, whatever the stiffness of `A`.
+
+### `etd_rk2` {#api-etd_rk2}
+
+```python
+etd_rk2(
+    A,
+    g,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Exponential time differencing with a second-order Runge-Kutta correction.
+
+### `etd_rk4` {#api-etd_rk4}
+
+```python
+etd_rk4(
+    A,
+    g,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Cox-Matthews ETDRK4: fourth-order exponential time differencing.
+
+### `exponential_rosenbrock` {#api-exponential_rosenbrock}
+
+```python
+exponential_rosenbrock(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Exponential Rosenbrock-Euler: linearize at each step, then exponentiate.
+
+Order 2, exact for linear autonomous problems, and free of linear solves.
+For a non-autonomous right-hand side the `h^2 phi_2(hJ) df/dt` term is
+required as well -- without it the method drops to order 1 -- so it is
+included here, with `df/dt` taken by a central difference.
+
+### `magnus_second_order` {#api-magnus_second_order}
+
+```python
+magnus_second_order(
+    A_of_t,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Second-order Magnus expansion for linear systems `y' = A(t) y`.
+
+Preserves the Lie-group structure of the flow, so quantities such as
+orthogonality or determinant are retained exactly.
+
+### `krylov_expm_multiply` {#api-krylov_expm_multiply}
+
+```python
+krylov_expm_multiply(A, v, t: float = 1.0, m: int = 30)
+```
+
+Compute `exp(tA) v` in a Krylov subspace, without forming the exponential.
+
+The standard approach when `A` is large and sparse.
 
 ## `implicit`
 
@@ -128,21 +1032,292 @@ Implicit methods for stiff initial value problems.
 
 Stiff problems force explicit solvers into vanishingly small steps for stability rather than accuracy; the A-stable methods here have no such limit. Each stage solves a nonlinear system by (damped) Newton iteration.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `backward_euler` | `(f, t_span, y0, n: int = 100, jac=None)` | Backward (implicit) Euler: order 1, A-stable and L-stable. |
-| `trapezoidal` | `(f, t_span, y0, n: int = 100, jac=None)` | Implicit trapezoid (Crank-Nicolson): order 2, A-stable. |
-| `crank_nicolson_ode` | `(f, t_span, y0, n: int = 100, **kw)` | Alias of ``trapezoidal`` under the Crank-Nicolson name. |
-| `implicit_midpoint` | `(f, t_span, y0, n: int = 100, jac=None)` | Implicit midpoint rule: order 2, A-stable and symplectic. |
-| `theta_method` | `(f, t_span, y0, n: int = 100, theta: float = 0.5, jac=None)` | Theta method: Euler (0), trapezoid (1/2), backward Euler (1). |
-| `gauss_legendre_irk` | `(f, t_span, y0, n: int = 100, stages: int = 2, jac=None)` | Gauss-Legendre implicit RK: order ``2s``, A-stable and symplectic. |
-| `radau_iia` | `(f, t_span, y0, n: int = 100, stages: int = 3, jac=None)` | Radau IIA: order ``2s-1``, L-stable -- the standard choice for stiff problems. |
-| `lobatto_iiic` | `(f, t_span, y0, n: int = 100, jac=None)` | Lobatto IIIC (3 stages, order 4): L-stable, strongly damping. |
-| `sdirk` | `(f, t_span, y0, n: int = 100, jac=None)` | Singly diagonally implicit RK (2 stages, order 3, A-stable). |
-| `bdf` | `(f, t_span, y0, n: int = 100, order: int = 2, jac=None)` | Backward differentiation formulas of order 1-6. |
-| `rosenbrock` | `(f, t_span, y0, n: int = 100, jac=None)` | Rosenbrock method (2-stage, order 2): linearly implicit. |
-| `esdirk` | `(f, t_span, y0, n: int = 100, jac=None)` | ESDIRK: explicit first stage, singly diagonally implicit, order 3. |
-| `tr_bdf2` | `(f, t_span, y0, n: int = 100, jac=None)` | TR-BDF2: a trapezoid step followed by a BDF2 step. |
+| [`backward_euler`](#api-backward_euler) | function | Backward (implicit) Euler: order 1, A-stable and L-stable. |
+| [`trapezoidal`](#api-trapezoidal) | function | Implicit trapezoid (Crank-Nicolson): order 2, A-stable. |
+| [`crank_nicolson_ode`](#api-crank_nicolson_ode) | function | Alias of ``trapezoidal`` under the Crank-Nicolson name. |
+| [`implicit_midpoint`](#api-implicit_midpoint) | function | Implicit midpoint rule: order 2, A-stable and symplectic. |
+| [`theta_method`](#api-theta_method) | function | Theta method: Euler (0), trapezoid (1/2), backward Euler (1). |
+| [`gauss_legendre_irk`](#api-gauss_legendre_irk) | function | Gauss-Legendre implicit RK: order ``2s``, A-stable and symplectic. |
+| [`radau_iia`](#api-radau_iia) | function | Radau IIA: order ``2s-1``, L-stable -- the standard choice for stiff problems. |
+| [`lobatto_iiic`](#api-lobatto_iiic) | function | Lobatto IIIC (3 stages, order 4): L-stable, strongly damping. |
+| [`sdirk`](#api-sdirk) | function | Singly diagonally implicit RK (2 stages, order 3, A-stable). |
+| [`bdf`](#api-bdf) | function | Backward differentiation formulas of order 1-6. |
+| [`rosenbrock`](#api-rosenbrock) | function | Rosenbrock method (2-stage, order 2): linearly implicit. |
+| [`esdirk`](#api-esdirk) | function | ESDIRK: explicit first stage, singly diagonally implicit, order 3. |
+| [`tr_bdf2`](#api-tr_bdf2) | function | TR-BDF2: a trapezoid step followed by a BDF2 step. |
+
+### `backward_euler` {#api-backward_euler}
+
+```python
+backward_euler(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Backward (implicit) Euler: order 1, A-stable and L-stable.
+
+### `trapezoidal` {#api-trapezoidal}
+
+```python
+trapezoidal(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Implicit trapezoid (Crank-Nicolson): order 2, A-stable.
+
+### `crank_nicolson_ode` {#api-crank_nicolson_ode}
+
+```python
+crank_nicolson_ode(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kw,
+)
+```
+
+Alias of `trapezoidal` under the Crank-Nicolson name.
+
+### `implicit_midpoint` {#api-implicit_midpoint}
+
+```python
+implicit_midpoint(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Implicit midpoint rule: order 2, A-stable and symplectic.
+
+### `theta_method` {#api-theta_method}
+
+```python
+theta_method(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    theta: float = 0.5,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Theta method: Euler (0), trapezoid (1/2), backward Euler (1).
+
+### `gauss_legendre_irk` {#api-gauss_legendre_irk}
+
+```python
+gauss_legendre_irk(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    stages: int = 2,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Gauss-Legendre implicit RK: order `2s`, A-stable and symplectic.
+
+The highest order attainable for `s` stages.
+
+### `radau_iia` {#api-radau_iia}
+
+```python
+radau_iia(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    stages: int = 3,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Radau IIA: order `2s-1`, L-stable -- the standard choice for stiff problems.
+
+### `lobatto_iiic` {#api-lobatto_iiic}
+
+```python
+lobatto_iiic(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Lobatto IIIC (3 stages, order 4): L-stable, strongly damping.
+
+### `sdirk` {#api-sdirk}
+
+```python
+sdirk(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Singly diagonally implicit RK (2 stages, order 3, A-stable).
+
+Each stage is solved on its own, so the cost is far below a fully implicit
+method of the same order.
+
+### `bdf` {#api-bdf}
+
+```python
+bdf(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    order: int = 2,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Backward differentiation formulas of order 1-6.
+
+BDF1-2 are A-stable; BDF3-6 are only stiffly stable, and BDF7+ is unstable
+(the second Dahlquist barrier), which is why the family stops at 6.
+
+### `rosenbrock` {#api-rosenbrock}
+
+```python
+rosenbrock(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Rosenbrock method (2-stage, order 2): linearly implicit.
+
+Uses the Jacobian directly instead of a Newton iteration, so each step
+costs exactly two linear solves.
+
+### `esdirk` {#api-esdirk}
+
+```python
+esdirk(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+ESDIRK: explicit first stage, singly diagonally implicit, order 3.
+
+The order-3 conditions for three stages force `gamma^2 - gamma + 1/6 = 0`;
+of its two roots only `(1 + 1/sqrt(3))/2` gives an A-stable method (the
+other amplifies). It is A-stable but not L-stable -- `R(inf) ~ 0.73` -- so
+for problems needing stiff decay damped hard, prefer `radau_iia` or
+`tr_bdf2`.
+
+### `tr_bdf2` {#api-tr_bdf2}
+
+```python
+tr_bdf2(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    jac=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+TR-BDF2: a trapezoid step followed by a BDF2 step.
+
+Order 2, L-stable, and stiffly accurate -- the scheme used in several
+circuit and multiphysics simulators for exactly those properties.
 
 ## `multistep`
 
@@ -152,16 +1327,388 @@ Linear multistep methods.
 
 These reuse past solution values instead of recomputing stages, so a ``k``-step Adams method costs one right-hand side evaluation per step regardless of order.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `adams_bashforth` | `(f, t_span, y0, n: int = 100, order: int = 4)` | Explicit Adams-Bashforth of order 1-6. |
-| `adams_moulton` | `(f, t_span, y0, n: int = 100, order: int = 4, tol: float = 1e-13, max_iter: int = 50)` | Implicit Adams-Moulton solved by fixed point iteration each step. |
-| `predictor_corrector` | `(f, t_span, y0, n: int = 100, order: int = 4, corrections: int = 1)` | Adams-Bashforth predictor with Adams-Moulton corrector (PECE). |
-| `abm4` | `(f, t_span, y0, n: int = 100)` | Fourth-order Adams-Bashforth-Moulton predictor-corrector. |
-| `nystrom` | `(f, t_span, y0, n: int = 100)` | Nystrom's explicit midpoint multistep method (order 2). |
-| `milne_simpson` | `(f, t_span, y0, n: int = 100)` | Milne-Simpson predictor-corrector (order 4). |
-| `adams_coefficients` | `(order: int, kind: str = 'bashforth')` | Coefficients of the Adams-Bashforth or Adams-Moulton formula. |
-| `variable_step_adams` | `(f, t_span, y0, rtol: float = 1e-08, atol: float = 1e-10, order: int = 4, h0=None, max_steps: int = 200000)` | Adams predictor-corrector with adaptive step size. |
+| [`adams_bashforth`](#api-adams_bashforth) | function | Explicit Adams-Bashforth of order 1-6. |
+| [`adams_moulton`](#api-adams_moulton) | function | Implicit Adams-Moulton solved by fixed point iteration each step. |
+| [`predictor_corrector`](#api-predictor_corrector) | function | Adams-Bashforth predictor with Adams-Moulton corrector (PECE). |
+| [`abm4`](#api-abm4) | function | Fourth-order Adams-Bashforth-Moulton predictor-corrector. |
+| [`nystrom`](#api-nystrom) | function | Nystrom's explicit midpoint multistep method (order 2). |
+| [`milne_simpson`](#api-milne_simpson) | function | Milne-Simpson predictor-corrector (order 4). |
+| [`adams_coefficients`](#api-adams_coefficients) | function | Coefficients of the Adams-Bashforth or Adams-Moulton formula. |
+| [`variable_step_adams`](#api-variable_step_adams) | function | Adams predictor-corrector with adaptive step size. |
+
+### `adams_bashforth` {#api-adams_bashforth}
+
+```python
+adams_bashforth(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    order: int = 4,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Explicit Adams-Bashforth of order 1-6.
+
+### `adams_moulton` {#api-adams_moulton}
+
+```python
+adams_moulton(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    order: int = 4,
+    tol: float = 1e-13,
+    max_iter: int = 50,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Implicit Adams-Moulton solved by fixed point iteration each step.
+
+### `predictor_corrector` {#api-predictor_corrector}
+
+```python
+predictor_corrector(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    order: int = 4,
+    corrections: int = 1,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Adams-Bashforth predictor with Adams-Moulton corrector (PECE).
+
+Gets the accuracy of the implicit formula without solving a nonlinear
+system: the explicit predictor supplies the needed estimate.
+
+### `abm4` {#api-abm4}
+
+```python
+abm4(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Fourth-order Adams-Bashforth-Moulton predictor-corrector.
+
+### `nystrom` {#api-nystrom}
+
+```python
+nystrom(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Nystrom's explicit midpoint multistep method (order 2).
+
+### `milne_simpson` {#api-milne_simpson}
+
+```python
+milne_simpson(
+    f,
+    t_span,
+    y0,
+    n: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Milne-Simpson predictor-corrector (order 4).
+
+Historically important, but only weakly stable: the parasitic root of its
+characteristic polynomial sits on the unit circle, so errors can oscillate.
+
+### `adams_coefficients` {#api-adams_coefficients}
+
+```python
+adams_coefficients(order: int, kind: str = 'bashforth')
+```
+
+Coefficients of the Adams-Bashforth or Adams-Moulton formula.
+
+### `variable_step_adams` {#api-variable_step_adams}
+
+```python
+variable_step_adams(
+    f,
+    t_span,
+    y0,
+    rtol: float = 1e-08,
+    atol: float = 1e-10,
+    order: int = 4,
+    h0=None,
+    max_steps: int = 200000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Adams predictor-corrector with adaptive step size.
+
+The predictor-corrector difference supplies the local error estimate. The
+Adams coefficients assume a constant step, so the history is rebuilt with
+RK4 whenever the step actually changes -- and to keep that from happening
+every step, the size is only revised when the suggested factor leaves
+`[0.5, 2]`.
+
+## `sensitivity`
+
+<small>`quadrivium.ode.sensitivity`</small>
+
+Forward variational equations and checkpointed continuous adjoints.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`SensitivitySolution`](#api-SensitivitySolution) | class | State trajectory and derivatives with respect to parameters and y0. |
+| [`AdjointResult`](#api-AdjointResult) | class | Terminal objective, parameter gradient, and initial-state gradient. |
+| [`solve_ivp_sensitivities`](#api-solve_ivp_sensitivities) | function | Integrate y'=f(t,y,p) together with parameter/initial-state sensitivities. |
+| [`adjoint_sensitivity`](#api-adjoint_sensitivity) | function | Gradient of terminal(y(tf), p) via checkpointed continuous adjoints. |
+
+### `SensitivitySolution` {#api-SensitivitySolution}
+
+```python
+SensitivitySolution(
+    solution: object,
+    sensitivities: object,
+    initial_sensitivities: object = None,
+    sensitivity_final: object = None,
+    initial_sensitivity_final: object = None,
+    augmented_checkpoint: object = None,
+) -> None
+```
+
+State trajectory and derivatives with respect to parameters and y0.
+
+#### `SensitivitySolution.t` {#api-SensitivitySolution.t}
+
+Read-only property.
+
+#### `SensitivitySolution.y` {#api-SensitivitySolution.y}
+
+Read-only property.
+
+#### `SensitivitySolution.y_final` {#api-SensitivitySolution.y_final}
+
+Read-only property.
+
+#### `SensitivitySolution.success` {#api-SensitivitySolution.success}
+
+Read-only property.
+
+### `AdjointResult` {#api-AdjointResult}
+
+```python
+AdjointResult(
+    value: float,
+    gradient: object,
+    initial_gradient: object,
+    y_final: object,
+    checkpoints: int,
+    recomputed_steps: int,
+    success: bool = True,
+) -> None
+```
+
+Terminal objective, parameter gradient, and initial-state gradient.
+
+### `solve_ivp_sensitivities` {#api-solve_ivp_sensitivities}
+
+```python
+solve_ivp_sensitivities(
+    f,
+    t_span,
+    y0,
+    parameters,
+    *,
+    jac_y=None,
+    jac_p=None,
+    initial=False,
+    initial_sensitivity=None,
+    method='dormand_prince',
+    **kwargs,
+)
+```
+
+Integrate y'=f(t,y,p) together with parameter/initial-state sensitivities.
+
+Analytic `jac_y` and `jac_p` are optional; finite differences otherwise
+approximate only the local RHS derivatives. `initial_sensitivity` gives
+dy0/dp when the initial condition itself depends on parameters. Output
+controls apply to the augmented system. Component tolerances may be supplied
+for that complete augmented state. `sensitivity_final` preserves endpoint
+derivatives even when save_at omits the endpoint. `augmented_checkpoint`
+is the underlying variational-system state, not a state-only IVP checkpoint.
+
+### `adjoint_sensitivity` {#api-adjoint_sensitivity}
+
+```python
+adjoint_sensitivity(
+    f,
+    t_span,
+    y0,
+    parameters,
+    terminal,
+    *,
+    terminal_y=None,
+    terminal_p=None,
+    jac_y=None,
+    jac_p=None,
+    checkpoints=16,
+    method='dormand_prince',
+    rtol=1e-08,
+    atol=1e-10,
+    max_step=inf,
+)
+```
+
+Gradient of terminal(y(tf), p) via checkpointed continuous adjoints.
+
+Store `checkpoints+1` states, then replay one segment at a time during the
+backward solve. Memory is O(checkpoints*state + longest segment trajectory),
+rather than O(full forward trajectory). The model must be deterministic.
+This differentiates the continuous IVP, not adaptive step-size decisions.
+Terminal gradients and RHS Jacobians default to local finite differences.
+
+## `stiff`
+
+<small>`quadrivium.ode.stiff`</small>
+
+Adaptive BDF and Radau with reusable simplified-Newton linear solves.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`bdf_adaptive`](#api-bdf_adaptive) | function | Variable-step, variable-order BDF1--5 with step-doubling error estimates. |
+| [`radau_adaptive`](#api-radau_adaptive) | function | Adaptive fifth-order, three-stage Radau IIA with step-doubling control. |
+| [`BandedJacobian`](#api-BandedJacobian) | class | Compact Jacobian: ``bands[upper+i-j, j] == J[i,j]``. |
+
+### `bdf_adaptive` {#api-bdf_adaptive}
+
+```python
+bdf_adaptive(
+    f,
+    t_span,
+    y0,
+    rtol=1e-06,
+    atol=1e-09,
+    jac=None,
+    h0=None,
+    max_step=inf,
+    min_step=1e-14,
+    max_steps=100000,
+    max_order=5,
+    newton_max_iter=12,
+    preconditioner=None,
+    checkpoint=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Variable-step, variable-order BDF1--5 with step-doubling error estimates.
+
+Dense, CSR, LinearOperator, and BandedJacobian Jacobians are accepted.
+Dense systems reuse LU factors; sparse/operator systems use restarted GMRES.
+Newton failures reject the step and refresh the Jacobian. Optional
+`preconditioner(v)` approximately solves the Newton system.
+
+### `radau_adaptive` {#api-radau_adaptive}
+
+```python
+radau_adaptive(
+    f,
+    t_span,
+    y0,
+    rtol=1e-06,
+    atol=1e-09,
+    jac=None,
+    h0=None,
+    max_step=inf,
+    min_step=1e-14,
+    max_steps=100000,
+    newton_max_iter=12,
+    preconditioner=None,
+    checkpoint=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Adaptive fifth-order, three-stage Radau IIA with step-doubling control.
+
+Uses the same component tolerances, structured Jacobians, output controls,
+restart checkpoints, and Newton failure recovery as `bdf_adaptive`.
+
+### `BandedJacobian` {#api-BandedJacobian}
+
+```python
+BandedJacobian(bands, lower, upper)
+```
+
+Compact Jacobian: `bands[upper+i-j, j] == J[i,j]`.
+
+Matrix-vector products use O(n*(lower+upper+1)) storage/work; stiff solvers
+use restarted GMRES without forming a dense matrix.
+
+#### `BandedJacobian.matvec` {#api-BandedJacobian.matvec}
+
+```python
+BandedJacobian.matvec(self, v)
+```
+
+#### `BandedJacobian.__matmul__` {#api-BandedJacobian.__matmul__}
+
+```python
+BandedJacobian.__matmul__(self, v)
+```
 
 ## `symplectic`
 
@@ -171,16 +1718,227 @@ Geometric integrators for Hamiltonian and separable systems.
 
 Symplectic methods preserve the phase-space volume form, so the energy error stays bounded over exponentially long times instead of drifting -- which is why they dominate in celestial mechanics and molecular dynamics.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `symplectic_euler` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Symplectic (semi-implicit) Euler: order 1, exactly symplectic. |
-| `velocity_verlet` | `(force, t_span, q0, v0, n: int = 1000, mass=1.0)` | Velocity Verlet: order 2, symplectic and time-reversible. |
-| `position_verlet` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Position Verlet: the drift-kick-drift splitting, order 2. |
-| `leapfrog` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Leapfrog (kick-drift-kick), order 2 and symplectic. |
-| `stormer_verlet` | `(force, t_span, q0, v0, n: int = 1000, mass=1.0)` | Stormer-Verlet, in the velocity form. |
-| `ruth3` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Ruth's third-order symplectic integrator. |
-| `yoshida4` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Yoshida's fourth-order method: three Verlet steps composed. |
-| `forest_ruth` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Forest-Ruth fourth-order symplectic integrator. |
-| `pefrl` | `(dHdq, dHdp, t_span, q0, p0, n: int = 1000)` | Position-extended Forest-Ruth-like: order 4 with a small error constant. |
-| `hamiltonian_flow` | `(H_q, H_p, t_span, q0, p0, n: int = 1000, method: str = 'yoshida4')` | Integrate Hamilton's equations with the chosen symplectic method. |
-| `energy_drift` | `(solution, energy)` | Relative energy drift along a trajectory: ``max \|E(t) - E(0)\| / \|E(0)\|``. |
+| [`symplectic_euler`](#api-symplectic_euler) | function | Symplectic (semi-implicit) Euler: order 1, exactly symplectic. |
+| [`velocity_verlet`](#api-velocity_verlet) | function | Velocity Verlet: order 2, symplectic and time-reversible. |
+| [`position_verlet`](#api-position_verlet) | function | Position Verlet: the drift-kick-drift splitting, order 2. |
+| [`leapfrog`](#api-leapfrog) | function | Leapfrog (kick-drift-kick), order 2 and symplectic. |
+| [`stormer_verlet`](#api-stormer_verlet) | function | Stormer-Verlet, in the velocity form. |
+| [`ruth3`](#api-ruth3) | function | Ruth's third-order symplectic integrator. |
+| [`yoshida4`](#api-yoshida4) | function | Yoshida's fourth-order method: three Verlet steps composed. |
+| [`forest_ruth`](#api-forest_ruth) | function | Forest-Ruth fourth-order symplectic integrator. |
+| [`pefrl`](#api-pefrl) | function | Position-extended Forest-Ruth-like: order 4 with a small error constant. |
+| [`hamiltonian_flow`](#api-hamiltonian_flow) | function | Integrate Hamilton's equations with the chosen symplectic method. |
+| [`energy_drift`](#api-energy_drift) | function | Relative energy drift along a trajectory: ``max \|E(t) - E(0)\| / \|E(0)\|``. |
+
+### `symplectic_euler` {#api-symplectic_euler}
+
+```python
+symplectic_euler(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Symplectic (semi-implicit) Euler: order 1, exactly symplectic.
+
+### `velocity_verlet` {#api-velocity_verlet}
+
+```python
+velocity_verlet(
+    force,
+    t_span,
+    q0,
+    v0,
+    n: int = 1000,
+    mass=1.0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Velocity Verlet: order 2, symplectic and time-reversible.
+
+`force(q)` returns the force (that is, `-dV/dq`).
+
+### `position_verlet` {#api-position_verlet}
+
+```python
+position_verlet(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Position Verlet: the drift-kick-drift splitting, order 2.
+
+### `leapfrog` {#api-leapfrog}
+
+```python
+leapfrog(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Leapfrog (kick-drift-kick), order 2 and symplectic.
+
+### `stormer_verlet` {#api-stormer_verlet}
+
+```python
+stormer_verlet(
+    force,
+    t_span,
+    q0,
+    v0,
+    n: int = 1000,
+    mass=1.0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Stormer-Verlet, in the velocity form.
+
+### `ruth3` {#api-ruth3}
+
+```python
+ruth3(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Ruth's third-order symplectic integrator.
+
+### `yoshida4` {#api-yoshida4}
+
+```python
+yoshida4(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Yoshida's fourth-order method: three Verlet steps composed.
+
+### `forest_ruth` {#api-forest_ruth}
+
+```python
+forest_ruth(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Forest-Ruth fourth-order symplectic integrator.
+
+### `pefrl` {#api-pefrl}
+
+```python
+pefrl(
+    dHdq,
+    dHdp,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Position-extended Forest-Ruth-like: order 4 with a small error constant.
+
+### `hamiltonian_flow` {#api-hamiltonian_flow}
+
+```python
+hamiltonian_flow(
+    H_q,
+    H_p,
+    t_span,
+    q0,
+    p0,
+    n: int = 1000,
+    method: str = 'yoshida4',
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Integrate Hamilton's equations with the chosen symplectic method.
+
+### `energy_drift` {#api-energy_drift}
+
+```python
+energy_drift(solution, energy)
+```
+
+Relative energy drift along a trajectory: `max |E(t) - E(0)| / |E(0)|`.

@@ -1,7 +1,8 @@
 """Run the doctests in the package docstrings and in the documentation.
 
-Documentation that is never executed drifts silently out of date, so every
-example on the site is a doctest and every one of them runs here.  The two
+Documentation that is never executed drifts silently out of date, so the
+hand-written pycon examples run here. Ordinary code and shell fences require
+separate verification. The two
 generated parts of the documentation -- the API reference and the copy of the
 changelog -- are regenerated and compared, so they cannot describe an API the
 package no longer has.
@@ -42,8 +43,9 @@ FENCED_BLOCK = re.compile(r"^```.*?^```", re.M | re.S)
 # results and convert NumPy scalars; these two flags absorb what is left.
 OPTIONFLAGS = doctest.NORMALIZE_WHITESPACE | doctest.ELLIPSIS
 
-# The generated reference pages are tables of signatures with no examples in
-# them; running doctest over 836 entries would only cost time.
+# Generated reference pages include source docstrings and examples; source
+# examples are maintained with the package, while this suite exercises the
+# hand-written documentation and checks generated output for freshness.
 GENERATED_DIRS = {"api"}
 
 
@@ -169,6 +171,29 @@ class TestFigures(unittest.TestCase):
 
 
 class TestDocumentationIsCurrent(unittest.TestCase):
+    def test_reference_symbols_have_distinct_working_anchors(self):
+        """Case-distinct APIs must link to distinct entries, not the first match."""
+        for page in sorted((DOCS / "api").glob("*.md")):
+            source = page.read_text(encoding="utf-8")
+            anchors = re.findall(r"\{#(api-[\w-]+)\}", source)
+            with self.subTest(page=page.name):
+                self.assertEqual(len(anchors), len(set(anchors)))
+                links = re.findall(r"\]\(#(api-[\w-]+)\)", source)
+                self.assertTrue(set(links).issubset(anchors))
+
+    def test_reference_is_portable_and_includes_inherited_interfaces(self):
+        """References need stable defaults and the methods users actually call."""
+        for page in sorted((DOCS / "api").glob("*.md")):
+            with self.subTest(page=page.name):
+                self.assertNotRegex(page.read_text(encoding="utf-8"),
+                                    r"<[^>]* at 0x[0-9a-fA-F]+>")
+        for page_name, member in (("transforms", "FIRFilter.process"),
+                                  ("stochastic", "Normal.cdf"),
+                                  ("linalg", "CSRMatrix.todense")):
+            with self.subTest(interface=member):
+                source = (DOCS / "api" / f"{page_name}.md").read_text(encoding="utf-8")
+                self.assertIn(f"#### `{member}`", source)
+
     def test_generated_pages_match_the_package(self):
         """``tools/gen_docs.py`` output is checked in and must be current."""
         result = subprocess.run(

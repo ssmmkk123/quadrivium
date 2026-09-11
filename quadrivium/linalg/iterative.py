@@ -8,12 +8,15 @@ or any object exposing ``@`` / ``matvec``, so the sparse types in
 
 from __future__ import annotations
 
+from ._history import ResidualHistory, monitor
+
 from .. import numeric as np
 
 from ..core.exceptions import ConvergenceError, DimensionError
 from ..core.types import IterationResult
 from ..core.utils import as_vector, check_square
 from .direct import forward_substitution, back_substitution
+from .operators import aslinearoperator
 
 __all__ = [
     "jacobi_iteration",
@@ -61,15 +64,15 @@ def _stationary(A, b, x0, tol, max_iter, step, name):
         raise DimensionError(f"A is {n}x{n} but b has length {b.size}")
     x = as_vector(x0).copy() if x0 is not None else np.zeros(n)
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = []
+    residuals = ResidualHistory([])
     # A divergent splitting overflows rather than raising, so errors are muted
     # here and detected through the non-finite residual test below.
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         for k in range(1, max_iter + 1):
             x = step(A, b, x)
             r = float(np.linalg.norm(b - A @ x) / bnorm)
-            residuals.append(r)
-            if not np.isfinite(r) or r > 1e12 * (residuals[0] if residuals else 1.0):
+            residuals.append(r, x=x, iteration=k)
+            if not np.isfinite(r) or r > 1e12 * (residuals.first if residuals.first is not None else 1.0):
                 return IterationResult(x, k, False, residuals, name,
                                        "iteration diverged: spectral radius of the "
                                        "iteration matrix is >= 1")
@@ -171,7 +174,7 @@ def chebyshev_iteration(A, b, lmin=None, lmax=None, x0=None, tol: float = 1e-10,
     x = as_vector(x0).copy() if x0 is not None else np.zeros(n)
     r = b - A @ x
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = []
+    residuals = ResidualHistory([])
     p = np.zeros(n)
     alpha = 0.0
     for k in range(1, max_iter + 1):
@@ -189,7 +192,7 @@ def chebyshev_iteration(A, b, lmin=None, lmax=None, x0=None, tol: float = 1e-10,
         x = x + alpha * p
         r = b - A @ x
         res = np.linalg.norm(r) / bnorm
-        residuals.append(res)
+        residuals.append(res, x=x, iteration=k)
         if res < tol:
             return IterationResult(x, k, True, residuals, "chebyshev", "converged")
     return IterationResult(x, max_iter, False, residuals, "chebyshev",
@@ -205,11 +208,11 @@ def steepest_descent(A, b, x0=None, tol: float = 1e-10, max_iter: int = 10000):
     b = as_vector(b)
     x = as_vector(x0).copy() if x0 is not None else np.zeros(A.shape[0])
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = []
+    residuals = ResidualHistory([])
     for k in range(1, max_iter + 1):
         r = b - A @ x
         res = np.linalg.norm(r) / bnorm
-        residuals.append(res)
+        residuals.append(res, x=x, iteration=k)
         if res < tol:
             return IterationResult(x, k, True, residuals, "steepest_descent", "converged")
         Ar = A @ r
@@ -232,7 +235,7 @@ def conjugate_gradient(A, b, x0=None, tol: float = 1e-10, max_iter=None):
     p = r.copy()
     rs = r @ r
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = [np.sqrt(rs) / bnorm]
+    residuals = ResidualHistory([np.sqrt(rs) / bnorm])
     if residuals[0] < tol:
         return IterationResult(x, 0, True, residuals, "cg", "initial guess sufficed")
     for k in range(1, max_iter + 1):
@@ -245,7 +248,7 @@ def conjugate_gradient(A, b, x0=None, tol: float = 1e-10, max_iter=None):
         x = x + alpha * p
         r = r - alpha * Ap
         rs_new = r @ r
-        residuals.append(np.sqrt(rs_new) / bnorm)
+        residuals.append(np.sqrt(rs_new) / bnorm, x=x, iteration=k)
         if residuals[-1] < tol:
             return IterationResult(x, k, True, residuals, "cg", "converged")
         p = r + (rs_new / rs) * p
@@ -260,7 +263,7 @@ def preconditioned_cg(A, b, M=None, x0=None, tol: float = 1e-10, max_iter=None):
     b = as_vector(b)
     n = b.size
     if M is None:
-        d = np.diag(np.asarray(A, dtype=float))
+        d = A.diagonal() if hasattr(A, "diagonal") else (np.ones(n) if hasattr(A, "matvec") else np.diag(np.asarray(A, dtype=float)))
         d = np.where(d == 0, 1.0, d)
         M = lambda v: v / d
     elif not callable(M):
@@ -273,7 +276,9 @@ def preconditioned_cg(A, b, M=None, x0=None, tol: float = 1e-10, max_iter=None):
     p = z.copy()
     rz = r @ z
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = [np.linalg.norm(r) / bnorm]
+    residuals = ResidualHistory([np.linalg.norm(r) / bnorm])
+    if residuals[-1] <= tol:
+        return IterationResult(x, 0, True, residuals, "pcg", "initial guess sufficed")
     for k in range(1, max_iter + 1):
         Ap = matvec(p)
         pAp = p @ Ap
@@ -282,7 +287,7 @@ def preconditioned_cg(A, b, M=None, x0=None, tol: float = 1e-10, max_iter=None):
         alpha = rz / pAp
         x = x + alpha * p
         r = r - alpha * Ap
-        residuals.append(np.linalg.norm(r) / bnorm)
+        residuals.append(np.linalg.norm(r) / bnorm, x=x, iteration=k)
         if residuals[-1] < tol:
             return IterationResult(x, k, True, residuals, "pcg", "converged")
         z = M(r)
@@ -303,7 +308,7 @@ def minres(A, b, x0=None, tol: float = 1e-10, max_iter=None):
     r = b - matvec(x)
     beta = np.linalg.norm(r)
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = [beta / bnorm]
+    residuals = ResidualHistory([beta / bnorm])
     if beta < tol * bnorm:
         return IterationResult(x, 0, True, residuals, "minres", "initial guess sufficed")
     v_prev = np.zeros(n)
@@ -328,7 +333,7 @@ def minres(A, b, x0=None, tol: float = 1e-10, max_iter=None):
         w_new = (v - d0 * w - dm * w_prev) / d2 if d2 != 0 else np.zeros(n)
         x = x + c_new * eta * w_new
         eta = -s_new * eta
-        residuals.append(abs(eta) / bnorm)
+        residuals.append(abs(eta) / bnorm, x=x, iteration=k)
         if residuals[-1] < tol:
             return IterationResult(x, k, True, residuals, "minres", "converged")
         if beta_next < 1e-14:
@@ -347,17 +352,20 @@ def gmres(A, b, x0=None, tol: float = 1e-10, restart=None, max_iter=None, M=None
     matvec = _operator(A)
     b = as_vector(b)
     n = b.size
-    m = restart if restart is not None else min(n, 50)
+    m = restart if restart is not None else min(max(n, 1), 50)
+    if not isinstance(m, int) or m <= 0:
+        raise ValueError("restart must be a positive integer")
+    m = min(m, max(n, 1))
     max_iter = max_iter if max_iter is not None else 10 * n
     prec = M if callable(M) else (lambda v: v)
     x = as_vector(x0).copy() if x0 is not None else np.zeros(n)
     bnorm = np.linalg.norm(prec(b)) or 1.0
-    residuals = []
+    residuals = ResidualHistory([])
     total = 0
     while total < max_iter:
         r = prec(b - matvec(x))
         beta = np.linalg.norm(r)
-        residuals.append(beta / bnorm)
+        residuals.append(beta / bnorm, x=x, iteration=total)
         if beta / bnorm < tol:
             return IterationResult(x, total, True, residuals, "gmres", "converged")
         V = np.zeros((n, m + 1))
@@ -390,7 +398,9 @@ def gmres(A, b, x0=None, tol: float = 1e-10, restart=None, max_iter=None, M=None
             H[k + 1, k] = 0.0
             g[k + 1] = -sn[k] * g[k]
             g[k] = cs[k] * g[k]
-            residuals.append(abs(g[k + 1]) / bnorm)
+            residuals.append(abs(g[k + 1]) / bnorm,
+                             x=lambda: x + V[:, :k + 1] @ back_substitution(
+                                 H[:k + 1, :k + 1], g[:k + 1]), iteration=total)
             if abs(g[k + 1]) / bnorm < tol or total >= max_iter:
                 break
         y = back_substitution(H[:k_used, :k_used], g[:k_used])
@@ -412,7 +422,7 @@ def bicg(A, b, x0=None, tol: float = 1e-10, max_iter=None):
     r_hat = r.copy()
     p, p_hat = r.copy(), r_hat.copy()
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = [np.linalg.norm(r) / bnorm]
+    residuals = ResidualHistory([np.linalg.norm(r) / bnorm])
     rho = r_hat @ r
     for k in range(1, max_iter + 1):
         if abs(rho) < 1e-300:
@@ -422,7 +432,7 @@ def bicg(A, b, x0=None, tol: float = 1e-10, max_iter=None):
         x = x + alpha * p
         r = r - alpha * Ap
         r_hat = r_hat - alpha * (A.T @ p_hat)
-        residuals.append(np.linalg.norm(r) / bnorm)
+        residuals.append(np.linalg.norm(r) / bnorm, x=x, iteration=k)
         if residuals[-1] < tol:
             return IterationResult(x, k, True, residuals, "bicg", "converged")
         rho_new = r_hat @ r
@@ -445,7 +455,7 @@ def bicgstab(A, b, x0=None, tol: float = 1e-10, max_iter=None, M=None):
     r = b - matvec(x)
     r0 = r.copy()
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = [np.linalg.norm(r) / bnorm]
+    residuals = ResidualHistory([np.linalg.norm(r) / bnorm])
     rho = alpha = omega = 1.0
     v = p = np.zeros(n)
     for k in range(1, max_iter + 1):
@@ -463,7 +473,7 @@ def bicgstab(A, b, x0=None, tol: float = 1e-10, max_iter=None, M=None):
         s = r - alpha * v
         if np.linalg.norm(s) / bnorm < tol:
             x = x + alpha * p_hat
-            residuals.append(np.linalg.norm(s) / bnorm)
+            residuals.append(np.linalg.norm(s) / bnorm, x=x, iteration=k)
             return IterationResult(x, k, True, residuals, "bicgstab", "converged")
         s_hat = prec(s)
         t = matvec(s_hat)
@@ -472,7 +482,7 @@ def bicgstab(A, b, x0=None, tol: float = 1e-10, max_iter=None, M=None):
         x = x + alpha * p_hat + omega * s_hat
         r = s - omega * t
         rho = rho_new
-        residuals.append(np.linalg.norm(r) / bnorm)
+        residuals.append(np.linalg.norm(r) / bnorm, x=x, iteration=k)
         if residuals[-1] < tol:
             return IterationResult(x, k, True, residuals, "bicgstab", "converged")
     return IterationResult(x, max_iter, False, residuals, "bicgstab",
@@ -489,7 +499,7 @@ def cgs(A, b, x0=None, tol: float = 1e-10, max_iter=None):
     r = b - A @ x
     r0 = r.copy()
     bnorm = np.linalg.norm(b) or 1.0
-    residuals = [np.linalg.norm(r) / bnorm]
+    residuals = ResidualHistory([np.linalg.norm(r) / bnorm])
     rho = 1.0
     p = u = q = np.zeros(n)
     for k in range(1, max_iter + 1):
@@ -512,7 +522,7 @@ def cgs(A, b, x0=None, tol: float = 1e-10, max_iter=None):
         x = x + alpha * (u + q)
         r = r - alpha * (A @ (u + q))
         rho = rho_new
-        residuals.append(np.linalg.norm(r) / bnorm)
+        residuals.append(np.linalg.norm(r) / bnorm, x=x, iteration=k)
         if residuals[-1] < tol:
             return IterationResult(x, k, True, residuals, "cgs", "converged")
     return IterationResult(x, max_iter, False, residuals, "cgs",
@@ -520,75 +530,95 @@ def cgs(A, b, x0=None, tol: float = 1e-10, max_iter=None):
 
 
 def cgnr(A, b, x0=None, tol: float = 1e-10, max_iter=None):
-    """CG on the normal equations ``A'A x = A'b`` (works for rectangular ``A``)."""
-    A = np.asarray(A, dtype=float)
+    """CG on the normal equations, accepting sparse and matrix-free maps."""
+    A = aslinearoperator(A)
     b = as_vector(b)
-    n = A.shape[1]
+    m, n = A.shape
+    if b.size != m:
+        raise DimensionError("right-hand side has incompatible shape")
     max_iter = max_iter if max_iter is not None else 10 * n
     x = as_vector(x0).copy() if x0 is not None else np.zeros(n)
-    r = b - A @ x
-    z = A.T @ r
+    r = b - A.matvec(x)
+    z = A.rmatvec(r)
     p = z.copy()
-    zz = z @ z
-    bnorm = np.linalg.norm(A.T @ b) or 1.0
-    residuals = [np.sqrt(zz) / bnorm]
+    zz = float(z @ z)
+    bnorm = np.linalg.norm(A.rmatvec(b)) or 1.0
+    residuals = ResidualHistory([np.sqrt(zz) / bnorm])
+    if residuals[-1] <= tol:
+        return IterationResult(x, 0, True, residuals, "cgnr", "initial guess sufficed")
     for k in range(1, max_iter + 1):
-        w = A @ p
-        ww = w @ w
+        w = A.matvec(p)
+        ww = float(w @ w)
         if ww < 1e-300:
-            break
+            return IterationResult(x, k - 1, False, residuals, "cgnr", "Krylov breakdown")
         alpha = zz / ww
-        x = x + alpha * p
-        r = r - alpha * w
-        z = A.T @ r
-        zz_new = z @ z
-        residuals.append(np.sqrt(zz_new) / bnorm)
-        if residuals[-1] < tol:
+        x += alpha * p
+        r -= alpha * w
+        z = A.rmatvec(r)
+        zz_new = float(z @ z)
+        residuals.append(np.sqrt(zz_new) / bnorm, x=x, iteration=k)
+        if residuals[-1] <= tol:
             return IterationResult(x, k, True, residuals, "cgnr", "converged")
         p = z + (zz_new / zz) * p
         zz = zz_new
-    return IterationResult(x, max_iter, False, residuals, "cgnr",
-                           "maximum iterations reached")
+    return IterationResult(x, max_iter, False, residuals, "cgnr", "maximum iterations reached")
 
 
 def lsqr(A, b, damp: float = 0.0, tol: float = 1e-12, max_iter=None):
-    """LSQR for least squares ``min ||Ax - b||`` with optional Tikhonov damping."""
-    A = np.asarray(A, dtype=float)
+    """Golub-Kahan LSQR for sparse/matrix-free least squares.
+
+    Damping solves ``min ||A x-b||² + damp² ||x||²``. Convergence is checked
+    against the actual normal residual, including inconsistent systems, rather
+    than assuming the data residual can reach zero.
+    """
+    A = aslinearoperator(A)
     b = as_vector(b)
     m, n = A.shape
-    max_iter = max_iter if max_iter is not None else 4 * n
+    if b.size != m:
+        raise DimensionError("right-hand side has incompatible shape")
+    if damp < 0 or not np.isfinite(damp) or tol <= 0:
+        raise ValueError("damp must be finite and nonnegative; tol must be positive")
+    max_iter = max_iter if max_iter is not None else max(1, 4 * n)
     x = np.zeros(n)
-    beta = np.linalg.norm(b)
-    u = b / beta if beta > 0 else b.copy()
-    v = A.T @ u
-    alpha = np.linalg.norm(v)
-    v = v / alpha if alpha > 0 else v
+    beta = float(np.linalg.norm(b))
+    u = b / beta if beta else b.copy()
+    v = A.rmatvec(u)
+    alpha = float(np.linalg.norm(v))
+    normal_scale = float(np.linalg.norm(A.rmatvec(b))) or 1.0
+    residuals = ResidualHistory([])
+    if alpha == 0 or beta == 0:
+        return IterationResult(x, 0, True, [0.0], "lsqr", "initial guess sufficed")
+    v /= alpha
     w = v.copy()
-    phi_bar, rho_bar = beta, alpha
-    residuals = []
+    phibar, rhobar = beta, alpha
     for k in range(1, max_iter + 1):
-        u = A @ v - alpha * u
-        beta = np.linalg.norm(u)
-        if beta > 0:
-            u = u / beta
-        v = A.T @ u - beta * v
-        alpha = np.linalg.norm(v)
-        if alpha > 0:
-            v = v / alpha
-        rho_damped = np.sqrt(rho_bar**2 + beta**2 + damp**2)
-        c = rho_bar / rho_damped
-        s = beta / rho_damped
-        theta = s * alpha
-        rho_bar = -c * alpha
-        phi = c * phi_bar
-        phi_bar = s * phi_bar
-        x = x + (phi / rho_damped) * w
-        w = v - (theta / rho_damped) * w
-        residuals.append(abs(phi_bar))
-        if abs(phi_bar) < tol * (np.linalg.norm(b) or 1.0):
+        u = A.matvec(v) - alpha * u
+        beta = float(np.linalg.norm(u))
+        if beta:
+            u /= beta
+        v = A.rmatvec(u) - beta * v
+        alpha = float(np.linalg.norm(v))
+        if alpha:
+            v /= alpha
+        # Two rotations: remove the regularizer, then the bidiagonal subdiagonal.
+        rhobar1 = float(np.hypot(rhobar, damp))
+        cs1 = rhobar / rhobar1 if rhobar1 else 1.0
+        phibar *= cs1
+        rho = float(np.hypot(rhobar1, beta))
+        if rho == 0:
+            break
+        cs, sn = rhobar1 / rho, beta / rho
+        theta, rhobar = sn * alpha, -cs * alpha
+        phi, phibar = cs * phibar, sn * phibar
+        x += (phi / rho) * w
+        w = v - (theta / rho) * w
+        r = b - A.matvec(x)
+        normal = A.rmatvec(r) - damp * damp * x
+        error = float(np.linalg.norm(normal)) / normal_scale
+        residuals.append(error, x=x, iteration=k)
+        if error <= tol:
             return IterationResult(x, k, True, residuals, "lsqr", "converged")
-    return IterationResult(x, max_iter, False, residuals, "lsqr",
-                           "maximum iterations reached")
+    return IterationResult(x, max_iter, False, residuals, "lsqr", "maximum iterations reached")
 
 
 # --------------------------------------------------------------------------
@@ -596,13 +626,32 @@ def lsqr(A, b, damp: float = 0.0, tol: float = 1e-12, max_iter=None):
 # --------------------------------------------------------------------------
 def jacobi_preconditioner(A):
     """Diagonal (Jacobi) preconditioner as a callable applying ``M^-1``."""
-    d = np.diag(np.asarray(A, dtype=float)).copy()
+    d = A.diagonal().copy() if hasattr(A, "diagonal") else np.diag(np.asarray(A, dtype=float)).copy()
     d = np.where(d == 0.0, 1.0, d)
     return lambda v: v / d
 
 
 def ssor_preconditioner(A, omega: float = 1.0):
     """SSOR preconditioner as a callable applying ``M^-1``."""
+    if not 0 < omega < 2:
+        raise ValueError("SSOR requires 0 < omega < 2")
+    from .sparse import _SparseBase, _row_dicts, _rows_to_csr, sparse_triangular_solve
+    if isinstance(A, _SparseBase):
+        if A.shape[0] != A.shape[1]:
+            raise DimensionError("SSOR requires a square matrix")
+        rows = _row_dicts(A)
+        diagonal = np.array([row.get(i, 0.0) for i, row in enumerate(rows)])
+        if np.any(diagonal == 0):
+            raise ZeroDivisionError("SSOR requires a zero-free diagonal")
+        lower = _rows_to_csr([{**{j: v for j, v in row.items() if j < i}, i: diagonal[i] / omega}
+                              for i, row in enumerate(rows)], A.shape)
+        upper = _rows_to_csr([{**{j: v for j, v in row.items() if j > i}, i: diagonal[i] / omega}
+                              for i, row in enumerate(rows)], A.shape)
+        def apply_sparse(v):
+            y = sparse_triangular_solve(lower, v)
+            scaled = diagonal * y if y.ndim == 1 else diagonal[:, None] * y
+            return sparse_triangular_solve(upper, ((2.0 - omega) / omega) * scaled, lower=False)
+        return apply_sparse
     A = check_square(A)
     D = np.diag(np.diag(A))
     L = np.tril(A, -1)
@@ -611,7 +660,7 @@ def ssor_preconditioner(A, omega: float = 1.0):
 
     def apply(v):
         y = forward_substitution(M1, v)
-        y = (omega / (2.0 - omega)) * (np.diag(A) * y)
+        y = ((2.0 - omega) / omega) * (np.diag(A) * y)
         return back_substitution(M2, y)
 
     return apply
@@ -619,6 +668,9 @@ def ssor_preconditioner(A, omega: float = 1.0):
 
 def incomplete_cholesky(A, drop_tol: float = 0.0):
     """Zero-fill incomplete Cholesky ``A ~ L L'`` respecting the sparsity of ``A``."""
+    from .sparse import _SparseBase, _sparse_ichol
+    if isinstance(A, _SparseBase):
+        return _sparse_ichol(A, drop_tol)
     A = check_square(A)
     n = A.shape[0]
     L = np.zeros((n, n))
@@ -639,6 +691,9 @@ def incomplete_cholesky(A, drop_tol: float = 0.0):
 
 def ilu0(A):
     """Zero-fill incomplete LU; returns ``(L, U)`` with the sparsity of ``A``."""
+    from .sparse import _SparseBase, _sparse_ilu0
+    if isinstance(A, _SparseBase):
+        return _sparse_ilu0(A)
     A = check_square(A)
     n = A.shape[0]
     M = A.astype(float).copy()
@@ -678,3 +733,8 @@ def optimal_sor_omega(A) -> float:
     if rho >= 1.0:
         return 1.0
     return 2.0 / (1.0 + np.sqrt(1.0 - rho**2))
+
+
+# Retention is controlled during iteration, never by dropping history afterward.
+for _name in ['chebyshev_iteration', 'steepest_descent', 'conjugate_gradient', 'preconditioned_cg', 'minres', 'gmres', 'bicg', 'bicgstab', 'cgs', 'cgnr', 'lsqr', 'jacobi_iteration', 'gauss_seidel', 'sor', 'ssor', 'richardson']:
+    globals()[_name] = monitor(globals()[_name])

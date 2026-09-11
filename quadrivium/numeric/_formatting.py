@@ -148,7 +148,7 @@ def _formatter(array):
         return _BoolFormat(values)
     if kind == "int64":
         return _IntFormat(values)
-    if kind == "complex128":
+    if kind in ("complex128", "complex64"):
         return _ComplexFormat(values)
     return _FloatFormat([float(v) for v in values])
 
@@ -220,4 +220,6 @@ def format_array(array, is_repr):
         return body
     # A summarised repr no longer shows the full extent, so NumPy states it.
     suffix = f", shape={array.shape}" if summarise else ""
+    if array.dtype.name in ("float32", "complex64"):
+        suffix += f", dtype={array.dtype.name}"
     return f"array({body}{suffix})"

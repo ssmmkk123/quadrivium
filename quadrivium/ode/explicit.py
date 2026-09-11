@@ -14,6 +14,7 @@ from .. import _accel
 
 from ..core.exceptions import DimensionError, StepSizeError
 from ..core.types import ODESolution
+from ..core.storage import OutputRecorder, output_control, _OPTIONS
 from ..core.utils import CountedFunction, as_vector
 
 __all__ = [
@@ -55,21 +56,29 @@ def _fixed_step(f, t_span, y0, n, stepper, name):
     y0 = as_vector(y0)
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.empty(n + 1)
-    ys = np.empty((n + 1, y0.size))
-    dys = np.empty((n + 1, y0.size))
-    ts[0], ys[0] = t0, y0
+    if n < 1:
+        raise ValueError("n must be a positive integer")
+    recorder = OutputRecorder.current((t0, tf))
     y = y0.copy()
     t = t0
+    k1 = fc(t, y)
+    recorder.append(t, y, k1)
+    completed = 0
     for i in range(n):
-        k1 = fc(t, y)
-        dys[i] = k1
+        if recorder.stopped:
+            break
         y = stepper(fc, t, y, h, k1)
         t = t0 + (i + 1) * h
-        ts[i + 1], ys[i + 1] = t, y
-    dys[n] = fc(t, y)
-    return ODESolution(ts, ys, name, n, n, 0, fc.calls, True, "completed",
-                       None, dys)
+        k1 = fc(t, y)
+        recorder.append(t, y, k1)
+        completed += 1
+    ts, ys, dys = recorder.finish()
+    result = ODESolution(ts, ys, name, completed, completed, 0, fc.calls,
+                         t == tf, "callback stopped" if recorder.stopped else "completed",
+                         None, dys)
+    result.checkpoint = recorder.checkpoint(name, {"h_next": h})
+    result._final_state = result.checkpoint.y
+    return result
 
 
 def euler(f, t_span, y0, n: int = 100):
@@ -247,9 +256,11 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
         raise ValueError("t_span must have finite endpoints and length")
     if y.size == 0 or not np.all(np.isfinite(y)):
         raise ValueError("y0 must be nonempty and finite")
-    rtol, atol = float(rtol), float(atol)
-    if not np.all(np.isfinite([rtol, atol])) or min(rtol, atol) < 0 or rtol + atol == 0:
-        raise ValueError("rtol and atol must be finite, nonnegative, and not both zero")
+    rtol = np.broadcast_to(np.asarray(rtol, dtype=float), y.shape)
+    atol = np.broadcast_to(np.asarray(atol, dtype=float), y.shape)
+    if (not np.all(np.isfinite(rtol)) or not np.all(np.isfinite(atol))
+            or np.any(rtol < 0) or np.any(atol < 0) or np.any(rtol + atol <= 0)):
+        raise ValueError("tolerances must be finite and nonnegative with positive scale")
     max_step, min_step = float(max_step), float(min_step)
     if np.isnan(max_step) or max_step <= 0 or not np.isfinite(min_step) or min_step <= 0:
         raise ValueError("step bounds must be positive; min_step must be finite")
@@ -272,7 +283,7 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
     fc = CountedFunction(rhs)
 
     fast = _accel.kernel("adaptive_rk")
-    if fast is not None:
+    if fast is not None and not _OPTIONS.get() and np.all(rtol == rtol[0]) and np.all(atol == atol[0]):
         # The stage assembly and the controller move to the compiled kernel;
         # ``f`` stays a Python callable and is called back per stage.
         a_flat = np.zeros((s, s))
@@ -282,7 +293,7 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             ts, ys, dys, accepted, rejected, calls = fast(
                 fc, np.asarray(c, dtype=float), a_flat.ravel(),
                 np.asarray(b_hi, dtype=float), np.asarray(b_lo, dtype=float),
-                float(order), t0, tf, y, float(rtol), float(atol),
+                float(order), t0, tf, y, float(rtol[0]), float(atol[0]),
                 None if h0 is None else float(h0), float(max_step),
                 float(min_step), int(max_steps),
             )
@@ -290,19 +301,25 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             if not str(exc).startswith("stepsize:"):
                 raise
             raise StepSizeError(str(exc)[len("stepsize:"):]) from None
-        return _rk_solution(ts, ys, dys, tableau, accepted, rejected, calls,
-                            tf, dense_output)
+        result = _rk_solution(ts, ys, dys, tableau, accepted, rejected, calls,
+                              tf, dense_output)
+        from ..core.storage import SolverCheckpoint
+        result.checkpoint = SolverCheckpoint(float(ts[-1]), ys[-1].copy(), tableau)
+        result._final_state = result.checkpoint.y
+        return result
 
     direction = 1.0 if tf >= t0 else -1.0
     t = t0
     h = min(max(abs(tf - t0) / 100.0 if h0 is None else abs(h0), min_step), max_step) * direction
-    ts, ys, dys = [t], [y.copy()], []
+    recorder = OutputRecorder.current((t0, tf))
+    f_start = fc(t, y)
+    recorder.append(t, y, f_start)
     accepted = rejected = 0
     err_prev = 1.0
     k = np.empty((s, y.size))
     acc_hi, acc_lo = np.empty_like(y), np.empty_like(y)
     for _ in range(max_steps):
-        if (t - tf) * direction >= 0:
+        if (t - tf) * direction >= 0 or recorder.stopped:
             break
         if abs(h) > abs(tf - t):
             h = tf - t
@@ -313,7 +330,7 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             for j in range(len(A[i])):
                 if A[i][j] != 0.0:
                     yi += h * A[i][j] * k[j]
-            k[i] = fc(t + c[i] * h, yi)
+            k[i] = f_start if i == 0 else fc(t + c[i] * h, yi)
         acc_hi.fill(0.0)
         acc_lo.fill(0.0)
         for i in range(s):
@@ -329,11 +346,10 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             # k[0] is f at the *start* of this step, so it is the slope
             # belonging to the point already in ``ys``.  Recording it costs
             # nothing and lifts dense output from linear to cubic Hermite.
-            dys.append(k[0].copy())
             t = t + h
             y = y_hi
-            ts.append(t)
-            ys.append(y.copy())
+            f_start = fc(t, y)
+            recorder.append(t, y, f_start)
             accepted += 1
             if (t - tf) * direction >= 0:
                 break
@@ -342,6 +358,9 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
             err_prev = max(err, 1e-4)
         else:
             rejected += 1
+            # Match the native backend's stage-zero evaluation on every trial.
+            # On a rejected final trial this is the final recorded slope.
+            f_start = fc(t, y)
             fac = 0.9 * err ** (-1.0 / order)
         h = h * min(5.0, max(0.2, fac))
         if abs(h) > max_step:
@@ -351,9 +370,15 @@ def adaptive_rk(f, t_span, y0, tableau: str = "dormand_prince", rtol: float = 1e
                 f"step size underflow at t={t:.6g}: required h < {min_step:.2e}; "
                 "the problem is likely stiff -- try an implicit solver"
             )
-    dys.append(fc(t, y))  # slope at the final point (one extra evaluation)
-    return _rk_solution(ts, ys, dys, tableau, accepted, rejected, fc.calls,
-                        tf, dense_output)
+    ts, ys, dys = recorder.finish()
+    result = _rk_solution(ts, ys, dys, tableau, accepted, rejected, fc.calls,
+                          tf, dense_output)
+    result.success = (t - tf) * direction >= 0
+    result.message = "completed" if result.success else ("callback stopped" if recorder.stopped
+                                                       else "maximum number of steps reached")
+    result.checkpoint = recorder.checkpoint(tableau, {"h_next": h})
+    result._final_state = result.checkpoint.y
+    return result
 
 
 def rkf45(f, t_span, y0, **kwargs):
@@ -381,10 +406,15 @@ def solve_ivp(f, t_span, y0, method: str = "dormand_prince", **kwargs):
 
     Fixed-step methods take ``n``; adaptive ones take ``rtol``/``atol``.
     """
+    if method in {"bdf_adaptive", "radau_adaptive"} or (
+            method in {"bdf", "radau"} and "n" not in kwargs):
+        from .stiff import bdf_adaptive, radau_adaptive
+        solver = bdf_adaptive if method.startswith("bdf") else radau_adaptive
+        return solver(f, t_span, y0, **kwargs)
     fixed = {"euler": euler, "heun": heun, "midpoint": midpoint_method,
              "ralston": ralston, "rk3": rk3, "rk4": rk4, "rk38": rk38}
     if method in fixed:
-        return fixed[method](f, t_span, y0, kwargs.pop("n", 100))
+        return fixed[method](f, t_span, y0, kwargs.pop("n", 100), **kwargs)
     if method in BUTCHER_TABLEAUX:
         return adaptive_rk(f, t_span, y0, method, **kwargs)
     from .implicit import backward_euler, bdf, implicit_midpoint, radau_iia, trapezoidal
@@ -399,3 +429,9 @@ def solve_ivp(f, t_span, y0, method: str = "dormand_prince", **kwargs):
     if method in others:
         return others[method](f, t_span, y0, **kwargs)
     raise ValueError(f"unknown method {method!r}")
+
+
+for _name in __all__:
+    if callable(globals()[_name]) and "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

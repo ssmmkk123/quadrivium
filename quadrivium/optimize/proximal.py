@@ -8,6 +8,8 @@ sparsity-inducing regularizers tractable.
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -74,7 +76,7 @@ def proximal_gradient(grad_f, prox, x0, lr: float = 0.01, tol: float = 1e-10,
     y = x.copy()
     t_k = 1.0
     step = lr
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gy = as_vector(grad_f(y))
         if backtrack and f is not None:
@@ -95,7 +97,7 @@ def proximal_gradient(grad_f, prox, x0, lr: float = 0.01, tol: float = 1e-10,
             y = x_new
         change = np.linalg.norm(x_new - x)
         x = x_new
-        history.append(x.copy())
+        history.append(x)
         if change < tol * max(1.0, np.linalg.norm(x)):
             obj = (float(f(x)) + float(g(x))) if (f and g) else np.nan
             return OptimizeResult(x, obj, None, None, k, True, 0, k,
@@ -186,7 +188,7 @@ def admm(prox_f, prox_g, x0, rho: float = 1.0, tol: float = 1e-10,
     x = as_vector(x0).copy()
     z = x.copy()
     u = np.zeros_like(x)
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         x = as_vector(prox_f(z - u, 1.0 / rho))
         x_hat = over_relax * x + (1 - over_relax) * z
@@ -195,7 +197,7 @@ def admm(prox_f, prox_g, x0, rho: float = 1.0, tol: float = 1e-10,
         u = u + x_hat - z
         r_norm = np.linalg.norm(x - z)              # primal residual
         s_norm = np.linalg.norm(-rho * (z - z_old))  # dual residual
-        history.append(x.copy())
+        history.append(x)
         if r_norm < tol and s_norm < tol:
             return OptimizeResult(x, np.nan, None, None, k, True, 0, 0, "admm",
                                   history, "primal and dual residuals converged")
@@ -215,14 +217,14 @@ def admm_lasso(A, b, lam: float = 1.0, rho: float = 1.0, tol: float = 1e-10,
     x = np.zeros(n)
     z = np.zeros(n)
     u = np.zeros(n)
-    history = []
+    history = History()
     for k in range(1, max_iter + 1):
         rhs = Atb + rho * (z - u)
         x = np.linalg.solve(L.T, np.linalg.solve(L, rhs))
         z_old = z
         z = soft_threshold(x + u, lam / rho)
         u = u + x - z
-        history.append(z.copy())
+        history.append(z)
         if (np.linalg.norm(x - z) < tol
                 and np.linalg.norm(rho * (z - z_old)) < tol):
             obj = 0.5 * float(np.sum((A @ z - b) ** 2)) + lam * float(np.sum(np.abs(z)))
@@ -240,7 +242,7 @@ def douglas_rachford(prox_f, prox_g, x0, gamma: float = 1.0, tol: float = 1e-10,
     Handles two non-smooth terms, neither of which needs a gradient.
     """
     z = as_vector(x0).copy()
-    history = []
+    history = History()
     x = z.copy()
     for k in range(1, max_iter + 1):
         x = as_vector(prox_f(z, gamma))
@@ -248,9 +250,14 @@ def douglas_rachford(prox_f, prox_g, x0, gamma: float = 1.0, tol: float = 1e-10,
         z_new = z + (y - x)
         change = np.linalg.norm(z_new - z)
         z = z_new
-        history.append(x.copy())
+        history.append(x)
         if change < tol:
             return OptimizeResult(x, np.nan, None, None, k, True, 0, 0,
                                   "douglas_rachford", history, "converged")
     return OptimizeResult(x, np.nan, None, None, max_iter, False, 0, 0,
                           "douglas_rachford", history, "maximum iterations reached")
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['proximal_gradient', 'admm', 'admm_lasso', 'douglas_rachford', 'lasso', 'elastic_net']:
+    globals()[_name] = monitor(globals()[_name])

@@ -1,314 +1,321 @@
-# Interpolation
+# Interpolation: values between samples
 
-```python
-from quadrivium.interpolate import pchip, bspline, rbf_interpolation
-import quadrivium as qd          # qd.cubic_spline, qd.barycentric, qd.nurbs, ...
-```
+Interpolation constructs a function passing through supplied data. It answers
+what a chosen model predicts between observations; matching the observations
+exactly does not establish that the prediction is accurate. The distribution
+of nodes, smoothness of the underlying function, and constraints such as
+monotonicity matter more than simply choosing a high polynomial degree.
 
-60 routines: polynomial interpolation in five equivalent forms, the spline
-family, rational interpolants, and multivariate methods on grids and scattered
-points. Full signatures are in the
-[`interpolate` reference](../api/interpolate.md).
-
-Interpolants are returned as callables, so the result is used like a function:
+Quadrivium provides global polynomials, local splines, rational interpolants,
+regular-grid methods, scattered-data methods, and parametric curves. Most
+constructors return a callable. Splines commonly return `PiecewisePolynomial`,
+which also supports derivatives, integrals, and roots. See the
+[interpolation reference](../api/interpolate.md) for individual return types.
 
 ```pycon
 >>> from quadrivium import numeric as np
->>> import quadrivium as qd
->>> x = np.linspace(0, 1, 6)
->>> y = np.sin(2 * np.pi * x)
->>> s = qd.cubic_spline(x, y)
->>> round(float(s(0.5)), 12)
-0.0
->>> float(np.max(np.abs(s(x) - y))) < 1e-14        # interpolates its data
+>>> from quadrivium import interpolate as ip
+>>> x = np.array([0.0, 1.0, 2.0, 3.0])
+>>> y = np.array([0.0, 1.0, 1.5, 2.0])
+>>> interpolant = ip.pchip(x, y)
+>>> np.allclose(interpolant(x), y)
+True
+>>> 1.0 < float(interpolant(1.5)) < 1.5
 True
 
 ```
 
-## Choosing a method
+## Choose what the curve must preserve
 
-| Data | Use |
+| Data and requirement | Starting point | Important limitation |
+| --- | --- | --- |
+| Piecewise linear behavior is sufficient | `linear_spline` | Derivative jumps at knots |
+| Smooth data, smooth curvature desired | `cubic_spline` | Can overshoot between samples |
+| Monotone data must remain monotone | `pchip` | Usually only continuously differentiable |
+| Function and derivatives known at knots | `hermite_spline` | Supplied derivatives determine local shape |
+| Local response to irregular samples | `akima_spline` | Not a general monotonicity guarantee |
+| Smooth callable, freely chosen nodes | `chebyshev_interpolation` | Accuracy still depends on smoothness |
+| Fixed nodes, global polynomial needed | `barycentric` | Stable evaluation cannot fix poor nodes |
+| Oscillatory behavior with known period | Trigonometric/Fourier interpolation | Period and sampling must be consistent |
+| Cartesian product grid | `regular_grid_interpolator` | Array axes must match grid order |
+| Scattered planar samples | `LinearNDInterpolator` | Explicit convex-hull policy is needed |
+| Scattered samples in several dimensions | `RBFInterpolator` | Kernel, scaling, and neighbors affect conditioning |
+| Noisy observations | Smoothing or [approximation](approx.md) | Exact interpolation also fits noise |
+
+Use a low-complexity method first and compare it on withheld or newly sampled
+points. Extrapolation beyond the sampled domain is a different problem and
+requires additional assumptions about the underlying function.
+
+## Prepare one-dimensional data
+
+Use matching finite coordinate and value vectors. Polynomial interpolation
+requires distinct abscissae. Most spline constructors sort coordinates and
+values together and reject repeated knots. Supplying already sorted data
+makes the intended ordering explicit and avoids ambiguity with additional
+arrays such as weights or derivative samples.
+
+At least two points are needed for a line segment; more specialized methods
+may require additional knots. Duplicate measurements at the same coordinate
+should be aggregated or treated as a fitting problem rather than silently
+assigned different interpolated values.
+
+```pycon
+>>> order = np.argsort([2.0, 0.0, 1.0])
+>>> sorted_x = np.array([2.0, 0.0, 1.0])[order]
+>>> sorted_y = np.array([4.0, 0.0, 1.0])[order]
+>>> sorted_x.tolist(), sorted_y.tolist()
+([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+
+```
+
+Coordinates with very different magnitudes can degrade polynomial or radial
+basis conditioning. Map a one-dimensional fitting interval to a moderate
+range such as `[-1, 1]`; for multidimensional distances, nondimensionalize
+coordinates using physically meaningful scales.
+
+## Global polynomial interpolation
+
+`lagrange`, `newton_divided_differences`, and `barycentric` represent the same
+unique polynomial for distinct nodes and the same values, up to numerical
+error. They differ in representation and evaluation cost. Barycentric form is
+a practical default because it avoids explicitly expanding a polynomial into
+monomial coefficients.
+
+```pycon
+>>> nodes = np.array([-1.0, 0.0, 1.0])
+>>> values = nodes**2
+>>> polynomial = ip.barycentric(nodes, values)
+>>> np.allclose(polynomial([-0.5, 0.25]), [0.25, 0.0625])
+True
+>>> newton_form = ip.newton_divided_differences(nodes, values)
+>>> np.allclose(newton_form([-0.5, 0.25]), polynomial([-0.5, 0.25]))
+True
+
+```
+
+`lagrange_coefficients` and `vandermonde_interpolation` produce explicit
+monomial coefficients. This is useful for algebraic manipulation but can be
+poorly conditioned at high degree. `neville` evaluates through a recursive
+table at specified query points; forward and backward Newton forms are
+intended for equally spaced nodes. Hermite polynomial interpolation also
+matches supplied derivatives.
+
+### Node placement can dominate algorithm choice
+
+A high-degree polynomial on equally spaced nodes can oscillate near the
+endpoints even when the data come from a smooth function. This is the Runge
+phenomenon. Replacing the evaluator alone does not fix it: the polynomial
+itself can be a poor approximation.
+
+Chebyshev nodes cluster toward the endpoints. In this submodule,
+`chebyshev_nodes(n, ...)` returns **n nodes** in increasing order.
+`kind=1` gives roots of a Chebyshev polynomial and excludes the endpoints;
+`kind=2` includes the endpoints when `n>1`.
+
+```pycon
+>>> runge = lambda t: 1.0 / (1.0 + 25.0*t*t)
+>>> chebyshev = ip.chebyshev_interpolation(runge, n=25, a=-1, b=1)
+>>> query = np.linspace(-1, 1, 201)
+>>> float(np.max(np.abs(chebyshev(query) - runge(query)))) < 0.01
+True
+
+```
+
+<figure markdown="span">
+  ![Off-node polynomial interpolation errors using equally spaced and Chebyshev nodes](../assets/figures/interpolate-node-choice.svg#only-light)
+  ![Off-node polynomial interpolation errors using equally spaced and Chebyshev nodes](../assets/figures/interpolate-node-choice-dark.svg#only-dark)
+  <figcaption>Barycentric interpolants of 1/(1+25x²) use 5 to 25 equally spaced or Chebyshev nodes. Maximum errors are measured on 2,001 independent query points; the 17-node profile shows where the discrepancy occurs. Matching the interpolation nodes cannot reveal this off-node error.</figcaption>
+</figure>
+
+Chebyshev nodes improve polynomial approximation for many smooth functions;
+they do not make a discontinuity smooth or provide a universal error bound.
+If sampling is under your control and a fixed degree is inconvenient, consider
+[`approx.chebfun`](approx.md#adaptive-piecewise-chebyshev-approximation).
+
+## Cubic splines and boundary conditions
+
+A cubic spline uses one cubic polynomial per interval and imposes continuity
+conditions at interior knots. It avoids the high global degree of a polynomial
+through all samples. Boundary conditions determine the remaining endpoint
+behavior and can materially affect the first and last intervals.
+
+| Constructor or `bc` | Endpoint assumption |
 | --- | --- |
-| a few points, want the polynomial | `lagrange`, `newton_divided_differences`, `barycentric` |
-| many points, need stability | `barycentric` with `chebyshev_nodes` |
-| smooth curve through many points | `cubic_spline` (not-a-knot by default) |
-| data that must not overshoot | `pchip`, `akima_spline` |
-| values *and* slopes known | `hermite_spline`, `hermite` |
-| periodic data | `periodic_cubic_spline`, `trigonometric_interpolation` |
-| noisy data, want smoothing not interpolation | `smoothing_spline`, `tension_spline` |
-| a shape to design, not data to fit | `bezier`, `bspline`, `nurbs`, `catmull_rom` |
-| a function with poles | `thiele`, `floater_hormann`, `bulirsch_stoer_rational` |
-| values on a 2-D or 3-D grid | `bilinear`, `bicubic`, `trilinear`, `regular_grid_interpolator` |
-| scattered points in any dimension | `rbf_interpolation`, `shepard`, `kriging` |
-| scattered points, want an uncertainty too | `kriging` |
+| `natural_cubic_spline`, `bc="natural"` | Second derivative is zero at both endpoints |
+| `clamped_cubic_spline`, `bc="clamped"` | First derivatives `dy0` and `dyn` are supplied |
+| `not_a_knot_spline`, default `bc="not-a-knot"` | First two and last two pieces share their cubic behavior |
+| `periodic_cubic_spline`, `bc="periodic"` | Values and derivatives match across the period boundary |
 
-```mermaid
-flowchart TD
-    A["points to pass through"] --> B{"one dimension?"}
-    B -- no --> C{"on a grid?"}
-    C -- yes --> D["bilinear, bicubic<br/>regular_grid_interpolator"]
-    C -- no --> E["rbf_interpolation<br/>kriging, shepard"]
-    B -- yes --> F{"noisy?"}
-    F -- yes --> G["smoothing_spline<br/>or fit instead"]
-    F -- no --> H{"must not overshoot?"}
-    H -- yes --> I["pchip, akima_spline"]
-    H -- no --> J{"how many points?"}
-    J -- "a few" --> K["barycentric<br/>on chebyshev_nodes"]
-    J -- many --> L["cubic_spline"]
-```
-
-## Polynomial interpolation
-
-Five constructions give the same polynomial, and differ only in cost and
-conditioning:
+Natural does not mean universally best: zero endpoint curvature is an
+assumption. If endpoint slopes are known from physics or an analytic model,
+clamped conditions use that information directly.
 
 ```pycon
->>> from quadrivium.interpolate import (lagrange, newton_divided_differences,
-...                                    barycentric, neville, vandermonde_interpolation)
->>> xs = np.array([0.0, 1.0, 2.0, 3.0])
->>> ys = np.array([1.0, 2.0, 0.0, 5.0])
->>> forms = [lagrange(xs, ys), newton_divided_differences(xs, ys),
-...          barycentric(xs, ys)]
->>> vals = [round(float(p(1.5)), 10) for p in forms]
->>> vals
-[0.75, 0.75, 0.75]
->>> value, table = neville(xs, ys, 1.5)     # tableau instead of coefficients
->>> round(float(value), 10)
-0.75
->>> coeffs = vandermonde_interpolation(xs, ys)   # monomial coefficients
->>> round(float(np.polyval(coeffs, 1.5)), 10)
-0.75
-
-```
-
-Use `barycentric` when you will evaluate the same interpolant many times — it
-costs `O(n)` per evaluation after `O(n²)` setup, and it is the numerically
-stable form. Use `newton_divided_differences` when points arrive one at a
-time, since adding a point costs one more coefficient rather than a rebuild.
-
-### Runge's phenomenon
-
-Interpolating a well-behaved function at equally spaced points diverges as the
-degree rises. This is not a rounding problem — it is what the polynomial
-actually does:
-
-```pycon
->>> runge = lambda t: 1 / (1 + 25 * t**2)
->>> equi = np.linspace(-1, 1, 21)
->>> p_equi = barycentric(equi, runge(equi))
->>> float(np.max(np.abs(p_equi(0.95)))) > 5           # wild near the ends
+>>> knots = np.array([0.0, 0.5, 1.0])
+>>> cubic = ip.clamped_cubic_spline(knots, knots**3, dy0=0.0, dyn=3.0)
+>>> np.allclose(cubic([0.25, 0.75]), [0.25**3, 0.75**3])
+True
+>>> np.allclose(cubic.derivative()([0.25, 0.75]), [3*0.25**2, 3*0.75**2])
 True
 
 ```
 
-Chebyshev nodes, which cluster at the endpoints, fix it completely:
+For periodic splines, include both endpoint coordinates and matching endpoint
+values. This differs from FFT sampling, where the duplicated endpoint is
+excluded. `periodic_cubic_spline` checks endpoint agreement with a tolerance.
+
+## Shape-preserving interpolation and smoothing
+
+PCHIP chooses slopes to preserve monotonicity of monotone data on each
+interval. It is useful for cumulative quantities, tabulated material
+properties, and other data where overshoot would be misleading.
 
 ```pycon
->>> from quadrivium.interpolate import chebyshev_nodes
->>> cheb = chebyshev_nodes(21, -1, 1)
->>> p_cheb = barycentric(cheb, runge(cheb))
->>> t = np.linspace(-1, 1, 500)
->>> float(np.max(np.abs(p_cheb(t) - runge(t)))) < 0.02
+>>> monotone = ip.pchip(x, y)
+>>> dense = np.linspace(x[0], x[-1], 101)
+>>> bool(np.all(np.diff(monotone(dense)) >= -1e-12))
 True
 
 ```
 
-<figure markdown="span">
-  ![Runge's phenomenon, and what Chebyshev nodes do to it](../assets/figures/interpolate-runge.svg#only-light)
-  ![Runge's phenomenon, and what Chebyshev nodes do to it](../assets/figures/interpolate-runge-dark.svg#only-dark)
-  <figcaption>Both interpolants are degree 20 and both pass through every one of their own points. Only the node placement differs: equally spaced nodes give an interpolant that oscillates wildly near the ends and gets worse with degree, while Chebyshev nodes converge.</figcaption>
-</figure>
+A continuously differentiable PCHIP curve need not have a continuous second
+derivative. A cubic spline offers smoother curvature but does not guarantee
+monotonicity or positivity between knots. Akima interpolation reduces some
+oscillatory behavior through local slope estimates, but it is not a universal
+shape-preserving replacement.
 
-`runge_demo_error` measures the effect directly, and
-`interpolation_error_bound` evaluates the theoretical bound
-`|f⁽ⁿ⁺¹⁾|/(n+1)! · ∏(t − xᵢ)` that explains it.
+If values are noisy, exact interpolation preserves that noise. A smoothing
+spline balances weighted squared residuals against integrated squared
+curvature. `smoothing_spline(x, y, lam=..., weights=...)` uses positive weights
+and a nonnegative smoothing parameter; a larger `lam` penalizes roughness
+more strongly. Select smoothing from measurement uncertainty or validation,
+not from visual smoothness alone.
 
-## Splines
+The smoothing implementation assembles dense matrices, so it is not a
+constant-memory method for arbitrarily large datasets. Sort all inputs
+consistently before passing weights. The [approximation guide](approx.md)
+explains fitting and held-out error checks.
 
-A cubic spline is piecewise cubic, twice continuously differentiable, and does
-not oscillate the way a high-degree polynomial does. The boundary condition
-decides what happens at the ends:
+## Work with `PiecewisePolynomial`
 
-| Function | End condition |
-| --- | --- |
-| `natural_cubic_spline` | second derivative zero |
-| `clamped_cubic_spline` | prescribed first derivatives |
-| `not_a_knot_spline` | third derivative continuous at the second and second-to-last knots |
-| `periodic_cubic_spline` | values and two derivatives match at the ends |
+Spline objects evaluate scalars or arrays and expose their knots as `.x`.
+`coeffs[i]` contains coefficients in **ascending powers of the local variable**
+`t - x[i]`. This is different from the descending global coefficients returned
+by ordinary polynomial-fitting routines.
+
+`derivative(order)` returns another piecewise polynomial.
+`antiderivative()` returns a continuous antiderivative whose value is zero at
+the first knot. `integrate(a, b)` computes the integral of the represented
+spline, and `roots()` searches its individual pieces inside knot intervals.
 
 ```pycon
->>> nat = qd.natural_cubic_spline(x, y)
->>> abs(float(nat(0.0 + 1e-6) + nat(0.0 - 1e-6) - 2*nat(0.0))) < 1e-8   # u'' ≈ 0
+>>> line = ip.linear_spline([0.0, 1.0, 2.0], [-1.0, 1.0, 3.0])
+>>> np.allclose(line.derivative()([0.25, 1.25]), [2.0, 2.0])
+True
+>>> round(line.integrate(0.0, 2.0), 12)
+2.0
+>>> line.roots().tolist()
+[0.5]
+
+```
+
+An integral computed exactly from the piecewise coefficients still has the
+modeling error of the spline. Likewise, a root of the interpolant need not be
+an equally accurate root of the original function. Re-evaluate the original
+model at important derived values.
+
+Splines extrapolate with their first or last polynomial by default. Disable
+that behavior when values outside the knots should be rejected:
+
+```pycon
+>>> line.extrapolate = False
+>>> from quadrivium.core import DomainError
+>>> try:
+...     line(-0.1)
+... except DomainError:
+...     print("Query is outside the sampled interval.")
+Query is outside the sampled interval.
+
+```
+
+`roots()` does not describe an entire interval of zeros as an infinite root
+set. Treat identically zero pieces and near-multiple roots as special cases
+when interpreting its output.
+
+## Rational and periodic interpolants
+
+Rational interpolation represents a ratio of polynomials or a barycentric
+rational form. Floater-Hormann uses local degree `d` to build a rational
+interpolant on ordered real nodes; Thiele uses reciprocal differences.
+A rational model can describe behavior that needs a high-degree polynomial,
+but denominator zeros and ill-conditioned data can produce poles.
+
+```pycon
+>>> rational = ip.floater_hormann(x, y, d=2)
+>>> np.allclose(rational(x), y)
 True
 
 ```
 
-Cubic splines converge as `O(h⁴)`:
+`trigonometric_interpolation` fits periodic data using a specified or inferred
+period. `fourier_interpolation` resamples a uniformly sampled periodic signal
+by Fourier padding. Verify the implied period and endpoint convention before
+using either method; a mismatch creates an artificial discontinuity. More
+samples cannot recover frequencies already aliased in the original data.
+
+## Regular grids and scattered data
+
+For `regular_grid_interpolator(grids, V)`, the value array has shape
+`tuple(len(grid) for grid in grids)`. Axis zero corresponds to the first grid,
+axis one to the second, and so on. Queries are coordinate rows with one column
+per dimension. Use strictly increasing finite axes and at least two points
+per axis for linear interpolation.
 
 ```pycon
->>> errors = []
->>> for n in (20, 40, 80):
-...     xi = np.linspace(0, 1, n)
-...     sp = qd.cubic_spline(xi, np.exp(xi))
-...     tt = np.linspace(0, 1, 401)
-...     errors.append(float(np.max(np.abs(sp(tt) - np.exp(tt)))))
->>> [round(errors[i] / errors[i + 1]) for i in (0, 1)]    # → 16 as h → 0
-[17, 17]
-
-```
-
-<figure markdown="span">
-  ![Measured convergence of piecewise interpolants as the knots close up](../assets/figures/interpolate-spline-convergence.svg#only-light)
-  ![Measured convergence of piecewise interpolants as the knots close up](../assets/figures/interpolate-spline-convergence-dark.svg#only-dark)
-  <figcaption>Fitting exp on [0, 1]. The cubic spline's error falls as h⁴ — halve the spacing and divide the error by sixteen — while the shape-preserving interpolants pay a power of h for the property they add.</figcaption>
-</figure>
-
-### Shape preservation
-
-A cubic spline can overshoot between points. When the data is monotone and the
-interpolant must be too — a cumulative distribution, a physical quantity that
-cannot go negative — use `pchip` or `akima_spline`:
-
-```pycon
->>> from quadrivium.interpolate import pchip
->>> steps = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
->>> jump = np.array([0.0, 0.0, 0.0, 1.0, 1.0])
->>> cs, mono = qd.cubic_spline(steps, jump), pchip(steps, jump)
->>> tt = np.linspace(0, 4, 401)
->>> float(np.min(cs(tt))) < -0.01           # the cubic spline dips below zero
-True
->>> float(np.min(mono(tt))) >= -1e-12       # PCHIP does not
+>>> gx = np.array([0.0, 1.0, 2.0])
+>>> gy = np.array([0.0, 1.0])
+>>> V = gx[:, None] + 2*gy[None, :]
+>>> grid_model = ip.regular_grid_interpolator([gx, gy], V)
+>>> np.allclose(grid_model([[0.5, 0.25], [1.5, 0.5]]), [1.0, 2.5])
 True
 
 ```
 
-<figure markdown="span">
-  ![Cubic spline, PCHIP and Akima on data with a step](../assets/figures/interpolate-spline-shape.svg#only-light)
-  ![Cubic spline, PCHIP and Akima on data with a step](../assets/figures/interpolate-spline-shape-dark.svg#only-dark)
-  <figcaption>Data that never decreases, and an interpolant that does. The cubic spline buys its second-derivative continuity with an undershoot; PCHIP and Akima give up a derivative and keep the shape.</figcaption>
-</figure>
+Linear regular-grid interpolation extends the boundary cell outside the grid;
+nearest-neighbor mode selects the nearest grid location. Neither automatically
+provides a physical extrapolation model. Validate query bounds yourself.
+The `bilinear`, `bicubic`, and `trilinear` helpers provide related lower-dimensional
+interfaces with their own documented argument layouts.
 
-`smoothing_spline` trades fidelity for smoothness with a parameter `lam` — the
-right tool when the data is noisy and interpolating it exactly would be
-interpolating the noise.
-
-<figure markdown="span">
-  ![An interpolating spline against smoothing splines on noisy data](../assets/figures/interpolate-smoothing.svg#only-light)
-  ![An interpolating spline against smoothing splines on noisy data](../assets/figures/interpolate-smoothing-dark.svg#only-dark)
-  <figcaption>The interpolant is required to pass through every sample, so it reproduces the noise faithfully. A smoothing spline trades closeness to the data for curvature, and `lam` sets the exchange rate.</figcaption>
-</figure>
-
-## Curves and surfaces
-
-B-splines, Bézier curves, and NURBS describe shapes by control points rather
-than by points on the curve. `de_casteljau` evaluates a Bézier curve by
-repeated subdivision, `bezier_derivative` returns the exact derivative curve,
-and `nurbs` evaluates by de Boor's algorithm.
+`LinearNDInterpolator` and `Delaunay` currently operate on **planar** points,
+despite the general-looking class name. The interpolator uses triangles inside
+the convex hull and offers `outside="fill"`, `"nearest"`, or `"raise"`.
+The default fills outside queries with `NaN`.
 
 ```pycon
->>> from quadrivium.interpolate import bspline_basis, open_uniform_knots
->>> knots = open_uniform_knots(6, 3)
->>> total = sum(bspline_basis(i, 3, knots, 0.37) for i in range(6))
->>> round(float(total), 12)                 # partition of unity
-1.0
-
-```
-
-<figure markdown="span">
-  ![Cubic B-spline basis functions on an open uniform knot vector](../assets/figures/interpolate-bspline-basis.svg#only-light)
-  ![Cubic B-spline basis functions on an open uniform knot vector](../assets/figures/interpolate-bspline-basis-dark.svg#only-dark)
-  <figcaption>Each basis function is supported on four knot spans and no more, which is what makes a B-spline curve locally editable; their sum is exactly one everywhere, which is what makes the curve lie inside the convex hull of its control points.</figcaption>
-</figure>
-
-NURBS can represent a circle exactly, which no polynomial curve can:
-
-```pycon
->>> from quadrivium.interpolate import nurbs_circle
->>> circle = nurbs_circle(radius=1.0)
->>> pts = np.array([circle(t) for t in np.linspace(0, 1, 50)])
->>> float(np.max(np.abs(np.hypot(pts[:, 0], pts[:, 1]) - 1.0))) < 1e-12
+>>> points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+>>> planar = ip.LinearNDInterpolator(points, [0.0, 1.0, 2.0], outside="raise")
+>>> abs(float(planar([0.25, 0.25])) - 0.75) < 1e-12
 True
 
 ```
 
-<figure markdown="span">
-  ![A Bezier curve with its control polygon, and a NURBS circle](../assets/figures/interpolate-curves.svg#only-light)
-  ![A Bezier curve with its control polygon, and a NURBS circle](../assets/figures/interpolate-curves-dark.svg#only-dark)
-  <figcaption>A Bezier curve is a polynomial and stays inside the hull of its control points. A circle is not a polynomial curve at all: NURBS reaches it with rational weights, exactly, to the last bit.</figcaption>
-</figure>
+`RBFInterpolator` supports scattered coordinates with a configurable kernel,
+shape parameter `epsilon`, smoothing, and polynomial reproduction.
+`neighbors=k` restricts each local fit and uses a bounded cache; `None` builds
+a global fit. Local neighbor changes can create derivative discontinuities.
+Neighbor sets must contain enough geometrically independent points for the
+polynomial basis. `KDTree` exposes neighbor queries separately.
 
-## Rational interpolation
+## Parametric curves and next steps
 
-A rational function can capture a pole; a polynomial cannot. Thiele's
-continued fraction and the Bulirsch-Stoer algorithm build one from data, and
-`floater_hormann` gives a barycentric rational interpolant with no poles in
-the interval — the safe default when you only want the robustness.
+Bézier, B-spline, rational Bézier, and NURBS routines represent geometric curves.
+Control points guide shape; they are not generally observations the curve must
+interpolate. De Casteljau evaluation and subdivision support Bézier curves;
+NURBS add rational weights and knot vectors. Use `nurbs_circle` for a rational
+circle construction and inspect the documented parameter interval.
 
-```pycon
->>> from quadrivium.interpolate import floater_hormann
->>> xs2 = np.linspace(-1, 1, 21)
->>> fh = floater_hormann(xs2, runge(xs2), d=3)
->>> tt = np.linspace(-1, 1, 401)
->>> float(np.max(np.abs(fh(tt) - runge(tt)))) < 0.02
-True
-
-```
-
-## Several dimensions
-
-```pycon
->>> from quadrivium.interpolate import bilinear, rbf_interpolation
->>> gx = np.linspace(0, 1, 11)
->>> gy = np.linspace(0, 1, 11)
->>> Z = np.outer(np.sin(np.pi*gx), np.sin(np.pi*gy))
->>> bl = bilinear(gx, gy, Z)
->>> abs(float(bl(0.5, 0.5)) - 1.0) < 0.02
-True
-
-```
-
-For scattered points, radial basis functions interpolate exactly with a global
-smooth surface, and offer seven kernels (`multiquadric`, `inverse_multiquadric`,
-`gaussian`, `linear`, `cubic`, `quintic`, `thin_plate`):
-
-```pycon
->>> rng = np.random.default_rng(0)
->>> pts = rng.random((60, 2))
->>> vals = np.sin(np.pi * pts[:, 0]) * np.cos(np.pi * pts[:, 1])
->>> rbf = rbf_interpolation(pts, vals, kernel="thin_plate")
->>> float(np.max(np.abs([rbf(p) for p in pts] - vals))) < 1e-8    # exact at data
-True
-
-```
-
-`kriging` is the geostatistical alternative and returns a variance estimate
-alongside the value; `shepard` and `inverse_distance_weighting` are the
-cheapest scattered methods and are exact at the data by construction.
-
-<figure markdown="span">
-  ![A thin-plate RBF surface through scattered data, with the kriging variance](../assets/figures/interpolate-scattered.svg#only-light)
-  ![A thin-plate RBF surface through scattered data, with the kriging variance](../assets/figures/interpolate-scattered-dark.svg#only-dark)
-  <figcaption>Forty points placed at random, and an interpolant through all of them. Kriging answers a second question at the same time — how far the query point is from anything that was measured — which is what the right-hand panel shows.</figcaption>
-</figure>
-
-## Pitfalls
-
-- **Interpolation is not approximation.** With noisy data, an interpolant
-  reproduces the noise exactly. Use `smoothing_spline`, or fit instead — see
-  the [approximation guide](approx.md).
-- **High-degree polynomial interpolation on equally spaced points diverges.**
-  Use Chebyshev nodes, or a spline.
-- **Extrapolation beyond the data is unreliable for every method here.** A
-  cubic spline extrapolates with the end cubic, which grows fast.
-- **A cubic spline is not shape-preserving.** It can overshoot and undershoot;
-  `pchip` cannot.
-- **RBFs need a shape parameter.** `epsilon` too small makes the matrix
-  ill-conditioned, too large makes the surface local and lumpy. Start at the
-  typical point spacing.
-
-## See also
-
-- [`interpolate` API reference](../api/interpolate.md) — every signature.
-- [Approximation guide](approx.md) — fitting rather than interpolating.
-- [Integration guide](integrate.md) — quadrature rules built by integrating an
-  interpolant.
+Validate interpolation with off-node errors, shape constraints, and boundary
+behavior before differentiating or integrating the result. Continue with
+[differentiation](diff.md), [integration](integrate.md), and
+[approximation](approx.md) for those downstream operations.

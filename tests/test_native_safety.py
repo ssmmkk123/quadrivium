@@ -8,7 +8,7 @@ from quadrivium import numeric as np
 
 from quadrivium import _accel
 
-rs = _accel._rs
+rs = _accel._native
 
 
 def layouts(array):

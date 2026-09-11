@@ -1,214 +1,290 @@
-# Core
+# Shared numerical conventions
 
-```python
-from quadrivium.core import norm, condition_number, CountedFunction
-import quadrivium as qd          # every core name is re-exported at the top level
-```
+The `quadrivium.core` module defines the result records, error types, shape
+conversions, and numerical utilities used throughout Quadrivium. Understanding
+these conventions makes it easier to compare methods and to decide whether a
+computed answer is accurate enough for the problem.
 
-35 names shared by everything else: the result records solvers return, the
-exception hierarchy they raise, norms and conditioning, shape and property
-checks, and numerical derivatives. Full signatures are in the
-[`core` reference](../api/core.md).
-
-Unlike the other subpackages, `core` is not a topic — it is the vocabulary the
-rest of the library is written in. Everything here is re-exported at the top
-level.
-
-## Result records
-
-Seven dataclasses. Which one a routine returns is fixed by the kind of problem
-it solves, so `qd.brent` and `qd.newton` return the same shape of answer even
-though they work differently.
-
-| Record | Returned by | Answer |
-| --- | --- | --- |
-| `RootResult` | root finders | `root` (aliased `x`) |
-| `IterationResult` | iterative linear solvers | `x` |
-| `QuadratureResult` | quadrature rules | `value` |
-| `ODESolution` | IVP, BVP, and SDE solvers | `t`, `y`, `y_final` |
-| `OptimizeResult` | optimizers | `x`, `fun` |
-| `EigenResult` | eigenvalue routines | `eigenvalues`, `eigenvectors` |
-| `PDESolution` | PDE solvers | `u`, `grids`, `t` |
-
-Each carries the diagnostics for its kind of method — see
-[Result records](../getting-started.md#result-records) for the full field
-lists. Three of them behave like the value they hold:
-
-```mermaid
-flowchart LR
-    R["a routine returns"] --> A["RootResult<br/>root finders"]
-    R --> B["IterationResult<br/>iterative linear solvers"]
-    R --> C["QuadratureResult<br/>quadrature"]
-    R --> D["ODESolution<br/>IVP, BVP, SDE"]
-    R --> E["OptimizeResult<br/>optimizers"]
-    R --> F["EigenResult<br/>eigenvalue routines"]
-    R --> G["PDESolution<br/>PDE solvers"]
-```
+Most names are also available from `quadrivium`. Use explicit submodule imports
+when the name alone is ambiguous, especially for derivatives and norms.
 
 ```pycon
->>> from quadrivium import numeric as np
 >>> import quadrivium as qd
->>> float(qd.quad(lambda x: x**2, 0, 1))              # QuadratureResult → float
-0.3333333333333323
->>> values, vectors = qd.jacobi_eigen(np.eye(2))      # EigenResult unpacks
->>> sorted(float(v) for v in values)
-[1.0, 1.0]
->>> sol = qd.solve_ivp(lambda t, y: -y, (0, 1), [1.0], rtol=1e-10)
->>> float(sol(0.25)[0]) > 0                            # ODESolution is callable
+>>> from quadrivium import numeric as np
+>>> from quadrivium.core import norm, absolute_error, relative_error
+>>> norm([3.0, -4.0])
+5.0
+
+```
+
+This guide explains how to interpret outputs. The [core reference](../api/core.md)
+provides signatures and field definitions; [getting started](../getting-started.md)
+shows the same conventions in complete calculations.
+
+## Read the result before extracting the answer
+
+A result record keeps the mathematical answer together with the information
+needed to assess it. The records are mutable dataclasses. They are neither
+immutable certificates nor interchangeable arrays.
+
+| Record | Answer | Diagnostics to inspect |
+| --- | --- | --- |
+| `RootResult` | `root`, also available as `x` | `f_root`, `converged`, `iterations`, `function_calls`, `message` |
+| `IterationResult` | `x` | `converged`, `residuals`, `iterations`, `message` |
+| `QuadratureResult` | `value` | `error_estimate`, `converged`, `function_calls`, `subintervals` |
+| `ODESolution` | `t`, `y`, `y_final` | `success`, `message`, step and right-hand-side counts |
+| `OptimizeResult` | `x`, `fun` | `jac`, `converged`, `iterations`, call counts, `message` |
+| `EigenResult` | `eigenvalues`, optional `eigenvectors` | `converged`, `iterations`, `method` |
+| `PDESolution` | `u`, `grids`, optional `t`, `final` | `converged`, `iterations`, `residuals` |
+
+Direct linear solves and many approximation constructors return arrays or
+callables instead. Sampled-data integration can return a plain number. The
+method's documented return type takes precedence over a family-level convention.
+
+```pycon
+>>> result = qd.brent(lambda x: x*x - 2.0, 0.0, 2.0)
+>>> result.converged and abs(result.f_root) < 1e-10
+True
+>>> result.x == result.root
+True
+>>> result.function_calls > 0
 True
 
 ```
 
-They are plain dataclasses, so `dataclasses.asdict`, `replace`, and equality
-all work as expected.
+A convergence flag means that the method met its implemented stopping rule.
+That rule may use a residual, a change in iterates, a bracket width, or an
+embedded error estimate. It does not establish that the model is correct, the
+solution is unique, or an independent physical error target is satisfied.
 
-## Exceptions
+### Convenient conversions and their limits
+
+`float(quadrature_result)` extracts a scalar integral. It discards the error
+estimate and cannot represent a vector or genuinely complex integral.
+`EigenResult` unpacks as `(eigenvalues, eigenvectors)`; eigenvectors can be
+`None` when they were not computed.
 
 ```pycon
->>> from quadrivium.core import (QuadriviumError, ConvergenceError, DomainError,
-...                             SingularMatrixError, DimensionError,
-...                             StepSizeError, BracketError)
->>> all(issubclass(e, QuadriviumError) for e in
-...     (ConvergenceError, DomainError, SingularMatrixError,
-...      DimensionError, StepSizeError, BracketError))
+>>> integral = qd.quad(lambda x: x*x, 0.0, 1.0)
+>>> abs(float(integral) - 1.0/3.0) < 1e-12
+True
+>>> values, vectors = qd.jacobi_eigen(np.eye(2))
+>>> values.shape, vectors.shape
+((2,), (2, 2))
+
+```
+
+`IterationResult.residual` is the last stored residual or `None` if the history
+is empty. Residual normalization varies by solver. For a comparison across
+methods, recompute the same residual expression for every returned answer.
+
+For ODE results, `y` has shape `(number_of_saved_times, state_dimension)`.
+A scalar query `solution(t)` returns a state vector; an array of query times
+returns one row per time. Evaluation uses a solver-provided interpolant when
+available, cubic Hermite interpolation when saved slopes are present, and
+linear interpolation otherwise. Query within the solved interval and remember
+that interpolation introduces its own error.
+
+For time-dependent PDE results, `final` selects the last computed field.
+For stationary problems, it returns the field directly. With restricted output
+storage, `y_final` and `final` can represent the endpoint even when that endpoint
+was not among the explicitly requested saved times.
+
+## Distinguish residual, forward error, and conditioning
+
+A **residual** measures how well a computed answer satisfies the equation.
+For a linear solve it is `A @ x - b`. A **forward error** compares that answer
+with the true answer. A small residual can coexist with a large forward error
+when the problem is sensitive to perturbations.
+
+`absolute_error(approx, exact)` uses the infinity norm of the difference.
+`relative_error` divides it by the infinity norm of `exact`; when the exact
+value is zero, it returns the absolute error instead.
+
+```pycon
+>>> absolute_error([1.01, 2.0], [1.0, 2.0]) < 0.011
+True
+>>> relative_error([1.01, 2.0], [1.0, 2.0]) < 0.006
+True
+>>> relative_error(0.25, 0.0)
+0.25
+
+```
+
+This zero-reference convention avoids division by zero. It also means the
+quantity changes units at a zero reference. For application-level acceptance,
+a mixed test such as `error <= atol + rtol * reference_scale` is often clearer.
+Choose the scale from the physical or mathematical quantity being checked.
+
+### Vector and matrix norms
+
+`norm(x, p=2)` flattens its input and converts it to real floating-point data.
+It supports positive `p`, plus `np.inf` or `"inf"`. Values below one are
+accepted, although the resulting expression is mathematically a quasi-norm.
+
+`matrix_norm(A, p="fro")` has a different default and interpretation:
+
+| Choice | Meaning |
+| --- | --- |
+| `p=1` | Largest absolute column sum |
+| `p=np.inf` | Largest absolute row sum |
+| `p=2` | Largest singular value, evaluated through `A.T @ A` |
+| `p="fro"` | Square root of the sum of squared entries |
+
+The spectral norm helper forms a Gram matrix, so it can lose accuracy on badly
+scaled inputs. Use `numeric.linalg.norm` when you need the array layer's complex
+or batched behavior. The real-valued core utilities do not preserve complex
+inputs as Hermitian calculations.
+
+```pycon
+>>> from quadrivium.core import matrix_norm, condition_number
+>>> A = np.array([[4.0, 1.0], [1.0, 3.0]])
+>>> matrix_norm(A, 1), matrix_norm(A, np.inf)
+(5.0, 5.0)
+>>> 1.0 < condition_number(A) < 2.0
 True
 
 ```
 
-The library raises only for input it cannot work with — a singular matrix, a
-bracket that does not bracket, an argument outside a function's domain.
-Failure to converge is reported in the result record instead, with
-`converged=False` and a message. `ConvergenceError` exists for the routines
-that have no partial answer to give, and it carries `iterations`, `residual`,
-and `best` so even that path keeps what was computed.
+`condition_number` requires a square matrix. Its default 2-norm calculation
+uses singular values; other choices explicitly form an inverse. Infinity
+signals singularity in the detected cases. A finite result is an estimate of
+sensitivity, not a guarantee of useful digits. See [linear algebra](linalg.md)
+for residual checks, regularization, and condition estimation.
 
-```mermaid
-flowchart TD
-    Q["QuadriviumError"] --> C["ConvergenceError<br/>no partial answer to give"]
-    Q --> S["SingularMatrixError<br/>singular, or numerically so"]
-    Q --> D["DimensionError<br/>incompatible shapes"]
-    Q --> M["DomainError<br/>outside the method's domain"]
-    Q --> T["StepSizeError<br/>adaptive step underflowed"]
-    Q --> B["BracketError<br/>the interval does not bracket a root"]
-```
+## Floating-point precision and stable expressions
 
-One `except QuadriviumError` therefore catches everything the library throws,
-and nothing it merely reports.
-
-## Norms and conditioning
-
-```pycon
->>> from quadrivium.core import norm, matrix_norm, condition_number
->>> v = np.array([3.0, -4.0])
->>> norm(v), norm(v, 1), norm(v, np.inf)
-(5.0, 7.0, 4.0)
->>> A = np.array([[1.0, 2.0], [3.0, 4.0]])
->>> round(condition_number(A), 6)
-14.933034
-
-```
-
-`norm(x, p)` takes any positive `p` as well as `inf`; `matrix_norm` supports
-the 1, 2, Frobenius and infinity norms; `condition_number` uses the 2-norm by
-default. For a large matrix, `quadrivium.linalg.condition_estimate` gives
-Hager's 1-norm estimate without forming an inverse.
-
-<figure markdown="span">
-  ![The unit ball of each p-norm, and where they all end up](../assets/figures/core-norms.svg#only-light)
-  ![The unit ball of each p-norm, and where they all end up](../assets/figures/core-norms-dark.svg#only-dark)
-  <figcaption>`norm(x, p)` accepts any positive p, and the shape of the unit ball is what the choice means: the 1-norm's diamond is why an L1 penalty produces sparse answers, and every p-norm approaches the infinity norm as p grows.</figcaption>
-</figure>
-
-`relative_error` and `absolute_error` are the obvious two, with the guard that
-matters:
-
-```pycon
->>> from quadrivium.core import relative_error, absolute_error
->>> round(relative_error(2.0001, 2.0), 8), absolute_error(2.0001, 2.0)
-(5e-05, 0.00010000000000021103)
-
-```
-
-<figure markdown="span">
-  ![The condition number as a prediction, and the error actually made](../assets/figures/core-conditioning.svg#only-light)
-  ![The condition number as a prediction, and the error actually made](../assets/figures/core-conditioning-dark.svg#only-dark)
-  <figcaption>For the Hilbert matrix, κ·ε is not a loose bound: the measured error of a least squares solve tracks it across sixteen orders of magnitude. This is what `condition_number` is for — knowing how much of the answer to believe before computing it.</figcaption>
-</figure>
-
-## Shape and property checks
-
-```pycon
->>> from quadrivium.core import (as_vector, as_matrix, check_square, is_symmetric,
-...                             is_positive_definite, is_diagonally_dominant)
->>> as_vector([1, 2, 3]).dtype
-dtype('float64')
->>> S = np.array([[4.0, 1.0], [1.0, 3.0]])
->>> is_symmetric(S), is_positive_definite(S), is_diagonally_dominant(S)
-(True, True, True)
-
-```
-
-These are what `qd.solve` consults when choosing a factorization, and they are
-public because the same question — is this matrix suitable for Cholesky? — is
-one you will want to ask before choosing a method yourself.
-
-## Machine constants
+`EPS` is double-precision machine epsilon, and `SQRT_EPS` is its square root.
+`machine_epsilon(dtype)` computes the spacing at one for the chosen floating
+type. `unit_roundoff(dtype)` is half that spacing under round-to-nearest.
+These quantities describe arithmetic resolution, not measurement uncertainty.
 
 ```pycon
 >>> from quadrivium.core import EPS, SQRT_EPS, machine_epsilon, unit_roundoff
 >>> EPS == float(np.finfo(float).eps)
 True
->>> SQRT_EPS
-1.4901161193847656e-08
->>> unit_roundoff()
-1.1102230246251565e-16
-
-```
-
-`SQRT_EPS` is the natural step size for a forward difference and `EPS**(1/3)`
-for a central one, which is why both constants appear throughout the library's
-defaults.
-
-## Numerical derivatives
-
-Finite-difference derivatives used internally wherever an analytic derivative
-was not supplied. They are public so a method can be given the same
-approximation deliberately:
-
-```pycon
->>> from quadrivium.core import numerical_gradient, numerical_hessian, numerical_jacobian
->>> f = lambda v: v[0]**2 + 3*v[1]**2
->>> [round(float(g), 6) for g in numerical_gradient(f, [1.0, 2.0])]
-[2.0, 12.0]
->>> numerical_hessian(f, [1.0, 2.0]).round(4).tolist()
-[[2.0, 0.0], [0.0, 6.0]]
-
-```
-
-For exact derivatives instead of approximate ones, use the automatic
-differentiation in [`quadrivium.diff`](diff.md).
-
-## Counting function calls
-
-`CountedFunction` wraps a callable and counts its evaluations. It is how every
-routine reports `function_calls`, and it is useful directly when comparing
-methods:
-
-```pycon
->>> from quadrivium.core import CountedFunction
->>> counted = CountedFunction(lambda x: x**2 - 2)
->>> r = qd.brent(counted, 0, 2)
->>> counted.calls == r.function_calls
+>>> unit_roundoff() == EPS / 2
+True
+>>> SQRT_EPS == 2.0**-26
 True
 
 ```
 
-`wrap_scalar_function` adapts a scalar callable to the vector interface the
-multivariate routines expect.
+Subtraction of nearby values can erase significant digits. An algebraically
+equivalent expression can therefore be substantially more accurate. For
+example, use `np.expm1(x)` for `exp(x)-1` near zero and `np.log1p(x)` for
+`log(1+x)` near zero. Increasing iteration counts cannot recover information
+that the function evaluation already lost.
 
-## See also
+<figure markdown="span">
+  ![Error in a cancellation-prone exponential expression compared with a stable evaluation](../assets/figures/core-roundoff-budget.svg#only-light)
+  ![Error in a cancellation-prone exponential expression compared with a stable evaluation](../assets/figures/core-roundoff-budget-dark.svg#only-dark)
+  <figcaption>For h from 10⁻¹⁶ to 10⁻¹, exp(h)−1 and expm1(h) are compared with a 60-digit decimal reference. The relative-error panel reveals cancellation in the direct subtraction even when its absolute error looks small.</figcaption>
+</figure>
 
-- [`core` API reference](../api/core.md) — every signature.
-- [Getting started](../getting-started.md) — the conventions these types
-  implement.
-- [Differentiation guide](diff.md) — exact derivatives instead of differences.
+## Shape and property checks
+
+`as_vector` converts scalar input to length one and flattens higher-dimensional
+input. It can share storage with an already suitable array. It does **not**
+validate that the original object represented one mathematical vector.
+`as_matrix` requires exactly two dimensions; `check_square` additionally requires
+equal side lengths. These helpers convert to real double precision.
+
+```pycon
+>>> from quadrivium.core import as_vector, as_matrix, check_square
+>>> as_vector([[1, 2], [3, 4]]).tolist()
+[1.0, 2.0, 3.0, 4.0]
+>>> as_matrix([[1, 2]]).shape
+(1, 2)
+>>> check_square([[1, 0], [0, 1]]).shape
+(2, 2)
+
+```
+
+Use `.copy()` when an independent working array is required. Validate the
+original `ndim` before calling `as_vector` if accidentally flattening a batch
+would change your problem.
+
+`is_symmetric` compares a real matrix with its transpose using a tolerance.
+Its `tol` is an absolute tolerance used together with the array comparison's
+relative tolerance. `is_positive_definite` checks symmetry and attempts
+Cholesky; positive `tol` also imposes a smallest-eigenvalue threshold.
+`is_diagonally_dominant` checks rows and is strict by default.
+
+```pycon
+>>> from quadrivium.core import is_symmetric, is_positive_definite, is_diagonally_dominant
+>>> is_symmetric(A), is_positive_definite(A), is_diagonally_dominant(A)
+(True, True, True)
+
+```
+
+These tests help choose algorithms, but they do not establish every hypothesis
+of a convergence theorem. In particular, approximate symmetry and strict
+positive definiteness should be assessed relative to your data's scale.
+
+## Derivatives and call accounting
+
+`numerical_derivative` handles scalar derivative orders one through four.
+`numerical_gradient`, `numerical_jacobian`, and `numerical_hessian` use finite
+differences. A Jacobian for `F: R^n -> R^m` has shape `(m, n)`; a scalar-field
+Hessian has shape `(n, n)`. Function values must be finite near the requested
+point, including the perturbed points.
+
+```pycon
+>>> from quadrivium.core import numerical_gradient, numerical_jacobian
+>>> f = lambda x: x[0]**2 + 3*x[1]**2
+>>> np.allclose(numerical_gradient(f, [1.0, 2.0]), [2.0, 12.0])
+True
+>>> numerical_jacobian(lambda x: [x[0] + x[1], x[0] - x[1]], [1, 2]).shape
+(2, 2)
+
+```
+
+The default perturbation is scaled to the coordinate. Supplying `h` overrides
+that choice. Check sensitivity to step size when variables differ greatly in
+scale or the function is noisy. The [differentiation guide](diff.md) explains
+finite differences, automatic differentiation, and spectral methods.
+
+`CountedFunction` counts calls to a callable, including calls that raise. It
+accepts positional and keyword arguments, exposes `.calls`, and supports
+`.reset()`. A vectorized call counts once even if it evaluates many entries.
+
+```pycon
+>>> from quadrivium.core import CountedFunction, wrap_scalar_function
+>>> counted = CountedFunction(lambda x: x*x)
+>>> counted(3), counted.calls
+(9, 1)
+>>> counted.reset()
+>>> counted.calls
+0
+>>> import math
+>>> vector_sine = wrap_scalar_function(math.sin)
+>>> np.allclose(vector_sine([0.0, math.pi/2]), [0.0, 1.0])
+True
+
+```
+
+`wrap_scalar_function` maps a scalar function elementwise over arrays. It first
+tries an array call and falls back to scalar calls if needed; it is not an
+adapter that turns a scalar objective into a general multivariate objective.
+
+## Errors and output storage
+
+`QuadriviumError` is the base for `BracketError`, `DimensionError`,
+`DomainError`, `SingularMatrixError`, `StepSizeError`, and `ConvergenceError`.
+Not every error raised by the package belongs to this hierarchy: ordinary
+`ValueError`, `TypeError`, and the array layer's `LinAlgError` are also used.
+Catch the documented failure cases around a specific operation instead of
+assuming one base class catches every possible exception.
+
+An iterative method may return a partial answer with a false convergence flag.
+Other routines raise when no useful result can be produced. `ConvergenceError`
+can carry `iterations`, `residual`, and `best` to preserve diagnostics.
+
+Time integrators supporting common output controls can retain selected times,
+every nth state, or only the final state. `OutputRecorder` implements this
+storage policy; it does not set solver accuracy. `SolverCheckpoint` stores
+numerical restart state as JSON and deliberately excludes model callables.
+Use `resume_ode` or `resume_pde` with the model supplied again. Restart fidelity
+is method-dependent; see the [ODE guide](ode.md), [PDE guide](pde.md), and
+[workflows](workflows.md) before treating a restart as an identical continuation.

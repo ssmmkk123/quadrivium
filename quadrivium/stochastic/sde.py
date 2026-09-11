@@ -14,10 +14,14 @@ the step buys so little pathwise accuracy and so much in expectation.
 
 from __future__ import annotations
 
+import math
+import operator
+
 from .. import numeric as np
 
 from ..core.types import ODESolution
 from ..core.utils import as_vector
+from ..core.storage import OutputRecorder, TimeGrid, output_control, _OPTIONS
 
 __all__ = [
     "brownian_path",
@@ -86,12 +90,70 @@ def brownian_bridge(t_span, x0, x1, n: int = 1000, dim: int = 1, rng=None):
     return t, B + (1 - s) * x0 + s * x1
 
 
+def _controlled_output():
+    options = _OPTIONS.get()
+    return (options.get("save_at") is not None or options.get("save_every", 1) != 1
+            or options.get("final_only", False) or options.get("callback") is not None)
+
+
+def _time_grid(t_span, n):
+    n = operator.index(n)
+    t0, tf = map(float, t_span)
+    if n < 1 or not math.isfinite(t0) or not math.isfinite(tf) or tf <= t0:
+        raise ValueError("SDE integration requires n >= 1 and a finite increasing t_span")
+    return TimeGrid(t0, tf, n + 1), n
+
+
+def _recorded_solution(recorder, name, completed, total, message="completed"):
+    times, states, _ = recorder.finish()
+    success = completed == total
+    result = ODESolution(times, states, name, completed, completed, 0, 0,
+                         success, message if success else "callback stopped")
+    result._final_state = recorder.previous[1].copy()
+    return result
+
+
+class _JumpRecorder(OutputRecorder):
+    """Right-continuous sampling of jump paths; interpolation cannot invent counts."""
+    def append(self, t, y, slope=None):
+        if self.requested is not None and self.previous is not None:
+            while self.cursor < len(self.requested) and self.requested[self.cursor] < t:
+                self._save(self.requested[self.cursor], self.previous[1])
+                self.cursor += 1
+        return super().append(t, y, slope)
+
+
 def _sde_loop(step, a, b, t_span, x0, n, rng, name, dW=None):
     """Shared driver: allocate, walk the grid, package the result."""
     rng = _rng(rng)
     a, b = _drift_diffusion(a, b)
     x = as_vector(x0).astype(float)
     d = x.size
+    grid, n = _time_grid(t_span, n)
+    if _controlled_output():
+        dt = grid[1] - grid[0]
+        increments = None if dW is None else np.atleast_2d(np.asarray(dW, dtype=float)).reshape(n, d)
+        recorder = OutputRecorder.current((grid[0], grid[-1]))
+        record = lambda value: np.maximum(value, 0.0) if name == "cir" else value
+        recorder.append(grid[0], record(x))
+        # The historical order-1.5 driver draws n*d unused normals before its
+        # jointly Gaussian stage draws. Consume that prefix in bounded chunks
+        # so existing seeded trajectories and final generator states agree.
+        if name == "srk_strong_1_5" and increments is None and not recorder.stopped:
+            remaining = n*d
+            while remaining:
+                count = min(4096, remaining)
+                rng.standard_normal(count)
+                remaining -= count
+        completed = 0
+        for k in range(n):
+            if recorder.stopped:
+                break
+            dw = (None if name == "srk_strong_1_5" else np.sqrt(dt)*rng.standard_normal(d)) if increments is None else increments[k]
+            x = step(a, b, x, grid[k], dt, dw, rng)
+            recorder.append(grid[k+1], record(x))
+            completed += 1
+        return _recorded_solution(recorder, name, completed, n)
     t = np.linspace(float(t_span[0]), float(t_span[1]), n + 1)
     dt = t[1] - t[0]
     if dW is None:
@@ -253,6 +315,24 @@ def geometric_brownian_motion(x0, mu: float, sigma: float, t_span, n: int = 1000
     if not exact:
         return euler_maruyama(lambda x, t: mu * x, lambda x, t: sigma * x,
                               t_span, x0, n, rng)
+    if _controlled_output():
+        grid, n = _time_grid(t_span, n)
+        rng = _rng(rng)
+        initial = float(as_vector(x0)[0])
+        recorder = OutputRecorder.current((grid[0], grid[-1]))
+        recorder.append(grid[0], np.array([initial]))
+        dt = grid[1]-grid[0]
+        brownian = 0.0
+        completed = 0
+        for k in range(n):
+            if recorder.stopped:
+                break
+            brownian += float(np.sqrt(dt)*rng.standard_normal(1)[0])
+            drift = (mu-0.5*sigma*sigma)*(grid[k+1]-grid[0])
+            value = initial*np.exp(drift+sigma*brownian)
+            recorder.append(grid[k+1], np.array([value]))
+            completed += 1
+        return _recorded_solution(recorder, "gbm_exact", completed, n, "exact solution")
     t, W = brownian_path(t_span, n, 1, rng)
     x0 = as_vector(x0).astype(float)
     drift = (mu - 0.5 * sigma * sigma) * (t - t[0])
@@ -274,11 +354,23 @@ def ornstein_uhlenbeck(x0, theta: float, mu: float, sigma: float, t_span,
                               t_span, x0, n, rng)
     rng = _rng(rng)
     x = as_vector(x0).astype(float)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), n + 1)
+    controlled = _controlled_output()
+    t, n = _time_grid(t_span, n) if controlled else (np.linspace(float(t_span[0]), float(t_span[1]), n + 1), n)
     dt = t[1] - t[0]
     decay = np.exp(-theta * dt)
     sd = sigma * np.sqrt((1.0 - decay * decay) / (2.0 * theta)) if theta > 0 \
         else sigma * np.sqrt(dt)
+    if controlled:
+        recorder = OutputRecorder.current((t[0], t[-1]))
+        recorder.append(t[0], x)
+        completed = 0
+        for k in range(n):
+            if recorder.stopped:
+                break
+            x = mu + (x - mu) * decay + sd * rng.standard_normal(x.size)
+            recorder.append(t[k+1], x)
+            completed += 1
+        return _recorded_solution(recorder, "ou_exact", completed, n, "exact transitions")
     X = np.empty((n + 1, x.size))
     X[0] = x
     for k in range(n):
@@ -338,6 +430,35 @@ def gillespie_ssa(propensities, stoichiometry, x0, t_span, rng=None,
     S = np.atleast_2d(np.asarray(stoichiometry, dtype=float))
     x = as_vector(x0).astype(float)
     t0, tf = float(t_span[0]), float(t_span[1])
+    if _controlled_output():
+        if not math.isfinite(t0) or not math.isfinite(tf) or tf < t0:
+            raise ValueError("jump simulation requires a finite increasing t_span")
+        max_events = operator.index(max_events)
+        if max_events < 0:
+            raise ValueError("max_events must be nonnegative")
+        recorder = _JumpRecorder.current((t0, tf))
+        recorder.append(t0, x)
+        t = t0
+        for _ in range(max_events):
+            if recorder.stopped:
+                break
+            rates = np.atleast_1d(np.asarray(propensities(x, t), dtype=float))
+            total = float(np.sum(rates))
+            if total <= 0.0:
+                if recorder.previous[0] != tf:
+                    recorder.append(tf, x)
+                break
+            next_time = t + rng.exponential(1.0/total)
+            if next_time > tf:
+                if recorder.previous[0] != tf:
+                    recorder.append(tf, x)
+                break
+            j = int(np.searchsorted(np.cumsum(rates), rng.random()*total))
+            x = x + S[min(j, S.shape[0]-1)]
+            t = next_time
+            recorder.append(t, x)
+        times, states, _ = recorder.finish()
+        return times, states
     t = t0
     times, states = [t], [x.copy()]
     for _ in range(max_events):
@@ -368,6 +489,23 @@ def tau_leaping(propensities, stoichiometry, x0, t_span, tau: float = 0.01,
     S = np.atleast_2d(np.asarray(stoichiometry, dtype=float))
     x = as_vector(x0).astype(float)
     t0, tf = float(t_span[0]), float(t_span[1])
+    if _controlled_output():
+        if not math.isfinite(tau) or tau <= 0 or not all(map(math.isfinite,(t0,tf))) or tf <= t0:
+            raise ValueError("tau must be positive and t_span finite/increasing")
+        n = int(np.ceil((tf-t0)/tau))
+        # Preserve the historical grid, including its possible final overshoot.
+        grid = TimeGrid(t0, t0+n*tau, n+1)
+        recorder = _JumpRecorder.current((t0, grid[-1]))
+        recorder.append(t0, x)
+        for k in range(n):
+            if recorder.stopped:
+                break
+            rates = np.atleast_1d(np.asarray(propensities(x, grid[k]), dtype=float))
+            counts = rng.poisson(np.maximum(rates, 0.0)*tau)
+            x = np.maximum(x+counts@S, 0.0)
+            recorder.append(grid[k+1], x)
+        times, states, _ = recorder.finish()
+        return times, states
     n = int(np.ceil((tf - t0) / tau))
     times = np.linspace(t0, t0 + n * tau, n + 1)
     states = np.empty((n + 1, x.size))
@@ -394,7 +532,7 @@ def strong_error(solver, exact, t_span, x0, n: int = 500, paths: int = 200,
         dt = (float(t_span[1]) - float(t_span[0])) / n
         dW = np.sqrt(dt) * rng.standard_normal((n, np.size(as_vector(x0))))
         sol = solver(t_span=t_span, x0=x0, n=n, dW=dW, **kwargs)
-        total += float(np.abs(sol.y[-1] - exact(t_span[1], np.sum(dW, axis=0))).max())
+        total += float(np.abs(sol.y_final - exact(t_span[1], np.sum(dW, axis=0))).max())
     return total / paths
 
 
@@ -406,6 +544,28 @@ def weak_error(solver, g, exact_mean: float, t_span, x0, n: int = 500,
     relevant measure whenever only averages are wanted.
     """
     rng = _rng(rng)
-    vals = [float(g(solver(t_span=t_span, x0=x0, n=n, rng=rng, **kwargs).y[-1]))
+    vals = [float(g(solver(t_span=t_span, x0=x0, n=n, rng=rng, **kwargs).y_final))
             for _ in range(paths)]
     return abs(float(np.mean(vals)) - exact_mean)
+
+
+# Output selection happens during simulation. Diffusion paths use linear
+# interpolation between simulated grid states for save_at; jump simulations
+# use a right-continuous step function. True from callback requests termination.
+for _solver_name in (
+        "euler_maruyama", "milstein", "implicit_milstein", "stochastic_heun",
+        "stochastic_rk", "srk_strong_1_5", "tamed_euler",
+        "geometric_brownian_motion", "ornstein_uhlenbeck", "cox_ingersoll_ross",
+        "gillespie_ssa", "tau_leaping"):
+    _solver = globals()[_solver_name]
+    _sampling = ("right-continuous step sampling" if _solver_name in {"gillespie_ssa", "tau_leaping"}
+                 else "linear interpolation between simulated grid states")
+    _solver.__doc__ = (_solver.__doc__ or "") + (
+        "\n    Output controls: final_only retains one state; save_every retains every\n"
+        "    kth state and the endpoint; save_at requests selected times using\n"
+        "    " + _sampling + ".\n"
+        "    callback(t, state_copy) receives accepted states, including the initial\n"
+        "    state; return True to stop. Controlled output streams random draws\n"
+        "    without retaining the full driving-noise array.\n")
+    globals()[_solver_name] = output_control(_solver)
+del _solver_name, _solver, _sampling

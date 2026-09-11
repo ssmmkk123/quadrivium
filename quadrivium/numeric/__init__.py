@@ -9,9 +9,9 @@ NumPy.  Import it the way the package does::
     >>> np.linalg.solve(np.eye(2), np.array([1.0, 2.0]))
     array([1., 2.])
 
-Arrays are strided and N-dimensional over four dtypes -- ``bool``, ``int64``,
-``float64`` and ``complex128`` -- which is every dtype the numerical methods
-here need.  Broadcasting, the indexing grammar, views, the buffer protocol and
+Arrays are strided and N-dimensional over ``bool``, ``int64``, ``float32``,
+``float64``, ``complex64`` and ``complex128``. Python floating-point input
+defaults to double precision; explicit single precision halves array storage.  Broadcasting, the indexing grammar, views, the buffer protocol and
 NumPy's pairwise summation are all reproduced, so results are not merely close
 to what NumPy produced: sums are bit-for-bit identical, and a seeded
 :func:`random.default_rng` yields exactly the same stream.
@@ -34,6 +34,10 @@ _c.set_printer(lambda array, is_repr: _formatting.format_array(array, bool(is_re
 
 ndarray = _c.ndarray
 dtype = _c.dtype
+float32 = _c.float32
+complex64 = _c.complex64
+single = float32
+csingle = complex64
 float64 = _c.float64
 complex128 = _c.complex128
 int64 = _c.int64
@@ -242,11 +246,18 @@ class _UFunc:
         values = asarray(a)
         if values.ndim == 0:
             raise ValueError("accumulate needs at least one dimension")
-        result = values.astype(values.dtype, copy=True)
-        moved = result if axis in (0, -values.ndim) else result.transpose(
-            _moveaxis_perm(values.ndim, axis))
-        for i in builtins.range(1, moved.shape[0]):
-            moved[i] = self._call(moved[i - 1], moved[i])
+        if self.__name__ in ("add", "multiply") and values.dtype != bool_:
+            # Keep the existing axis normalization and output assignment. The
+            # native kernels preserve prefix order without Python slice and
+            # ufunc allocations at every step; bool keeps its original dtype.
+            kernel = _c.cumsum if self.__name__ == "add" else _c.cumprod
+            result = kernel(values, axis=axis % values.ndim)
+        else:
+            result = values.astype(values.dtype, copy=True)
+            moved = result if axis in (0, -values.ndim) else result.transpose(
+                _moveaxis_perm(values.ndim, axis))
+            for i in builtins.range(1, moved.shape[0]):
+                moved[i] = self._call(moved[i - 1], moved[i])
         if out is not None:
             out[...] = result
             return out
@@ -708,11 +719,22 @@ def kron(a, b):
 
 
 def _result_dtype(*arrays):
-    order = [bool_, int64, float64, complex128]
-    best = 0
+    result = bool_
     for a in arrays:
-        best = builtins.max(best, order.index(asarray(a).dtype))
-    return order[best]
+        dt = asarray(a).dtype
+        if result == dt or dt == bool_:
+            continue
+        if result == bool_:
+            result = dt
+        elif complex128 in (result, dt):
+            result = complex128
+        elif complex64 in (result, dt):
+            result = complex128 if float64 in (result, dt) or int64 in (result, dt) else complex64
+        elif float64 in (result, dt) or int64 in (result, dt):
+            result = float64
+        else:
+            result = float32
+    return result
 
 
 def result_type(*items):
@@ -736,7 +758,7 @@ def isscalar(x):
 
 
 def iscomplexobj(x):
-    return asarray(x).dtype == complex128
+    return asarray(x).dtype.kind == "c"
 
 
 def isrealobj(x):
@@ -1132,8 +1154,25 @@ class _IntInfo:
     bits = 64
 
 
+class _SingleInfo(_FloatInfo):
+    eps = 2.0 ** -23
+    epsneg = 2.0 ** -24
+    tiny = smallest_normal = 2.0 ** -126
+    max = (2.0 - 2.0 ** -23) * 2.0 ** 127
+    min = -max
+    resolution = 1e-6
+    precision = 6
+    bits = 32
+
+    def __repr__(self):
+        return "finfo(dtype=float32, eps=1.1920928955078125e-07)"
+
+
 def finfo(_dtype=None):
-    return _FloatInfo()
+    dt = dtype(float64 if _dtype is None else _dtype)
+    if dt.kind not in ("f", "c"):
+        raise ValueError("finfo requires a floating-point dtype")
+    return _SingleInfo() if dt in (float32, complex64) else _FloatInfo()
 
 
 def iinfo(_dtype=None):
@@ -1177,5 +1216,32 @@ polyint = polynomial.polyint
 polyder = polynomial.polyder
 trim_zeros = polynomial.trim_zeros
 convolve = polynomial.convolve
+
+frombuffer = _c.frombuffer
+from ._io import save, load, open_memmap, flush
+
+
+def _function_dispatch(name, native):
+    """Allow differentiable array objects to own public numeric operations."""
+    def call(*args, **kwargs):
+        for value in args:
+            if type(value) is ndarray:
+                continue
+            hook = getattr(value, "__quadrivium_function__", None)
+            if hook is not None:
+                result = hook(name, *args, **kwargs)
+                if result is not NotImplemented:
+                    return result
+        return native(*args, **kwargs)
+    call.__name__ = name
+    call.__doc__ = native.__doc__
+    return call
+
+
+for _name in ("exp", "log", "log1p", "expm1", "sin", "cos", "tan", "tanh",
+              "sqrt", "square", "absolute", "negative", "sum", "mean",
+              "reshape", "transpose", "matmul"):
+    globals()[_name] = _function_dispatch(_name, globals()[_name])
+abs = absolute
 
 __all__ = [name for name in dir() if not name.startswith("_")]

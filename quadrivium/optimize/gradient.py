@@ -6,6 +6,8 @@ and the stochastic-gradient-style adaptive rules.
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -52,7 +54,7 @@ def gradient_descent(f, x0, grad_f=None, lr: float = 0.01, tol: float = 1e-8,
     fc = CountedFunction(f)
     g = _grad(grad_f, fc)
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         gn = np.linalg.norm(gk)
@@ -61,7 +63,7 @@ def gradient_descent(f, x0, grad_f=None, lr: float = 0.01, tol: float = 1e-8,
                                   k, "gradient_descent", history, "converged")
         step = backtracking(fc, x, -gk, gk, alpha0=1.0) if line_search else lr
         x = x - step * gk
-        history.append(x.copy())
+        history.append(x)
         if _diverged(x):
             return OptimizeResult(x, float(fc(x)), gk, None, k, False, fc.calls,
                                   k, "gradient_descent", history,
@@ -86,14 +88,14 @@ def _adaptive(f, x0, grad_f, update, name, lr, tol, max_iter):
     g = _grad(grad_f, fc)
     x = as_vector(x0).copy()
     state = {}
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         if np.linalg.norm(gk) < tol:
             return OptimizeResult(x, float(fc(x)), gk, None, k - 1, True, fc.calls,
                                   k, name, history, "converged")
         x = update(x, gk, state, lr, k)
-        history.append(x.copy())
+        history.append(x)
         if _diverged(x):
             return OptimizeResult(x, float(fc(x)), gk, None, k, False, fc.calls,
                                   k, name, history,
@@ -120,7 +122,7 @@ def nesterov(f, x0, grad_f=None, lr: float = 0.01, beta: float = 0.9,
     g = _grad(grad_f, fc)
     x = as_vector(x0).copy()
     v = np.zeros_like(x)
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         if np.linalg.norm(gk) < tol:
@@ -129,7 +131,7 @@ def nesterov(f, x0, grad_f=None, lr: float = 0.01, beta: float = 0.9,
         g_look = g(x - lr * beta * v)
         v = beta * v + g_look
         x = x - lr * v
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, float(fc(x)), g(x), None, max_iter, False, fc.calls,
                           max_iter, "nesterov", history, "maximum iterations reached")
 
@@ -183,7 +185,7 @@ def nonlinear_cg(f, x0, grad_f=None, variant: str = "pr", tol: float = 1e-8,
     restart = restart or n
     gk = g(x)
     d = -gk
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(gk) < tol:
             return OptimizeResult(x, float(fc(x)), gk, None, k - 1, True, fc.calls,
@@ -215,7 +217,7 @@ def nonlinear_cg(f, x0, grad_f=None, variant: str = "pr", tol: float = 1e-8,
         if d @ g_new > 0:                   # not a descent direction: reset
             d = -g_new
         x, gk = x_new, g_new
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, float(fc(x)), gk, None, max_iter, False, fc.calls,
                           max_iter, f"cg_{variant}", history,
                           "maximum iterations reached")
@@ -252,7 +254,7 @@ def barzilai_borwein(f, x0, grad_f=None, tol: float = 1e-8, max_iter: int = 5000
     gk = g(x)
     alpha = 1.0 / (np.linalg.norm(gk) + 1e-12)
     f_hist = [float(fc(x))]
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(gk) < tol:
             return OptimizeResult(x, float(fc(x)), gk, None, k - 1, True, fc.calls,
@@ -280,7 +282,12 @@ def barzilai_borwein(f, x0, grad_f=None, tol: float = 1e-8, max_iter: int = 5000
             alpha = float(np.clip(alpha, 1e-10, 1e10))
         x, gk = x_new, g_new
         f_hist.append(float(fc(x)))
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, float(fc(x)), gk, None, max_iter, False, fc.calls,
                           max_iter, "barzilai_borwein", history,
                           "maximum iterations reached")
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['gradient_descent', 'nesterov', 'nonlinear_cg', 'barzilai_borwein', 'momentum', 'adagrad', 'rmsprop', 'adam']:
+    globals()[_name] = monitor(globals()[_name])

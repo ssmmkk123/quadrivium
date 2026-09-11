@@ -1,10 +1,14 @@
 """Root finding for scalar equations ``f(x) = 0``.
 
-Bracketing methods (guaranteed but linear), open methods (fast but local), and
-the hybrids that combine both.
+Bracketed methods preserve a sign change and can provide reliable progress
+for continuous functions. Open methods can converge rapidly from suitable
+initial guesses; hybrids combine interpolation with safeguarded bracket
+updates. Convergence rates and stopping rules depend on the chosen method.
 """
 
 from __future__ import annotations
+
+from ._history import History, monitor
 
 from .. import numeric as np
 
@@ -55,7 +59,7 @@ def bisection(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200):
     fa, fb, exact = _check_bracket(fc, a, b)
     if exact is not None:
         return RootResult(exact, 0.0, 0, True, fc.calls, "bisection", [], "exact root at endpoint")
-    history = []
+    history = History([])
     c = a
     for k in range(1, max_iter + 1):
         c = 0.5 * (a + b)
@@ -78,7 +82,7 @@ def false_position(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 20
     fa, fb, exact = _check_bracket(fc, a, b)
     if exact is not None:
         return RootResult(exact, 0.0, 0, True, fc.calls, "false_position", [], "exact root at endpoint")
-    history = []
+    history = History([])
     c = a
     for k in range(1, max_iter + 1):
         c = (a * fb - b * fa) / (fb - fa)
@@ -111,7 +115,7 @@ def _modified_regula(f, a, b, tol, max_iter, rule, name):
     fa, fb, exact = _check_bracket(fc, a, b)
     if exact is not None:
         return RootResult(exact, 0.0, 0, True, fc.calls, name, [], "exact root at endpoint")
-    history = []
+    history = History([])
     c = a
     for k in range(1, max_iter + 1):
         c = (a * fb - b * fa) / (fb - fa)
@@ -152,7 +156,7 @@ def ridders(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200):
     fa, fb, exact = _check_bracket(fc, a, b)
     if exact is not None:
         return RootResult(exact, 0.0, 0, True, fc.calls, "ridders", [], "exact root at endpoint")
-    history = []
+    history = History([])
     x = a
     for k in range(1, max_iter + 1):
         c = 0.5 * (a + b)
@@ -190,7 +194,7 @@ def brent(f, a: float, b: float, tol: float = 1e-14, max_iter: int = 200):
         a, b, fa, fb = b, a, fb, fa
     c, fc_val = a, fa
     d = e = b - a
-    history = []
+    history = History([])
     for k in range(1, max_iter + 1):
         if fb != 0 and np.sign(fb) == np.sign(fc_val):
             c, fc_val = a, fa
@@ -237,7 +241,7 @@ def itp(f, a: float, b: float, tol: float = 1e-12, max_iter: int = 200,
         return RootResult(exact, 0.0, 0, True, fc.calls, "itp", [], "exact root at endpoint")
     n_half = int(np.ceil(np.log2((b - a) / (2 * tol)))) if b - a > 2 * tol else 0
     n_max = n_half + n0
-    history = []
+    history = History([])
     j = 0
     x = 0.5 * (a + b)
     while (b - a) > 2 * tol and j < max_iter:
@@ -267,7 +271,7 @@ def secant(f, x0: float, x1=None, tol: float = 1e-12, max_iter: int = 200):
     x0 = float(x0)
     x1 = float(x1) if x1 is not None else x0 + (1e-4 * max(abs(x0), 1.0))
     f0, f1 = fc(x0), fc(x1)
-    history = [x0, x1]
+    history = History([x0, x1])
     for k in range(1, max_iter + 1):
         if f1 == f0:
             return RootResult(x1, f1, k, abs(f1) < tol, fc.calls, "secant", history,
@@ -291,7 +295,7 @@ def newton(f, x0: float, df=None, tol: float = 1e-12, max_iter: int = 200,
     fc = CountedFunction(f)
     dfc = CountedFunction(df) if df is not None else None
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         fx = fc(x)
         if abs(fx) < tol:
@@ -314,7 +318,7 @@ def halley(f, x0: float, df=None, d2f=None, tol: float = 1e-12, max_iter: int = 
     """Halley's method: cubic convergence using the second derivative."""
     fc = CountedFunction(f)
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         fx = fc(x)
         if abs(fx) < tol:
@@ -339,7 +343,7 @@ def chebyshev_method(f, x0: float, df=None, d2f=None, tol: float = 1e-12,
     """Chebyshev's third-order method (Newton plus a curvature correction)."""
     fc = CountedFunction(f)
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         fx = fc(x)
         if abs(fx) < tol:
@@ -362,7 +366,7 @@ def steffensen(f, x0: float, tol: float = 1e-12, max_iter: int = 200):
     """Steffensen's method: Newton-like quadratic order without a derivative."""
     fc = CountedFunction(f)
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         fx = fc(x)
         if abs(fx) < tol:
@@ -386,7 +390,7 @@ def muller(f, x0: float, x1=None, x2=None, tol: float = 1e-12, max_iter: int = 2
     x0 = complex(x0)
     x1 = complex(x1) if x1 is not None else x0 + 0.5
     x2 = complex(x2) if x2 is not None else x0 + 1.0
-    history = []
+    history = History([])
     for k in range(1, max_iter + 1):
         f0, f1, f2 = fc(x0), fc(x1), fc(x2)
         h1, h2 = x1 - x0, x2 - x1
@@ -415,7 +419,7 @@ def inverse_quadratic(f, x0: float, x1: float, x2: float, tol: float = 1e-12,
     """Inverse quadratic interpolation through three iterates."""
     fc = CountedFunction(f)
     x0, x1, x2 = float(x0), float(x1), float(x2)
-    history = []
+    history = History([])
     for k in range(1, max_iter + 1):
         f0, f1, f2 = fc(x0), fc(x1), fc(x2)
         if len({f0, f1, f2}) < 3:
@@ -440,7 +444,7 @@ def fixed_point(g, x0: float, tol: float = 1e-12, max_iter: int = 1000,
     """
     gc = CountedFunction(g)
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gx = gc(x)
         x_new = (1 - relaxation) * x + relaxation * gx
@@ -460,7 +464,7 @@ def aitken_accelerated(g, x0: float, tol: float = 1e-12, max_iter: int = 200):
     """Aitken's delta-squared acceleration of a fixed point iteration."""
     gc = CountedFunction(g)
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         x1 = gc(x)
         x2 = gc(x1)
@@ -517,3 +521,8 @@ def find_all_roots(f, a: float, b: float, n: int = 200, tol: float = 1e-12,
         if not out or abs(r - out[-1]) > 1e-8 * max(1.0, abs(r)):
             out.append(r)
     return np.array(out)
+
+
+# Common context-local retention and callback controls.
+for _name in ['bisection', 'false_position', 'ridders', 'brent', 'itp', 'secant', 'newton', 'halley', 'chebyshev_method', 'steffensen', 'muller', 'inverse_quadratic', 'fixed_point', 'aitken_accelerated', 'illinois', 'pegasus']:
+    globals()[_name] = monitor(globals()[_name])

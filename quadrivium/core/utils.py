@@ -157,6 +157,13 @@ def check_square(A) -> np.ndarray:
 
 
 def is_symmetric(A, tol: float = 1e-12) -> bool:
+    """Test whether a real square matrix is close to its transpose.
+
+    Inputs are converted to floating-point arrays. Non-square or non-matrix
+    inputs return False. The comparison uses absolute tolerance ``tol`` and
+    relative tolerance ``1e-5``, matching ``allclose(A, A.T, atol=tol)``;
+    this is an approximate symmetry check, not exact equality.
+    """
     A = np.asarray(A, dtype=float)
     if A.ndim != 2 or A.shape[0] != A.shape[1]:
         return False

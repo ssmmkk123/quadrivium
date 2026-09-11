@@ -3,12 +3,11 @@
  * The package used to lean on NumPy for its array type and for the handful of
  * numerical primitives NumPy exposes.  This extension provides the same
  * semantics for the subset the library actually needs: strided N-dimensional
- * arrays over four dtypes, broadcasting element-wise operations, the indexing
+ * arrays over six dtypes, broadcasting element-wise operations, the indexing
  * grammar, reductions, dense linear algebra, transforms and a PCG64 generator.
  *
- * Only four dtypes exist, ordered by promotion rank: bool < int64 < float64 <
- * complex128.  That is every dtype the library uses, and keeping the set small
- * is what makes exhaustive, table-free type resolution practical here.
+ * Boolean/integer and single/double real/complex storage are supported.
+ * Enum values remain stable; qnp_promote implements precision-aware promotion.
  */
 #ifndef QNP_H
 #define QNP_H
@@ -35,7 +34,9 @@ enum {
     QNP_INT64 = 1,
     QNP_FLOAT64 = 2,
     QNP_COMPLEX128 = 3,
-    QNP_NTYPES = 4
+    QNP_FLOAT32 = 4,
+    QNP_COMPLEX64 = 5,
+    QNP_NTYPES = 6
 };
 
 /* Flags mirror the NumPy names because the semantics are the same. */
@@ -72,7 +73,7 @@ extern PyObject *QNP_LinAlgError;
 #define QNP_STRIDES(a) (((QArray *)(a))->strides)
 #define QNP_TYPE(a) (((QArray *)(a))->dtype)
 
-static const int qnp_itemsize_table[QNP_NTYPES] = {1, 8, 8, 16};
+static const int qnp_itemsize_table[QNP_NTYPES] = {1, 8, 8, 16, 4, 8};
 #define QNP_ITEMSIZE(t) (qnp_itemsize_table[(t)])
 
 /* ---- complex helpers ------------------------------------------------- */
@@ -109,6 +110,30 @@ qcomplex qc_tan(qcomplex a);
 qcomplex qc_sinh(qcomplex a);
 qcomplex qc_cosh(qcomplex a);
 qcomplex qc_tanh(qcomplex a);
+
+/* Compact storage uses double-width scalar registers, without temporary arrays. */
+static inline int qnp_is_complex(int t) { return t == QNP_COMPLEX128 || t == QNP_COMPLEX64; }
+static inline int qnp_wide_type(int t) { return t == QNP_FLOAT32 ? QNP_FLOAT64 : t == QNP_COMPLEX64 ? QNP_COMPLEX128 : t; }
+static inline qcomplex qnp_read_number(const char *p, int t) {
+    switch (t) {
+        case QNP_BOOL: return qc(*(const unsigned char *)p, 0);
+        case QNP_INT64: return qc((double)*(const int64_t *)p, 0);
+        case QNP_FLOAT32: return qc(*(const float *)p, 0);
+        case QNP_FLOAT64: return qc(*(const double *)p, 0);
+        case QNP_COMPLEX64: return qc(((const float *)p)[0], ((const float *)p)[1]);
+        default: return *(const qcomplex *)p;
+    }
+}
+static inline void qnp_write_number(char *p, int t, qcomplex z) {
+    switch (t) {
+        case QNP_BOOL: *(unsigned char *)p = z.re != 0 || z.im != 0; break;
+        case QNP_INT64: *(int64_t *)p = (int64_t)z.re; break;
+        case QNP_FLOAT32: *(float *)p = (float)z.re; break;
+        case QNP_FLOAT64: *(double *)p = z.re; break;
+        case QNP_COMPLEX64: ((float *)p)[0] = (float)z.re; ((float *)p)[1] = (float)z.im; break;
+        default: *(qcomplex *)p = z; break;
+    }
+}
 
 /* ---- array creation and conversion ----------------------------------- */
 QArray *qnp_new(int nd, const qintp *shape, int dtype);

@@ -1,101 +1,84 @@
 # Contributing to Quadrivium
 
-Thank you for helping improve quadrivium. Contributions may be bug fixes,
-documentation improvements, new tests, performance work, or carefully scoped
-numerical methods.
-
-## Before you start
-
-- Search the existing issues and pull requests before opening a duplicate.
-- Open an issue before making a large API change or adding a substantial new
-  algorithm so its scope and validation strategy can be discussed first.
-- Keep each pull request focused on one coherent change.
+Contributions can improve numerical correctness, runtime behavior, examples,
+or the clarity of the documentation. Start with a focused problem and a
+reproducible result. Discuss substantial new methods or public API changes in
+an issue before implementing them.
 
 ## Development setup
 
-Fork and clone the repository, then create an isolated environment:
-
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[test]"
+python -m pip install -e ".[dev]"
 ```
 
-On Windows PowerShell, activate the environment with
-`.venv\Scripts\Activate.ps1`.
+On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`. Source
+installation requires a C compiler and Python development headers. Editable
+Python changes take effect immediately; reinstall after changes in `csrc/`.
 
-Run the complete test suite before submitting a pull request:
+## Numerical work
+
+Use `quadrivium.numeric` for library array operations. NumPy is an optional
+independent test reference, not a runtime dependency. Keep the implemented
+method visible in the repository's Python or C source.
+
+For a change to numerical behavior, establish an independent expectation:
+an analytic result, a reconstruction or conservation identity, a convergence
+order, or a separate implementation. Test meaningful failure cases, including
+shape, scale, conditioning, and storage ownership where relevant. Explain the
+return type, method-specific stopping rule, and limits in the public docstring.
+
+Run focused tests during development and the complete checks before submitting
+code changes:
 
 ```bash
 python -m pytest -q
+QUADRIVIUM_NO_ACCEL=1 python -m pytest -q
 ```
 
-The suite covers numerical identities, native-backend equivalence, sparse
-storage, bounded workspace, concurrent backend selection, packaging, and the
-documentation examples. Use pytest so parametrized regressions also run.
+The reference backend still uses the required C array engine. See the
+[detailed contributor guide](docs/contributing.md) for the Windows environment
+syntax and examples of useful numerical regressions.
 
-You can run a single module while developing:
+## Documentation and graphs
+
+Guides should explain when to use a method, how to form its inputs, how to read
+its result, and how to validate it. Write complete, small `pycon` examples with
+stable displayed outputs. Doctests execute these examples; ordinary Python and
+shell fences are not automatically executed.
+
+The API reference is generated from source signatures, docstrings, and class
+interfaces. The site changelog is generated from [CHANGELOG.md](CHANGELOG.md).
+Edit those sources before regenerating:
 
 ```bash
-python -m pytest -q tests/test_calculus.py
+python tools/gen_docs.py
+python -m pytest -q tests/test_docs.py
+python -m mkdocs build --strict
 ```
 
-Write local benchmark and audit output to `benchmarks/runs/` (create it first),
-which Git ignores. Keep reusable benchmark and audit scripts in `tools/`.
-The four published `benchmarks/scalability-*.json` baselines support
-`PERFORMANCE.md` and are the only benchmark data included in source releases.
-
-## Numerical changes
-
-Numerical algorithms need evidence beyond a single expected value. Where
-applicable, add tests for properties such as convergence order, exactness,
-conservation, stability, structural identities, or agreement with an
-independent analytic solution. Include difficult boundary cases and document
-the method's known limitations.
-
-Avoid delegating the core algorithm to a high-level implementation in another
-library. NumPy may be used for array operations and low-level primitives, but
-the method itself should remain visible in the source.
-
-## Code and documentation
-
-- Match the surrounding style and use four spaces for Python indentation.
-- Add or update docstrings for public APIs.
-- Keep public behavior backward compatible unless the change has been agreed
-  upon in an issue.
-- Update the README, the guides in `docs/`, or the examples when user-facing
-  behavior changes.
-- Add a regression test for every bug fix when practical.
-
-The documentation is checked by the test suite, so three commands matter after
-any change to the public API or to `docs/`:
+Graph experiments live in `tools/figures/experiments.py`. They use actual
+Quadrivium calculations, explicit references, and recorded parameters. Generate
+both theme variants and inspect the result:
 
 ```bash
-python tools/gen_docs.py       # regenerate docs/api/*.md and docs/changelog.md
-python tools/gen_figures.py    # redraw docs/assets/figures from the library
-mkdocs build --strict          # no broken links, anchors, or missing pages
+python tools/gen_figures.py --png /tmp/quadrivium-figure-preview
+python tools/gen_figures.py --check
 ```
 
-Every figure on the site is generated by `tools/gen_figures.py`, which runs the
-method being illustrated and plots what it returns -- a residual history is a
-real residual history, a convergence order is measured. Each figure is a
-function in `tools/figures/`, is written out once for the light theme and once
-for the dark, and is checked in, so building the site needs neither Matplotlib
-nor the time the computations take. Install the tool with
-`pip install -e ".[figures]"`, and see the
-[documentation guide](https://ssmmkk123.github.io/quadrivium/contributing/)
-for the conventions.
+A full generation removes obsolete SVGs and updates the provenance manifest.
+Read [figure methodology](docs/figures.md) before changing a graph. Keep local
+benchmark and audit output in the ignored `benchmarks/` directory.
 
-Examples in the documentation are written as doctests and executed by
-`tests/test_docs.py`. Because doctest compares printed output exactly, convert
-NumPy scalars with `float()`, `int()`, or `bool()` before displaying them, and
-round to fewer digits than the method actually delivers. Install the tools with
-`pip install -e ".[dev]"`.
+## Submit a pull request
 
-## Pull requests
+Describe the concrete problem, resulting behavior, validation performed, and
+remaining limitations. Keep the change focused and synchronize generated
+artifacts. CI validates supported interpreters, backend configurations,
+packaging, and documentation.
 
-In the pull request description, explain the problem, the approach, and how
-you validated the result. CI must pass on every supported Python version.
-By contributing, you agree that your work will be licensed under the project's
-MIT License.
+Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities through
+[Security](SECURITY.md); use [Support](SUPPORT.md) for help with a calculation.
+Contributions are distributed under the project's [MIT license](LICENSE).

@@ -1,271 +1,302 @@
 # Partial differential equations
 
-```python
-from quadrivium.pde import heat_crank_nicolson, multigrid_solve, weno_burgers
-import quadrivium as qd          # qd.poisson_2d_direct, qd.navier_stokes_2d, ...
-```
+A PDE solver combines a spatial representation, boundary conditions, and either
+a time integrator or a stationary linear/nonlinear solve. Choosing the equation
+alone is not enough: a periodic advection scheme and a Dirichlet diffusion
+scheme represent different physical problems even on the same interval.
 
-72 routines across the three classical types — parabolic, hyperbolic, elliptic
-— plus multigrid, finite elements, finite volumes, spectral methods,
-high-resolution schemes, and an incompressible Navier-Stokes solver. Full
-signatures are in the [`pde` reference](../api/pde.md).
+This guide develops small problems with known answers, then explains how to
+extend the workflow to conservation laws, finite elements, and larger grids.
+The [PDE reference](../api/pde.md) contains the complete method catalogue.
 
-Solvers return a `PDESolution` carrying `u`, the coordinate `grids`, the time
-levels `t` where there are any, and the residual history for iterative solvers.
+## Choose an equation and discretization
 
-```mermaid
-flowchart TD
-    A["a PDE"] --> B{"which type?"}
-    B -- "parabolic<br/>diffusion" --> C{"step limited by stability?"}
-    C -- "no, use implicit" --> D["heat_btcs<br/>heat_crank_nicolson"]
-    C -- "explicit is fine" --> E["heat_ftcs<br/>r ≤ 1/2"]
-    B -- "hyperbolic<br/>waves, advection" --> F{"is the solution smooth?"}
-    F -- yes --> G["lax_wendroff<br/>beam_warming"]
-    F -- "shocks or jumps" --> H["tvd_scheme<br/>weno_burgers"]
-    B -- "elliptic<br/>Poisson, Laplace" --> I{"how large?"}
-    I -- small --> J["poisson_2d_direct<br/>poisson_9point"]
-    I -- large --> K["multigrid_solve"]
-    I -- periodic --> L["poisson_fft"]
-```
+| Problem | Starting interface | Main numerical decision |
+| --- | --- | --- |
+| One-dimensional heat diffusion | `heat_crank_nicolson`, `heat_btcs` | Spatial resolution and temporal damping |
+| Explicit heat demonstration | `heat_ftcs` | Diffusion stability limit |
+| Custom time-dependent spatial operator | `method_of_lines` | Spatial stencil and ODE stiffness |
+| Linear periodic transport | `advection_upwind`, `lax_wendroff`, `tvd_scheme` | Diffusion versus oscillation near fronts |
+| Nonlinear conservation law | `fvm_1d_conservation`, `fvm_muscl`, `weno_conservation_law` | Flux, wave speed, and CFL limit |
+| Poisson with rectangular boundaries | `poisson_2d_direct`, `poisson_2d_iterative` | Grid size and algebraic tolerance |
+| Zero-Dirichlet rectangular Poisson | `poisson_fft` | Transform diagonalization of the stencil |
+| Larger structured elliptic problem | `multigrid_solve` | Compatible grid hierarchy |
+| Triangular finite-element mesh | `fem_2d_triangular`, `adaptive_fem` | Geometry and local refinement |
+| Periodic incompressible flow | `navier_stokes_2d` | Projection consistency and time-step stability |
 
-## Parabolic: diffusion
+A method's name is not a complete boundary-condition specification. For
+example, `poisson_fft` uses a **sine transform with homogeneous Dirichlet
+boundaries**; `poisson_periodic_fft` solves a different periodic problem.
+Likewise, Fourier spectral solvers assume periodicity, whereas Chebyshev
+methods use a nonperiodic collocation grid.
+
+## Read the solution layout
+
+Structured-grid solvers return `PDESolution` with the field `u`, coordinate
+arrays in `grids`, and time levels in `t` for time-dependent problems.
+`final` returns the actual last state, or the stationary field when no time
+axis exists. `converged`, `iterations`, and `residuals` are meaningful for
+solvers that perform iterative solves.
+
+| Solver family | Typical full output shape |
+| --- | --- |
+| One-dimensional heat, endpoint grid | `(nt + 1, nx + 1)` |
+| Periodic linear advection | `(nt + 1, nx)` |
+| Stationary rectangular Poisson | `(nx + 1, ny + 1)` |
+| Two-dimensional ADI heat | `(nt + 1, nx + 1, ny + 1)` |
+| Triangular FEM | One value per mesh vertex |
+
+Some specialized systems use additional component axes. Read the solver's
+layout before applying `meshgrid` or plotting: the flow solver uses fields
+from `meshgrid(..., indexing="xy")`, whereas rectangular Poisson arrays are
+indexed by x and then y. Storage controls can reduce the time dimension.
+
+## Solve a heat equation with a known solution
+
+Consider `u_t = alpha*u_xx` on `[0, 1]`, with zero endpoint values and
+`u(x, 0) = sin(pi*x)`. Its exact solution is
+`exp(-alpha*pi**2*t)*sin(pi*x)`, making it useful for checking both amplitude
+and convergence.
 
 ```pycon
->>> from quadrivium import numeric as np
 >>> import quadrivium as qd
->>> u0 = lambda x: np.sin(np.pi * x)
->>> sol = qd.heat_crank_nicolson(u0, 0.1, (0, 1), (0, 0.5), nx=50, nt=100)
->>> sol.u.shape                              # (time levels, grid points)
-(101, 51)
->>> x = sol.grids[0]
+>>> from quadrivium import numeric as np
+>>> initial = lambda x: np.sin(np.pi * x)
+>>> heat = qd.heat_crank_nicolson(initial, 0.1, (0, 1), (0, 0.5),
+...                              nx=40, nt=100)
+>>> heat.u.shape, len(heat.grids)
+((101, 41), 1)
+>>> x = heat.grids[0]
 >>> exact = np.exp(-0.1 * np.pi**2 * 0.5) * np.sin(np.pi * x)
->>> float(np.max(np.abs(sol.u[-1] - exact))) < 1e-4
+>>> float(np.max(np.abs(heat.final - exact))) < 2e-4
+True
+>>> float(np.max(np.abs(heat.u[:, [0, -1]]))) < 1e-12
 True
 
 ```
 
-<figure markdown="span">
-  ![Crank-Nicolson diffusion profiles against the analytic solution](../assets/figures/pde-heat-evolution.svg#only-light)
-  ![Crank-Nicolson diffusion profiles against the analytic solution](../assets/figures/pde-heat-evolution-dark.svg#only-dark)
-  <figcaption>The dotted curves are exp(−απ²t)·sin(πx), the exact solution of the problem being solved. Crank-Nicolson is second order in time and unconditionally stable, so refining the grid lowers the error without any constraint on the step.</figcaption>
-</figure>
+`nx` counts spatial intervals for this solver, so `dx = 1/nx`. `nt` counts
+time intervals. `u0` can be a scalar-coordinate callable or a vector of
+`nx + 1` values. The `bc=(left, right)` values can be constants or functions
+of time; optional `source(x, t)` adds a forcing term. Make the initial endpoint
+values consistent with the boundary data to avoid an unintended initial jump.
 
-| Scheme | Function | Stability | Order in time |
-| --- | --- | --- | --- |
-| forward Euler (FTCS) | `heat_ftcs` | conditional, `r ≤ 1/2` | 1 |
-| backward Euler (BTCS) | `heat_btcs` | unconditional | 1 |
-| Crank-Nicolson | `heat_crank_nicolson` | unconditional | 2 |
-| θ-method | `heat_theta` | unconditional for `θ ≥ 1/2` | 2 at `θ = 1/2` |
-| 2-D, direction split | `heat_2d_adi` | unconditional | 2 |
-| semi-discrete | `method_of_lines` | whatever the ODE solver gives | ODE solver's |
+### Stability and accuracy are different requirements
 
-The stability condition is not advice — an explicit scheme above it diverges,
-so `heat_ftcs` refuses the step and says what would work:
+For heat diffusion define `r = alpha*dt/dx**2`.
+
+| Scheme | Temporal order on smooth solutions | Stability for the standard diffusion problem |
+| --- | --- | --- |
+| `heat_ftcs` | First | Requires `r <= 1/2` |
+| `heat_btcs` | First | Unconditional linear stability |
+| `heat_crank_nicolson` | Second | Unconditional linear stability |
+| `heat_theta` | Second at `theta=1/2`, otherwise generally first | Unconditional for `theta >= 1/2` |
 
 ```pycon
+>>> from quadrivium.pde import stability_ratio
+>>> round(stability_ratio(alpha=0.1, dt=0.001, dx=0.02), 6)
+0.25
 >>> from quadrivium.core import DomainError
 >>> try:
-...     qd.pde.heat_ftcs(u0, 0.1, (0, 1), (0, 0.5), nx=50, nt=10)
-... except DomainError as exc:
-...     print(exc)
-FTCS is unstable for r = 12.5000 > 1/2; use nt >= 250 steps, or an implicit scheme such as heat_btcs / heat_crank_nicolson
+...     qd.pde.heat_ftcs(initial, 0.1, (0, 1), (0, 0.5), nx=40, nt=10)
+... except DomainError:
+...     print("Increase nt or choose an implicit diffusion scheme.")
+Increase nt or choose an implicit diffusion scheme.
 
 ```
 
-`stability_ratio(alpha, dt, dx)` computes `r` directly. `diffusion_reaction`
-and `advection_diffusion` add the other two terms; `method_of_lines`
-discretizes space only and hands the resulting ODE system to any solver from
-[`quadrivium.ode`](ode.md).
+The explicit solver checks this limit by default. Do not interpret the absence
+of a check in another interface as evidence that every step size is stable.
+The general `heat_theta` interface, for example, lets the caller choose theta
+and the grid; assess the resulting stability requirement yourself.
 
-<figure markdown="span">
-  ![The explicit diffusion scheme above and below its stability limit](../assets/figures/pde-ftcs-stability.svg#only-light)
-  ![The explicit diffusion scheme above and below its stability limit](../assets/figures/pde-ftcs-stability-dark.svg#only-dark)
-  <figcaption>The initial data carries a 2% component at the shortest wavelength the grid can hold — as any real data does. Below r = 1/2 it decays; at exactly 1/2 it neither grows nor decays; at 0.52 it grows by twenty orders of magnitude, which is why `heat_ftcs` refuses the step rather than returning it.</figcaption>
-</figure>
+An implicit scheme can remain bounded at a large step while being inaccurate.
+Crank-Nicolson can retain oscillatory high-frequency components when `r` is
+large, especially for rough initial data. Backward Euler damps those modes
+more strongly. Refinement and the physical behavior of interest should decide
+whether that damping is desirable.
 
-## Hyperbolic: waves and advection
+### Measure spatial and temporal error separately
 
-Twelve schemes for the same equation, because their failure modes differ and
-that is the whole subject:
-
-```pycon
->>> square = lambda x: np.where(np.abs(x - 0.3) < 0.1, 1.0, 0.0)
->>> from quadrivium.pde import lax_wendroff, advection_upwind, tvd_scheme
->>> lw = lax_wendroff(square, 1.0, (0, 1), (0, 0.2), nx=200, nt=400)
->>> tvd = tvd_scheme(square, 1.0, (0, 1), (0, 0.2), nx=200, nt=400, limiter="van_leer")
->>> float(np.min(lw.u[-1])) < -0.02          # second order: oscillates
-True
->>> float(np.min(tvd.u[-1])) > -1e-9         # TVD limiter: no new extrema
-True
-
-```
-
-That is the Godunov barrier in one example: a linear scheme of second order or
-higher cannot be monotone. Upwind is monotone but smears the discontinuity;
-Lax-Wendroff is sharp but oscillates; a flux limiter switches between them
-locally and gets both.
-
-<figure markdown="span">
-  ![Three schemes advecting the same square pulse](../assets/figures/pde-godunov-barrier.svg#only-light)
-  ![Three schemes advecting the same square pulse](../assets/figures/pde-godunov-barrier-dark.svg#only-dark)
-  <figcaption>After one transit of the domain: upwind has smeared the jump over twenty cells but stayed monotone, Lax-Wendroff has kept it sharp and acquired oscillations of 27% below zero, and the van Leer limiter has kept the sharpness without the overshoot.</figcaption>
-</figure>
-
-`flux_limiter(r, kind)` exposes the seven limiters (`minmod`, `van_leer`,
-`superbee`, `mc`, `koren`, `ospre`, `van_albada`), all of which lie inside
-Sweby's TVD region.
-
-| Problem | Function |
-| --- | --- |
-| second-order wave equation | `wave_explicit`, `wave_implicit` |
-| linear advection, first order | `advection_upwind`, `lax_friedrichs` |
-| linear advection, second order | `lax_wendroff`, `beam_warming`, `maccormack`, `leapfrog_advection` |
-| discontinuous data | `tvd_scheme`, `weno_conservation_law` |
-| nonlinear conservation law (shocks) | `godunov_burgers`, `weno_burgers`, `fvm_1d_conservation` |
-| finite volume with reconstruction | `fvm_muscl`, with `rusanov_flux` or `hll_flux` |
-
-WENO reconstruction with SSP Runge-Kutta time stepping is the high-order
-answer for shocks: fifth-order accurate where the solution is smooth, and
-non-oscillatory across a discontinuity.
+First make temporal error small and refine `nx`; then hold the spatial grid
+fine and refine `nt`. Changing both at once can hide which discretization
+limits accuracy. A smooth central-difference spatial scheme should approach
+second-order behavior until another error source dominates.
 
 ```pycon
->>> from quadrivium.pde import weno_burgers
->>> smooth = lambda x: 0.5 + np.sin(2*np.pi*x)
->>> b = weno_burgers(smooth, (0, 1), (0, 0.3), nx=128, cfl=0.4)
->>> bool(np.all(np.isfinite(b.u[-1]))), float(np.max(b.u[-1])) <= 1.6
-(True, True)
-
-```
-
-## Elliptic: Poisson and Laplace
-
-```pycon
->>> f = lambda x, y: -2 * np.pi**2 * np.sin(np.pi*x) * np.sin(np.pi*y)
->>> p = qd.poisson_2d_direct(f, (0, 1), (0, 1), nx=40, ny=40)
->>> X, Y = np.meshgrid(p.grids[0], p.grids[1], indexing="ij")
->>> float(np.max(np.abs(p.u - np.sin(np.pi*X) * np.sin(np.pi*Y)))) < 1e-3
+>>> errors = []
+>>> for intervals in (20, 40):
+...     run = qd.heat_crank_nicolson(initial, 0.1, (0, 1), (0, 0.5),
+...                                  nx=intervals, nt=200, final_only=True)
+...     truth = np.exp(-0.1 * np.pi**2 * 0.5) * np.sin(np.pi * run.x)
+...     errors.append(float(np.max(np.abs(run.final - truth))))
+>>> 3.5 < errors[0] / errors[1] < 4.5
 True
 
 ```
 
 <figure markdown="span">
-  ![The Poisson solution, and what the fourth-order stencil buys](../assets/figures/pde-poisson-accuracy.svg#only-light)
-  ![The Poisson solution, and what the fourth-order stencil buys](../assets/figures/pde-poisson-accuracy-dark.svg#only-dark)
-  <figcaption>A manufactured solution, so the error is known exactly. The five-point stencil is second order and the Mehrstellen nine-point stencil fourth: at h = 1/40 that is the difference between 1e-3 and 1e-6, for the same sparsity pattern.</figcaption>
+  ![Heat profiles compared with an analytic solution and error under joint space and time refinement](../assets/figures/pde-diffusion-refinement.svg#only-light)
+  ![Heat profiles compared with an analytic solution and error under joint space and time refinement](../assets/figures/pde-diffusion-refinement-dark.svg#only-dark)
+  <figcaption>The profiles show diffusion of a sine mode with alpha=0.1 through time 0.5. The error experiment increases nx from 10 to 80 with nt=2*nx, refining space and time together. Both discretization errors contribute to the measured second-order trend; the separate refinement example above helps identify which contribution controls a particular run.</figcaption>
 </figure>
 
-The five-point stencil is second order; `poisson_9point` uses the fourth-order
-Mehrstellen stencil; `poisson_fft` solves the periodic problem in `O(n² log n)`
-by diagonalizing the difference operator exactly; `poisson_neumann` handles
-pure-Neumann boundaries with ghost points, which is what keeps it second order
-where a one-sided difference would not.
+## Retain and restart time-dependent fields
 
-For large grids, iterating is cheaper than a direct solve — and multigrid
-iterates in a way whose cost is proportional to the number of unknowns,
-independent of how fine the grid is:
+Full field histories can dominate memory. If a grid contains `M` floating-point
+values and you save `K` time levels in float64, the retained field payload is
+approximately `8*M*K` bytes, before coordinates and solver work arrays.
 
 ```pycon
->>> mg = qd.multigrid_solve(f, (0, 1), (0, 1), n=64, tol=1e-10)
->>> mg.converged, mg.iterations < 15          # V-cycles, not sweeps
-(True, True)
-
-```
-
-`v_cycle`, `w_cycle`, and `full_multigrid` are the cycles themselves;
-`restrict`, `prolong`, `smooth`, and `residual` are the components, exposed so
-the algorithm can be assembled or inspected. `poisson_2d_iterative` runs
-plain Jacobi, Gauss-Seidel, SOR, or CG for comparison — which is the way to see
-what multigrid buys.
-
-<figure markdown="span">
-  ![Multigrid against single-grid iterations, and the mesh independence](../assets/figures/pde-multigrid.svg#only-light)
-  ![Multigrid against single-grid iterations, and the mesh independence](../assets/figures/pde-multigrid-dark.svg#only-dark)
-  <figcaption>A single-grid iteration removes the high-frequency error quickly and then crawls; multigrid moves the low frequencies to a coarse grid where they are high frequencies again. The count of V-cycles is flat in the mesh size, which is the property that matters.</figcaption>
-</figure>
-
-## Finite elements
-
-```pycon
->>> from quadrivium.pde import fem_1d_linear
->>> # -u'' = 1 on (0,1), u(0) = u(1) = 0  →  u = x(1-x)/2
->>> fem = fem_1d_linear(lambda x: 1.0, (0, 1), bc=(0.0, 0.0), n=20)
->>> xs = fem.grids[0]
->>> float(np.max(np.abs(fem.u - xs*(1 - xs)/2))) < 1e-12
+>>> sampled = qd.heat_crank_nicolson(initial, 0.1, (0, 1), (0, 0.5),
+...                                 nx=20, nt=100, save_every=25)
+>>> sampled.u.shape
+(5, 21)
+>>> endpoint = qd.heat_crank_nicolson(initial, 0.1, (0, 1), (0, 0.5),
+...                                  nx=20, nt=100, final_only=True)
+>>> endpoint.u.shape, endpoint.final.shape
+((1, 21), (21,))
+>>> np.allclose(sampled.final, endpoint.final)
 True
 
 ```
 
-P1 elements are nodally exact in 1-D for this problem — the error at the nodes
-is machine precision, not `O(h²)` — which is a property of the Galerkin
-projection, not a coincidence. `fem_1d_quadratic` uses P2 elements,
-`fem_2d_triangular` solves on a triangular mesh (`unit_square_mesh` builds
-one), `assemble_1d` and `fem_1d_mass_stiffness` expose the element matrices,
-and `fem_1d_time_dependent` adds a θ-scheme in time.
+Time-dependent interfaces accept `save_every`, `save_at`, `final_only`, and
+`callback(t, u)` through their output-control wrappers. Requested output times
+do not automatically refine the spatial or temporal discretization. A callback
+receives a copy and can return `True` to stop.
 
-## Spectral methods
+Checkpoints preserve numerical state; `resume_pde` also needs the original
+solver and model/spatial options. Wave and leapfrog restart paths preserve
+the previous time level and require the original step. See the
+[workflow guide](workflows.md) for a concrete restart.
 
-For periodic problems on smooth data, spectral methods converge faster than
-any fixed order:
+## Transport, waves, and discontinuities
+
+Linear advection solves `u_t + c*u_x = 0`: a profile translates at speed `c`.
+The periodic interfaces store `nx` unique points on an endpoint-excluded grid.
+Use the exact translated profile to assess phase error and amplitude loss.
 
 ```pycon
->>> from quadrivium.pde import fourier_heat
->>> n = 64
->>> xs = np.linspace(0, 2*np.pi, n, endpoint=False)
->>> sol = fourier_heat(np.sin(xs), 0.1, L=2*np.pi, n=n, t_span=(0, 1), nt=100)
->>> decay = float(np.exp(-0.1))
->>> float(np.max(np.abs(sol.u[-1] - decay * np.sin(xs)))) < 1e-10
+>>> from quadrivium.pde import advection_upwind, lax_wendroff
+>>> profile = lambda x: np.sin(2 * np.pi * x)
+>>> transport = lax_wendroff(profile, 1.0, (0, 1), (0, 0.2), nx=80, nt=80)
+>>> transport.u.shape
+(81, 80)
+>>> translated = np.sin(2 * np.pi * (transport.x - 0.2))
+>>> float(np.max(np.abs(transport.final - translated))) < 0.002
 True
 
 ```
 
-`chebyshev_poisson_1d` and `chebyshev_bvp` do the non-periodic case;
-`spectral_burgers` includes dealiasing; `kuramoto_sivashinsky` integrates the
-canonical chaotic PDE with an exponential time-differencing scheme.
+The Courant number is `abs(c)*dt/dx`. For upwind and Lax-Wendroff linear
+advection the usual stable range is at most one. The periodic driver does not
+automatically reject every unstable user choice, so calculate the number
+before running a new grid.
 
-<figure markdown="span">
-  ![A shock forming in Burgers' equation](../assets/figures/pde-weno-burgers.svg#only-light)
-  ![A shock forming in Burgers' equation](../assets/figures/pde-weno-burgers-dark.svg#only-dark)
-  <figcaption>Smooth initial data steepens until the solution becomes discontinuous, and then keeps travelling. WENO5 is fifth order where the solution is smooth and drops its stencil where it is not, so the jump stays within a cell or two and no oscillation appears beside it.</figcaption>
-</figure>
+Upwind is robust and diffusive: it smooths fronts and lowers narrow peaks.
+Lax-Wendroff improves smooth-solution accuracy but can overshoot near a jump.
+`tvd_scheme` uses a flux limiter to reduce such oscillation. Its behavior is
+nonlinear even when the PDE is linear; order near extrema and discontinuities
+can be lower than order on a smooth wave.
 
-## Incompressible Navier-Stokes
+`wave_explicit` solves a second-order wave equation and therefore needs both
+initial displacement and initial velocity. Its explicit step is also limited
+by a wave CFL condition. A visually plausible wave can still accumulate phase
+error over many periods; compare travel time as well as amplitude.
 
-`navier_stokes_2d` uses Chorin projection: advance momentum, then project onto
-the divergence-free space by solving a pressure Poisson equation. The FFT
-solver inverts the symbol of the *exact* difference operators used elsewhere in
-the step, so the resulting velocity is divergence-free to `10⁻¹⁶` rather than
-`10⁻⁵`.
+## Conservative nonlinear schemes
 
-`vorticity_streamfunction` is the pseudo-spectral alternative, and
-`lid_driven_cavity` solves the standard benchmark — it reproduces Ghia, Ghia
-and Shin (1982) to within 1% at Re = 100.
+For `u_t + F(u)_x = 0`, a finite-volume update changes cell averages through
+flux differences. This makes conservation a natural diagnostic: under periodic
+boundaries, the discrete mass should remain close to its initial value.
 
-<figure markdown="span">
-  ![The lid-driven cavity at Re = 100, against the published benchmark](../assets/figures/pde-cavity.svg#only-light)
-  ![The lid-driven cavity at Re = 100, against the published benchmark](../assets/figures/pde-cavity-dark.svg#only-dark)
-  <figcaption>Streamlines of the steady solution, with the primary vortex centre marked, and the three numbers the benchmark reports. The agreement is the whole point: this is a solver checked against a published result, not against itself.</figcaption>
-</figure>
+`fvm_1d_conservation` and `fvm_muscl` take the physical flux and a wave-speed
+function. An underestimated speed can invalidate the stability limit.
+`riemann_solver_burgers` and `godunov_burgers` specialize to Burgers' flux
+`F(u)=u**2/2`. WENO methods reconstruct smooth regions at high order and switch
+weights near steep gradients; they are not a guarantee that an unresolved
+shock will have a visually exact shape.
 
-## Pitfalls
+Validate a conservation-law run with mass balance, front speed, grid
+refinement, and minimum/maximum values. Use the actual cell-center grid from
+the result when comparing to a solution; do not substitute the endpoint grid
+used by the heat example.
 
-- **Explicit schemes have step limits, and exceeding them diverges.**
-  Diffusion needs `α Δt/Δx² ≤ 1/2`; advection needs `CFL = |c| Δt/Δx ≤ 1`.
-  `cfl_number` and `stability_ratio` compute them.
-- **Second-order schemes oscillate at discontinuities.** That is Godunov's
-  theorem, not a bug. Use a limiter or WENO.
-- **Unconditional stability is not accuracy.** Crank-Nicolson is stable at any
-  step, but at a large step it rings rather than damping — a sharp initial
-  condition will oscillate in time. Use `heat_theta` with `θ ≈ 0.6`, or BTCS.
-- **A pure Neumann problem is singular.** The solution is defined only up to a
-  constant, and the data must satisfy a compatibility condition.
-- **Spectral accuracy needs smoothness and periodicity.** Neither one alone
-  suffices; a jump gives Gibbs oscillations that do not shrink with `n`.
+## Stationary Poisson problems
 
-## See also
+The finite-difference Poisson routines use `laplacian(u) = f`. This sign
+convention differs from finite-element interfaces written as
+`-div(c*grad(u)) + r*u = f`.
 
-- [`pde` API reference](../api/pde.md) — every signature.
-- [ODE guide](ode.md) — the time integrators behind method of lines.
-- [Linear algebra guide](linalg.md) — the sparse and Krylov solvers used at
-  each implicit step.
-- [Transforms guide](transforms.md) — the FFT behind the spectral solvers.
-- `examples/05_pde_and_transforms.py` — a runnable tour.
+```pycon
+>>> from quadrivium.pde import poisson_1d, poisson_fft
+>>> steady = poisson_1d(lambda x: -2.0, (0, 1), nx=30)
+>>> float(np.max(np.abs(steady.final - steady.x * (1 - steady.x)))) < 1e-12
+True
+>>> steady.t is None
+True
+>>> source = lambda x, y: -2 * np.pi**2 * np.sin(np.pi*x) * np.sin(np.pi*y)
+>>> field = poisson_fft(source, (0, 1), (0, 1), nx=20, ny=20)
+>>> truth = np.sin(np.pi * field.x[:, None]) * np.sin(np.pi * field.y[None, :])
+>>> float(np.max(np.abs(field.final - truth))) < 0.003
+True
+
+```
+
+The transform solver solves the **discrete** system to numerical precision;
+its continuum error remains second order for the standard stencil. An
+iterative residual near machine precision does not remove discretization
+error. Conversely, refining the grid with a loose linear tolerance can hide
+the expected order.
+
+`poisson_2d_direct(stencil=9)` includes the right-hand-side correction for the
+Mehrstellen scheme and requires equal x/y spacing. `laplacian_matrix` returns
+a dense matrix despite the sparse pattern of the stencil; avoid it for grids
+where the square matrix would be too large.
+
+Multigrid alternates smoothing with coarse-grid correction. For the supplied
+structured hierarchy, use compatible square grids and power-of-two interval
+counts. Inspect `converged` and `residuals`; reaching `max_cycles` returns a
+result that can still need further work. Periodic and pure-Neumann Poisson
+problems also need a compatible source and a convention for the arbitrary
+constant mode.
+
+## Method of lines and finite elements
+
+`method_of_lines` supplies `rhs(t, u, x, dx)` with a full state including the
+boundary values. Return a **full-length derivative vector**: the current
+implementation slices `[1:-1]` before integrating the interior. The boundary
+derivatives in that vector are ignored because boundary values are imposed
+by the wrapper. Select an ODE solver using `solver=` and pass its tolerances
+through the remaining keyword arguments.
+
+Spatial refinement of diffusion makes the resulting ODE increasingly stiff.
+An adaptive explicit method may take many small steps even if requested output
+times are far apart. An implicit ODE solver can address that stability cost;
+it cannot repair an inconsistent spatial stencil.
+
+Finite elements work with basis functions and a weak form of the equation.
+`fem_1d_linear` and `fem_1d_quadratic` solve diffusion-reaction equations;
+`fem_2d_triangular` works on planar triangular meshes. `TriangularMesh` stores
+points, connectivity, and boundary vertices. `adaptive_fem` repeatedly solves,
+estimates element error, marks elements, and refines a conforming mesh.
+
+The adaptive result includes `error_estimate`, `element_errors`, and
+`refinement_history`. Check `converged` after hitting `max_refinements` or
+`max_elements`. The error estimate guides refinement; it is not a certified
+pointwise bound. Keep the linear-solve tolerance tighter than the accuracy
+being requested from the mesh.
+
+## A practical validation sequence
+
+1. Write down the PDE sign convention, units, and boundary conditions.
+2. Confirm the result axes and whether points are endpoints or cell centers.
+3. Compute diffusion or Courant numbers for explicit updates.
+4. Check a manufactured solution with the same boundary conditions.
+5. Refine space and time independently, and monitor a physical balance law.
+6. Tighten algebraic tolerances only until discretization error dominates.
+7. Reduce retained output after choosing the resolution needed for validation.
+
+For related tools, see [ODE integration](ode.md), [linear algebra](linalg.md),
+[transforms](transforms.md), and [scientific workflows](workflows.md).

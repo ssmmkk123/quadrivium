@@ -195,7 +195,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--timeout',type=float,default=8)
-    parser.add_argument('--backend',choices=('rust','python'),default='rust')
+    parser.add_argument('--backend',choices=('c','python'),default='c')
     parser.add_argument('--no-memory-limit',action='store_true')
     parser.add_argument('--filter',default='')
     args=parser.parse_args()

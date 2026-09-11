@@ -1,6 +1,6 @@
 """The compiled backend must be indistinguishable from the Python one.
 
-Every kernel in the Rust extension shadows a pure-Python implementation that
+Every kernel in the C backend shadows a pure-Python implementation that
 stays in the tree. These tests pin the contract between them: for the same
 input, both paths must agree to within floating-point noise, and both must
 raise the same exception types. If the extension is not built, the comparisons
@@ -38,7 +38,7 @@ def both_backends(fn):
 
 class TestBackendSwitching(unittest.TestCase):
     def test_backend_reports_a_known_name(self):
-        self.assertIn(_accel.backend(), ("rust", "python"))
+        self.assertIn(_accel.backend(), ("c", "python"))
 
     def test_disabled_forces_python(self):
         with _accel.disabled():
@@ -61,7 +61,7 @@ class TestBackendSwitching(unittest.TestCase):
 
 @skip_no_accel
 class TestLinalgEquivalence(unittest.TestCase):
-    """Sizes straddle the 64-wide blocking threshold in the Rust kernels."""
+    """Sizes straddle the 64-wide blocking threshold in the C kernels."""
 
     SIZES = (1, 2, 7, 63, 64, 65, 130)
 

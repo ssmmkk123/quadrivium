@@ -141,3 +141,24 @@ __all__ = [
     "euler_maruyama", "milstein", "gillespie_ssa", "lambert_w",
     "__version__",
 ] + [n for n in core.__all__]
+
+# Scientific workflows built on the original numerical methods.
+from .approx import ChebyshevApproximation, chebfun
+from .diff import Tensor, array_gradient, array_value_and_grad, jvp, vjp
+from .integrate import quad_vec
+from .linalg import LinearOperator, aslinearoperator, lu_factor, cholesky_factor, qr_factor
+from .ode import bdf_adaptive, radau_adaptive, solve_ivp_sensitivities, adjoint_sensitivity
+from .optimize import least_squares
+from .pde import adaptive_fem
+from .rootfind import pseudo_arclength
+from .stochastic import Sobol, Normal, randomized_qmc, mcmc_diagnostics, spawn_rngs
+from .transforms import stft, istft, FIRFilter, IIRFilter, SOSFilter, resample_poly
+__all__ += [
+    "ChebyshevApproximation", "chebfun", "Tensor", "array_gradient",
+    "array_value_and_grad", "jvp", "vjp", "quad_vec", "LinearOperator",
+    "aslinearoperator", "lu_factor", "cholesky_factor", "qr_factor",
+    "bdf_adaptive", "radau_adaptive", "solve_ivp_sensitivities", "adjoint_sensitivity",
+    "least_squares", "adaptive_fem", "pseudo_arclength", "Sobol", "Normal",
+    "randomized_qmc", "mcmc_diagnostics", "spawn_rngs", "stft", "istft",
+    "FIRFilter", "IIRFilter", "SOSFilter", "resample_poly",
+]

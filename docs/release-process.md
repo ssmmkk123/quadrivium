@@ -1,190 +1,140 @@
 # Release process
 
-How a version of quadrivium reaches PyPI. This page is for maintainers; if you
-are installing the package, see [Installation](installation.md).
+This page describes the release automation checked into this repository.
+Maintainers prepare and validate a concrete version, then use the configured
+GitHub workflow to build distributions and publish them. Installing or building
+the documentation does not publish a release.
 
-Releases are automated: pushing a `v*` tag builds the distributions, checks
-them, publishes to PyPI over OIDC with no stored credentials, and creates a
-GitHub Release with the artifacts and their build attestations attached.
+## Understand the artifacts
 
-```mermaid
-flowchart LR
-    A["bump the version<br/>and the changelog"] --> B["local checks<br/>tests, gen_docs --check,<br/>gen_figures --check, mkdocs --strict"]
-    B --> C["git tag v1.2.3<br/>git push --tags"]
-    C --> D["release.yml<br/>build, twine check"]
-    D --> E["PyPI<br/>Trusted Publishing, OIDC"]
-    D --> F["GitHub Release<br/>artifacts + attestations"]
-    C --> G["docs.yml<br/>build the site"]
-    G --> H["GitHub Pages"]
-```
+| Artifact | Contents | Important consequence |
+| --- | --- | --- |
+| Wheel | Python package, required compiled extension, distribution metadata | Must match the target Python and platform |
+| Source distribution | Python and C sources, headers, tests, examples, documentation sources, tools | Installing requires a compiler; generated figure assets are omitted |
+| Documentation site | Rendered Markdown, assets, search index | Describes the checkout from which it was built |
 
-## One-time setup
+`MANIFEST.in` defines source-distribution inclusion. The C files and headers
+must ship, while binaries left in a developer's tree must not. Regenerate figures
+before building a complete site from an unpacked source archive.
 
-### 1. Claim the name on PyPI
+## Prepare the version and release notes
 
-The distribution name is `quadrivium`, which was unregistered when the project
-was named. Names are first come, first served, so check it is still free
-(<https://pypi.org/project/quadrivium/> should be a 404) and claim it with the
-first upload. Publishing to a project someone else owns fails with
-`403 Forbidden`; the fix is to change `name` in `pyproject.toml` and the
-install commands through the documentation, not to retry.
+`quadrivium.__version__` in `quadrivium/__init__.py` supplies the package version
+through `pyproject.toml`. Choose the next version according to the compatibility
+impact. A behavior correction can still affect users who depend on earlier
+results; explain those changes explicitly.
 
-### 2. Configure Trusted Publishing
-
-The project does not exist on PyPI until the first upload, so add a **pending**
-publisher: *Your projects → Publishing → Add a pending publisher*. PyPI creates
-the project the first time that workflow uploads to it.
-
-| Field | Value |
-| --- | --- |
-| PyPI project name | `quadrivium` |
-| Owner | `ssmmkk123` |
-| Repository | `quadrivium` |
-| Workflow | `release.yml` |
-| Environment | `pypi` |
-
-After the first release the same entry appears under the project's own
-*Publishing* settings, where later changes are made.
-
-### 3. Create the GitHub environment
-
-In the repository settings, create an environment named `pypi`. Adding a
-required reviewer to it means every publish waits for a human approval, which
-is worth the extra click.
-
-No API token is stored anywhere. The workflow authenticates with a
-short-lived OIDC identity issued to that specific workflow in that specific
-repository.
-
-### 4. Turn on GitHub Pages
-
-The documentation deploys itself from `.github/workflows/docs.yml`, but the
-first deployment needs Pages enabled: repository *Settings → Pages → Build and
-deployment → Source: GitHub Actions*. After that, every push to `main` that
-touches `docs/`, `mkdocs.yml`, the package, or the changelog rebuilds the site
-at <https://ssmmkk123.github.io/quadrivium/>.
-
-If the site will live somewhere else, change `site_url` in `mkdocs.yml`, the
-`Documentation` URL in `pyproject.toml`, and the links in `README.md`.
-
-## Cutting a release
-
-### 1. Decide the version
-
-[Semantic versioning](https://semver.org): patch for a fix that changes no
-API, minor for new methods or new optional arguments, major for anything that
-could break an existing call. A change to what a method *returns* numerically —
-a corrected convergence rate, a different default — is at least a minor
-release, and belongs in the changelog under *Fixed* or *Changed* with the
-before-and-after stated.
-
-### 2. Update the version and changelog
-
-The version has one source of truth:
-
-```python
-# quadrivium/__init__.py
-__version__ = "1.2.0"
-```
-
-`pyproject.toml` reads it from there at build time, so nothing else needs
-editing. Move the `Unreleased` entries in `CHANGELOG.md` under the new version
-with today's date, add the comparison link at the bottom, and regenerate the
-copy the site serves:
+Move the relevant **Unreleased** notes in `CHANGELOG.md` to a dated release
+section, update comparison links, and describe any migration steps. Update
+version examples such as the installation pin when appropriate. The generated
+site changelog should always match the root file.
 
 ```bash
 python tools/gen_docs.py
+python tools/gen_figures.py
 ```
 
-### 3. Check everything locally
+Review the generated reference and figures after regeneration. A figure can
+change because of a numerical fix or a rendering environment change; establish
+which before accepting it.
+
+## Validate the candidate checkout
+
+Use a clean development environment with `.[dev]` installed:
 
 ```bash
-python -m pytest -q     # the full suite, all green
-python tools/gen_docs.py --check         # generated pages match the code
-python tools/gen_figures.py --check      # figures match the code (needs [figures])
-mkdocs build --strict                    # no broken links or missing pages
-python -m build                          # sdist + wheel into dist/
-python -m twine check dist/*             # metadata renders on PyPI
+python -m pytest -q
+QUADRIVIUM_NO_ACCEL=1 python -m pytest -q
+python tools/gen_docs.py --check
+python tools/gen_figures.py --check
+python -m mkdocs build --strict
+python -m build
+python -m twine check --strict dist/*
 ```
 
-`gen_figures.py --check` compares byte for byte, so it can report a difference
-that is only a Matplotlib version change. Look at what changed before
-regenerating: a figure that has genuinely moved is worth seeing.
+Inspect the built site and distribution contents. Confirm that the wheel has the
+compiled extension and that the source archive includes every required C
+source/header. Keep old artifacts out of the set selected for publishing.
 
-Then install the built wheel into a clean environment and import it from
-somewhere other than the source tree, which is the check that catches a
-missing subpackage in the wheel:
+Install the candidate wheel into a fresh environment and run a smoke test from
+outside the source tree. This catches accidental imports from the checkout:
 
 ```bash
-python -m venv /tmp/relcheck
-/tmp/relcheck/bin/python -m pip install dist/quadrivium-*.whl
-cd /tmp && /tmp/relcheck/bin/python -c "import quadrivium; print(quadrivium.__version__)"
+python -m venv /tmp/quadrivium-release-check
+/tmp/quadrivium-release-check/bin/python -m pip install dist/quadrivium-*.whl
+cd /tmp
+/tmp/quadrivium-release-check/bin/python -c "import quadrivium as qd; print(qd.__file__); print(qd.__version__); print(qd.accel.show_config()); assert qd.brent(lambda x: x*x-2, 0, 2).converged"
 ```
 
-### 4. Rehearse on TestPyPI (optional)
+The wheel glob should select the single candidate appropriate to that
+interpreter. In a multi-platform artifact directory, select the exact wheel.
+Also install and test the source archive in a separate scratch environment.
 
-The release workflow can be run manually from the Actions tab with
-`target: testpypi`, which publishes to <https://test.pypi.org> instead. Install
-from there with the real index still available for dependencies:
+## Understand the release workflow
+
+`.github/workflows/release.yml` accepts either a pushed `v*` tag or a manual
+workflow dispatch. A manual run selects `testpypi` or `pypi`; it is a publishing
+action, not merely a build preview.
+
+| Job | Responsibility |
+| --- | --- |
+| `build` | Validate tag/version agreement for tag events, run tests, build/check the sdist, smoke-test its installation |
+| `wheels` | Build and test platform/interpreter wheels using the workflow's cibuildwheel matrix |
+| `publish-testpypi` | Publish a manual TestPyPI run after build and wheel jobs complete |
+| `publish-pypi` | Publish a release tag or manually selected PyPI run; produce attestations and a GitHub Release for tags |
+
+Read the workflow's current matrix before a release; it is the source of truth
+for which interpreters and platforms are built. The package's source metadata
+and the release automation need to agree.
+
+## Configure publishing and documentation
+
+The workflow uses OIDC Trusted Publishing. Repository, workflow filename, and
+environment names must match the configured publisher. The checked-in workflow
+uses `pypi` and `testpypi` environments for their respective indexes.
+
+Confirm those account settings before triggering a release; a workflow file
+alone does not demonstrate that external account configuration is complete.
+No API token is needed by the publishing jobs as written.
+
+The separate `.github/workflows/docs.yml` builds and deploys the site to GitHub
+Pages for its configured triggers. It checks generated references and runs a
+strict site build. Its trigger is not automatically equivalent to every release
+tag, so verify documentation publication independently of package publication.
+
+## Publish a reviewed candidate
+
+Commit the reviewed source, release notes, and generated assets. The tag must
+be exactly `v` followed by the packaged version. For example, if the candidate
+version were `1.2.0`, the release commands would be:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ quadrivium
+git tag -a v1.2.0 -m "Quadrivium 1.2.0"
+git push origin v1.2.0
 ```
 
-TestPyPI needs its own trusted publisher, configured the same way, with the
-environment named `testpypi`.
+These commands trigger publication through the release workflow. Confirm the
+commit and version before using them. A manual TestPyPI run can rehearse the
+publishing path with its own publisher configuration.
 
-### 5. Tag and push
+After publication, verify the uploaded version, expected artifact set, a fresh
+installation, release notes, and the documentation site. A successful build is
+only one stage of that verification.
 
-```bash
-git commit -am "Release 1.2.0"
-git tag -a v1.2.0 -m "quadrivium 1.2.0"
-git push origin main --follow-tags
-```
+## Diagnose a failed release
 
-The tag must match the version in `quadrivium/__init__.py`; the workflow checks
-this and stops if they disagree, which is what prevents a mislabelled release.
+| Failure | Investigation |
+| --- | --- |
+| Tag/version mismatch | Compare the tag suffix with `quadrivium.__version__` at the tagged commit |
+| Extension missing | Inspect wheel contents, C-source inclusion, and isolated installation logs |
+| One wheel fails | Read that platform's compile/test log; do not infer success from other runners |
+| Publishing authorization fails | Check the configured OIDC publisher against owner, repository, workflow, and environment |
+| Generated docs are stale | Regenerate from the intended checkout and inspect the diff |
+| Figure check differs | Compare the recorded rendering environment and numerical source changes |
+| Package published but docs old | Inspect the separate Pages workflow and its triggers |
 
-### 6. Watch it land
-
-The workflow builds, tests the wheel on a clean runner, publishes, and creates
-the GitHub Release. Then:
-
-- confirm the new version at <https://pypi.org/project/quadrivium/> and that
-  the README renders,
-- `pip install quadrivium==1.2.0` in a scratch environment,
-- check the documentation site rebuilt at
-  <https://ssmmkk123.github.io/quadrivium/>.
-
-## If something goes wrong
-
-**A release cannot be replaced.** PyPI permanently reserves a version number:
-deleting a release does not free it. If a published version is broken, yank it
-(which hides it from new installs while leaving existing pins working) and
-publish a fix as the next patch version.
-
-**The tag was wrong.** If the workflow failed before publishing, delete the tag
-locally and remotely, fix the problem, and re-tag:
-
-```bash
-git tag -d v1.2.0
-git push --delete origin v1.2.0
-```
-
-Once a version is on PyPI, this is no longer an option — go forward instead.
-
-**The upload was rejected with 403.** Either the trusted publisher does not
-match (check owner, repository, workflow filename, and environment name
-exactly) or the project name belongs to someone else.
-
-## What ships
-
-The wheel contains the `quadrivium` package and nothing else. The sdist adds
-the test suite, the examples, the documentation sources, and `tools/`, so a
-downstream packager can build and validate the release from it alone:
-
-```bash
-tar tzf dist/quadrivium-*.tar.gz | head -20
-python -m pytest -q      # runs from an unpacked sdist
-```
+Treat publication as a persistent external action. If an artifact has already
+been distributed, preserve the relationship between its version, source tag,
+and release notes; prepare a corrective release rather than silently rewriting
+that history. Coordinate any index-side correction with the maintainer's
+release procedure.

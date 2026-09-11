@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import RootResult
@@ -40,7 +42,7 @@ def newton_system(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 100):
     """Newton's method for systems: solve ``J(x) s = -F(x)`` and step."""
     Fc = CountedFunction(F)
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         r = as_vector(Fc(x))
         if np.linalg.norm(r, np.inf) < tol:
@@ -48,7 +50,7 @@ def newton_system(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 100):
         J = np.atleast_2d(jac(x)) if jac is not None else numerical_jacobian(Fc, x)
         s = _solve_step(J, r)
         x = x + s
-        history.append(x.copy())
+        history.append(x)
         if np.linalg.norm(s, np.inf) < tol * max(1.0, np.linalg.norm(x, np.inf)):
             return RootResult(x, as_vector(Fc(x)), k, True, Fc.calls, "newton_system",
                               history, "converged")
@@ -61,7 +63,7 @@ def damped_newton_system(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 10
     """Newton with an Armijo line search on ``||F||^2`` -- far more robust globally."""
     Fc = CountedFunction(F)
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         r = as_vector(Fc(x))
         nr = np.linalg.norm(r)
@@ -78,7 +80,7 @@ def damped_newton_system(F, x0, jac=None, tol: float = 1e-12, max_iter: int = 10
         else:
             x_new = x + lam * s
         x = x_new
-        history.append(x.copy())
+        history.append(x)
         if np.linalg.norm(lam * s, np.inf) < tol * max(1.0, np.linalg.norm(x, np.inf)):
             return RootResult(x, as_vector(Fc(x)), k, True, Fc.calls, "damped_newton",
                               history, "converged")
@@ -93,7 +95,7 @@ def broyden_good(F, x0, J0=None, tol: float = 1e-12, max_iter: int = 200):
     n = x.size
     J = np.atleast_2d(J0).astype(float) if J0 is not None else numerical_jacobian(Fc, x)
     r = as_vector(Fc(x))
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(r, np.inf) < tol:
             return RootResult(x, r, k - 1, True, Fc.calls, "broyden_good", history, "converged")
@@ -105,7 +107,7 @@ def broyden_good(F, x0, J0=None, tol: float = 1e-12, max_iter: int = 200):
         if denom > 1e-300:
             J = J + np.outer(y - J @ s, s) / denom
         x, r = x_new, r_new
-        history.append(x.copy())
+        history.append(x)
         if np.linalg.norm(s, np.inf) < tol * max(1.0, np.linalg.norm(x, np.inf)):
             return RootResult(x, r, k, True, Fc.calls, "broyden_good", history, "converged")
     return RootResult(x, r, max_iter, False, Fc.calls, "broyden_good", history,
@@ -122,7 +124,7 @@ def broyden_bad(F, x0, B0=None, tol: float = 1e-12, max_iter: int = 200):
         J = numerical_jacobian(Fc, x)
         B = np.linalg.pinv(J)
     r = as_vector(Fc(x))
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(r, np.inf) < tol:
             return RootResult(x, r, k - 1, True, Fc.calls, "broyden_bad", history, "converged")
@@ -134,7 +136,7 @@ def broyden_bad(F, x0, B0=None, tol: float = 1e-12, max_iter: int = 200):
         if denom > 1e-300:
             B = B + np.outer(s - B @ y, y) / denom
         x, r = x_new, r_new
-        history.append(x.copy())
+        history.append(x)
         if np.linalg.norm(s, np.inf) < tol * max(1.0, np.linalg.norm(x, np.inf)):
             return RootResult(x, r, k, True, Fc.calls, "broyden_bad", history, "converged")
     return RootResult(x, r, max_iter, False, Fc.calls, "broyden_bad", history,
@@ -161,7 +163,7 @@ def secant_system(F, x0, x1=None, tol: float = 1e-12, max_iter: int = 200):
         p[i % n] += h[i % n]
         pts.append(p)
     vals = [as_vector(Fc(p)) for p in pts]
-    history = [pts[0].copy()]
+    history = History([pts[0]])
     for k in range(1, max_iter + 1):
         best = int(np.argmin([np.linalg.norm(v) for v in vals]))
         if np.linalg.norm(vals[best], np.inf) < tol:
@@ -180,7 +182,7 @@ def secant_system(F, x0, x1=None, tol: float = 1e-12, max_iter: int = 200):
         f_new = as_vector(Fc(x_new))
         pts = pts[1:] + [x_new]          # slide the window forward
         vals = vals[1:] + [f_new]
-        history.append(x_new.copy())
+        history.append(x_new)
         if np.linalg.norm(step, np.inf) < tol * max(1.0, np.linalg.norm(x_new, np.inf)):
             return RootResult(x_new, f_new, k, True, Fc.calls, "secant_system",
                               history, "converged")
@@ -195,11 +197,11 @@ def fixed_point_system(G, x0, tol: float = 1e-12, max_iter: int = 1000,
     """Vector fixed point iteration ``x <- G(x)`` with optional relaxation."""
     Gc = CountedFunction(G)
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gx = as_vector(Gc(x))
         x_new = (1 - relaxation) * x + relaxation * gx
-        history.append(x_new.copy())
+        history.append(x_new)
         if not np.all(np.isfinite(x_new)):
             return RootResult(x, np.full_like(x, np.nan), k, False, Gc.calls,
                               "fixed_point_system", history, "iteration diverged")
@@ -219,7 +221,7 @@ def nonlinear_gauss_seidel(F, x0, tol: float = 1e-10, max_iter: int = 200,
     Fc = CountedFunction(F)
     x = as_vector(x0).copy()
     n = x.size
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         x_old = x.copy()
         for i in range(n):
@@ -231,7 +233,7 @@ def nonlinear_gauss_seidel(F, x0, tol: float = 1e-10, max_iter: int = 200,
             res = secant(fi, x[i], x[i] + 1e-3, tol=inner_tol, max_iter=50)
             if np.isfinite(res.root):
                 x[i] = res.root
-        history.append(x.copy())
+        history.append(x)
         if np.linalg.norm(x - x_old, np.inf) < tol * max(1.0, np.linalg.norm(x, np.inf)):
             return RootResult(x, as_vector(Fc(x)), k, True, Fc.calls,
                               "nonlinear_gauss_seidel", history, "converged")
@@ -246,7 +248,7 @@ def continuation(F, x0, steps: int = 10, tol: float = 1e-12, max_iter: int = 100
     """
     x = as_vector(x0).copy()
     F0 = as_vector(F(x))
-    path = [x.copy()]
+    path = History([x])
     for i in range(1, steps + 1):
         t = i / steps
 
@@ -255,7 +257,7 @@ def continuation(F, x0, steps: int = 10, tol: float = 1e-12, max_iter: int = 100
 
         res = damped_newton_system(Ft, x, tol=tol, max_iter=max_iter)
         x = as_vector(res.root)
-        path.append(x.copy())
+        path.append(x)
     r = as_vector(F(x))
     return RootResult(x, r, steps, np.linalg.norm(r, np.inf) < 1e-6, 0,
                       "continuation", path, "continuation path completed")
@@ -272,7 +274,7 @@ def trust_region_dogleg_root(F, x0, jac=None, tol: float = 1e-12, max_iter: int 
     Fc = CountedFunction(F)
     x = as_vector(x0).copy()
     delta = delta0
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         r = as_vector(Fc(x))
         if np.linalg.norm(r, np.inf) < tol:
@@ -305,7 +307,7 @@ def trust_region_dogleg_root(F, x0, jac=None, tol: float = 1e-12, max_iter: int 
         rho = actual / pred if abs(pred) > 1e-300 else -1.0
         if rho > 0.25:
             x = x + p
-            history.append(x.copy())
+            history.append(x)
             if rho > 0.75 and abs(np.linalg.norm(p) - delta) < 1e-10:
                 delta = min(2 * delta, delta_max)
         else:
@@ -339,7 +341,7 @@ def anderson_acceleration(g, x0, m: int = 5, beta: float = 1.0,
     gx = gc(x)
     f = gx - x
     X_hist, F_hist = [], []
-    history = [float(np.linalg.norm(f))]
+    history = History([float(np.linalg.norm(f))])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(f) < tol:
             return RootResult(x, f, k - 1, True, gc.calls, "anderson", history,
@@ -367,7 +369,7 @@ def anderson_acceleration(g, x0, m: int = 5, beta: float = 1.0,
                 x_new = x + beta * f - (dX + beta * dF) @ gamma
         gx = gc(x_new)
         x, f = x_new, gx - x_new
-        history.append(float(np.linalg.norm(f)))
+        history.append(float(np.linalg.norm(f)), x=x)
         if not np.all(np.isfinite(x)):
             return RootResult(x, f, k, False, gc.calls, "anderson", history,
                               "iteration diverged")
@@ -402,7 +404,7 @@ def newton_krylov(F, x0, tol: float = 1e-10, max_iter: int = 100,
     fc = CountedFunction(lambda v: as_vector(F(v)))
     x = as_vector(x0).astype(float)
     Fx = fc(x)
-    history = [float(np.linalg.norm(Fx))]
+    history = History([float(np.linalg.norm(Fx))])
     for k in range(1, max_iter + 1):
         normF = float(np.linalg.norm(Fx))
         if normF < tol:
@@ -436,7 +438,7 @@ def newton_krylov(F, x0, tol: float = 1e-10, max_iter: int = 100,
                 alpha = 1.0
         x = x + alpha * s
         Fx = fc(x)
-        history.append(float(np.linalg.norm(Fx)))
+        history.append(float(np.linalg.norm(Fx)), x=x)
     return RootResult(x, Fx, max_iter, False, fc.calls, "newton_krylov",
                       history, "maximum iterations reached")
 
@@ -485,3 +487,8 @@ def _gmres_matfree(matvec, b, tol, maxiter, restarts: int = 40):
         x = x + Q[:, :k_used] @ y
         r = b - matvec(x)
     return x
+
+
+# Common context-local retention and callback controls.
+for _name in ['newton_system', 'damped_newton_system', 'broyden_good', 'broyden_bad', 'secant_system', 'fixed_point_system', 'nonlinear_gauss_seidel', 'continuation', 'trust_region_dogleg_root', 'anderson_acceleration', 'newton_krylov', 'homotopy']:
+    globals()[_name] = monitor(globals()[_name])

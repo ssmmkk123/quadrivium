@@ -9,7 +9,7 @@
  */
 #include "qnp.h"
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if (defined(__x86_64__) || defined(_M_X64)) && (defined(__GNUC__) || defined(__clang__))
 #include <immintrin.h>
 #define QNP_HAVE_X86 1
 #endif
@@ -93,10 +93,7 @@ static void exp_avx2(const double *src, double *dst, qintp n) {
 }
 
 static int have_avx2_fma(void) {
-    static int cached = -1;
-    if (cached < 0)
-        cached = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-    return cached;
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 }
 #endif
 

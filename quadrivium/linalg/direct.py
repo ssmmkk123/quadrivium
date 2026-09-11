@@ -288,6 +288,20 @@ def lu_solve(L, U, b, P=None) -> np.ndarray:
 
 def plu_solve(A, b) -> np.ndarray:
     """Factor with partial pivoting and solve in one call."""
+    A = check_square(A)
+    b = as_vector(b)
+    n = A.shape[0]
+    if b.size != n:
+        raise DimensionError(f"A is {n}x{n} but b has length {b.size}")
+    fast = _accel.kernel("plu")
+    if fast is not None and n:
+        perm, LU = fast(A)
+        if np.any(np.abs(np.diag(LU)) < 1e-300):
+            raise SingularMatrixError("matrix is singular to working precision")
+        # Both triangular solvers read only their triangle. The packed factor
+        # therefore serves both solves, and gathering b replaces a dense P.
+        y = forward_substitution(LU, b[perm], unit_diagonal=True)
+        return back_substitution(LU, y)
     P, L, U = plu_decomposition(A)
     if np.any(np.abs(np.diag(U)) < 1e-300):
         raise SingularMatrixError("matrix is singular to working precision")
@@ -328,7 +342,21 @@ def crout(A):
 # Symmetric factorizations
 # --------------------------------------------------------------------------
 def cholesky(A, lower: bool = True) -> np.ndarray:
-    """Cholesky factor of a symmetric positive definite matrix."""
+    """Cholesky factor of a positive-definite Hermitian matrix or matrix batch.
+
+    The upper factor is the conjugate transpose of the lower factor.
+    """
+    raw = np.asarray(A)
+    if raw.ndim > 2 or np.iscomplexobj(raw):
+        if raw.ndim < 2 or raw.shape[-2] != raw.shape[-1]:
+            raise DimensionError("Cholesky requires square trailing matrix dimensions")
+        if not np.allclose(raw, np.conjugate(np.swapaxes(raw, -1, -2)), rtol=1e-12, atol=1e-14):
+            raise ValueError("Cholesky requires Hermitian matrices")
+        try:
+            L = np.linalg.cholesky(raw)
+        except np.linalg.LinAlgError as exc:
+            raise SingularMatrixError(str(exc)) from exc
+        return L if lower else np.conjugate(np.swapaxes(L, -1, -2))
     A = check_square(A)
     n = A.shape[0]
     fast = _accel.kernel("cholesky")
@@ -358,7 +386,14 @@ def cholesky(A, lower: bool = True) -> np.ndarray:
 
 
 def cholesky_solve(A, b) -> np.ndarray:
-    """Solve an SPD system via Cholesky."""
+    """Solve positive-definite Hermitian systems, including multiple RHS/batches."""
+    raw, rhs = np.asarray(A), np.asarray(b)
+    if raw.ndim > 2:
+        L = cholesky(raw)
+        return np.linalg.solve(np.conjugate(np.swapaxes(L, -1, -2)), np.linalg.solve(L, rhs))
+    if np.iscomplexobj(raw) or np.iscomplexobj(rhs) or rhs.ndim == 2:
+        from .factors import CholeskyFactor
+        return CholeskyFactor(raw).solve(rhs)
     L = cholesky(A)
     y = forward_substitution(L, b)
     return back_substitution(L.T, y)
@@ -433,15 +468,15 @@ def modified_gram_schmidt_qr(A):
 
 
 def householder_qr(A, reduced: bool = True):
-    """Householder reflections ``A = Q R`` (backward stable)."""
+    """Householder reflections ``A = Q R`` for real/complex matrices or batches."""
+    raw = np.asarray(A)
+    if raw.ndim > 2 or np.iscomplexobj(raw):
+        return np.linalg.qr(raw, mode="reduced" if reduced else "complete")
     A = as_matrix(A)
     m, n = A.shape
     fast = _accel.kernel("householder_qr")
     if fast is not None and m and n:
-        Q, R = fast(np.ascontiguousarray(A, dtype=float), True)
-        if reduced and m > n:
-            return Q[:, :n].copy(), R[:n, :].copy()
-        return Q, R
+        return fast(np.ascontiguousarray(A, dtype=float), True, reduced)
     R = A.astype(float).copy()
     Q = np.eye(m)
     for k in range(min(m - 1, n)):
@@ -499,6 +534,17 @@ def qr_solve(A, b, method: str = "householder") -> np.ndarray:
     """Least-squares / square solve through a QR factorization."""
     A = as_matrix(A)
     b = as_vector(b)
+    m, n = A.shape
+    if b.size != m:
+        raise DimensionError(f"A has {m} rows but b has length {b.size}")
+    if method == "householder" and m >= n:
+        fast = _accel.kernel("qr_least_squares")
+        if fast is not None:
+            try:
+                return fast(A, b)
+            except RuntimeError as exc:
+                raise (_accel.translate_error(exc, SingularMatrixError,
+                                              SingularMatrixError) or exc) from None
     factor = {
         "householder": householder_qr,
         "givens": givens_qr,
@@ -715,8 +761,25 @@ def solve(A, b, method: str = "auto") -> np.ndarray:
     """Solve ``A x = b``, choosing a factorization automatically by default.
 
     ``auto`` uses Cholesky for SPD matrices, the Thomas algorithm for
-    tridiagonal ones, and pivoted LU otherwise.
+    tridiagonal ones, and pivoted LU otherwise. Broadcast batches, complex
+    inputs and multiple right-hand sides use the native array-core solvers;
+    these support ``auto``, ``lu``, ``plu``, ``cholesky`` and ``qr``.
     """
+    supported = {"auto", "lu", "plu", "gauss", "gauss_jordan", "cholesky", "ldl", "qr"}
+    if method not in supported:
+        raise ValueError(f"unknown solve method {method!r}")
+    raw, rhs = np.asarray(A), np.asarray(b)
+    if raw.ndim > 2 or np.iscomplexobj(raw) or np.iscomplexobj(rhs) or rhs.ndim > 1:
+        if raw.ndim < 2 or raw.shape[-2] != raw.shape[-1]:
+            raise DimensionError("solve requires square trailing matrix dimensions")
+        if method == "cholesky":
+            return cholesky_solve(raw, rhs)
+        if method == "qr":
+            Q, R = householder_qr(raw)
+            return np.linalg.solve(R, np.conjugate(np.swapaxes(Q, -1, -2)) @ rhs)
+        if method not in {"auto", "lu", "plu"}:
+            raise ValueError(f"method {method!r} supports real 2-D single-RHS inputs only")
+        return np.linalg.solve(raw, rhs)
     A = check_square(A)
     if method == "auto":
         n = A.shape[0]
@@ -751,6 +814,24 @@ def inverse(A) -> np.ndarray:
 def determinant(A) -> float:
     """Determinant from the pivoted LU factorization."""
     A = check_square(A)
+    n = A.shape[0]
+    fast = _accel.kernel("plu")
+    if fast is not None and n:
+        perm, LU = fast(A)
+        # A cycle of length k has parity (-1) ** (k - 1). Counting cycles
+        # needs one byte per row instead of constructing and factoring P.
+        seen = bytearray(n)
+        sign = 1.0
+        for i in range(n):
+            if seen[i]:
+                continue
+            seen[i] = 1
+            j = int(perm[i])
+            while j != i:
+                seen[j] = 1
+                sign = -sign
+                j = int(perm[j])
+        return float(sign * np.prod(np.diag(LU)))
     P, L, U = plu_decomposition(A)
     sign = np.linalg.det(P)
     return float(sign * np.prod(np.diag(U)))

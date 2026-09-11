@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import ODESolution
+from ..core.storage import (ode_solution as ODESolution, TimeGrid, Trajectory,
+                            OutputRecorder, output_control)
 from ..core.utils import CountedFunction, as_vector, numerical_jacobian
 
 __all__ = [
@@ -56,14 +57,16 @@ def _implicit_driver(f, t_span, y0, n, stage, name, jac=None):
     y = as_vector(y0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.empty(n + 1)
-    ys = np.empty((n + 1, y.size))
-    ts[0], ys[0] = t0, y
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
+    ys[0] = y
     t = t0
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         y = stage(fc, t, y, h, jac)
         t = t0 + (i + 1) * h
-        ts[i + 1], ys[i + 1] = t, y
+        ys[i + 1] = y
     return ODESolution(ts, ys, name, n, n, 0, fc.calls, True, "completed")
 
 
@@ -313,16 +316,23 @@ def bdf(f, t_span, y0, n: int = 100, order: int = 2, jac=None):
     y0 = as_vector(y0)
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    ys = np.empty((n + 1, y0.size))
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
     ys[0] = y0
+    if ys.recorder.stopped:
+        return ODESolution(ts, ys, f"bdf{order}", 0, 0, 0, fc.calls, False, "callback stopped")
     # bootstrap the history with a self-starting implicit method
     k = order
     if n >= k and k > 1:
-        boot = radau_iia(f, (t0, t0 + (k - 1) * h), y0, n=(k - 1) * 4, stages=3)
+        boot = radau_iia(f, (t0, t0 + (k - 1) * h), y0, n=(k - 1) * 4, stages=3,
+                         final_only=False, save_at=None, save_every=1, callback=None)
         for i in range(1, k):
             ys[i] = boot(t0 + i * h)
+            if ys.recorder.stopped:
+                return ODESolution(ts, ys, f"bdf{order}", i, i, 0, fc.calls, False, "callback stopped")
     for i in range(k, n + 1):
+        if ys.recorder.stopped:
+            break
         hist = sum(alpha[j] * ys[i - j] for j in range(1, k + 1))
 
         def G(z, i=i, hist=hist):
@@ -343,17 +353,25 @@ def rosenbrock(f, t_span, y0, n: int = 100, jac=None):
     y = as_vector(y0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.empty(n + 1)
-    ys = np.empty((n + 1, y.size))
-    ts[0], ys[0] = t0, y
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
+    ys[0] = y
     I = np.eye(y.size)
     t = t0
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         J = jac(t, y) if jac is not None else numerical_jacobian(lambda z: fc(t, z), y)
         M = I - gamma * h * J
         k1 = np.linalg.solve(M, fc(t, y))
         k2 = np.linalg.solve(M, fc(t + h, y + h * k1) - 2 * k1)
         y = y + h * (1.5 * k1 + 0.5 * k2)
         t = t0 + (i + 1) * h
-        ts[i + 1], ys[i + 1] = t, y
+        ys[i + 1] = y
     return ODESolution(ts, ys, "rosenbrock", n, n, 0, fc.calls, True, "completed")
+
+
+for _name in __all__:
+    if callable(globals()[_name]) and "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

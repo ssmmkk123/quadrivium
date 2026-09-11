@@ -33,7 +33,7 @@ print(f"    Richardson extrapolation : error {abs(richardson_derivative(f, x) - 
 print(f"    complex-step derivative  : error {abs(complex_step_derivative(f, x) - df(x)):.2e}")
 print(f"    automatic differentiation: error {abs(derivative(f, x) - df(x)):.2e}")
 
-banner("2. Automatic differentiation is exact, not approximate")
+banner("2. Automatic differentiation checked against analytic derivatives")
 g = lambda v: v[0] * v[1] + np.sin(v[0] * v[2]) + v[1] ** 2 / v[2]
 pt = [1.5, 2.0, 0.7]
 exact = np.array([2.0 + 0.7 * math.cos(1.05),

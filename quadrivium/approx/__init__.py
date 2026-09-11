@@ -13,3 +13,6 @@ try:  # the remaining approximation modules are optional at import time
     __all__ = __all__ + _fitting.__all__
 except ImportError:  # pragma: no cover
     pass
+
+from .adaptive import ChebyshevApproximation, chebfun
+__all__ += ["ChebyshevApproximation", "chebfun"]

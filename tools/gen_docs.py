@@ -3,9 +3,8 @@
 
 Two things here are not written by hand:
 
-* ``docs/api/*.md`` -- the API reference. It lists every public name a
-  subpackage exports with its real signature and the first line of its
-  docstring; 836 entries would drift the first time a default changed.
+* ``docs/api/*.md`` -- the API reference. It documents every exported name in the method subpackages,
+  complete signatures, source docstrings, and public class methods.
 * ``docs/changelog.md`` -- a copy of the top-level ``CHANGELOG.md``, which
   MkDocs cannot read from outside its ``docs`` directory.
 
@@ -21,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import inspect
+from functools import lru_cache
+import pprint
 import re
 import sys
 from pathlib import Path
@@ -95,13 +96,29 @@ def prose(text: str) -> str:
     return RST_ROLE.sub(r"``\2``", " ".join(text.split()))
 
 
+def source_documentation(obj) -> str:
+    """Avoid repeating dataclasses' automatically synthesized signature prose."""
+    doc = inspect.getdoc(obj) or ""
+    if (inspect.isclass(obj) and hasattr(obj, "__dataclass_fields__")
+            and doc.startswith(obj.__name__ + "(")):
+        return "Dataclass record storing the fields listed in its constructor signature."
+    return doc
+
+
 def first_line(obj) -> str:
     """Summary paragraph of an object's docstring, collapsed onto one line."""
-    doc = inspect.getdoc(obj) or ""
+    doc = source_documentation(obj)
     # A plain value (a constant, say) inherits its type's docstring, which
     # describes ``float``, not the constant. Show the value instead.
     if kind_of(obj) == "value" and doc == (inspect.getdoc(type(obj)) or ""):
-        return f"`{obj!r}`"
+        if isinstance(obj, dict):
+            keys = ", ".join(f"`{key}`" for key in list(obj)[:6])
+            suffix = ", ..." if len(obj) > 6 else ""
+            return f"Dictionary with {len(obj)} entries: {keys}{suffix}."
+        value = repr(obj)
+        if len(value) > 190:
+            value = value[:187] + "..."
+        return f"`{value}`".replace("|", r"\|")
     if not doc:
         return ""
     paragraph = doc.split("\n\n")[0]
@@ -125,7 +142,7 @@ def signature_of(obj) -> str:
         sig_obj = inspect.signature(target)
     except (TypeError, ValueError):
         return ""
-    sig = str(_name_callable_defaults(sig_obj))
+    sig = str(_name_callable_defaults(sig_obj, obj))
     # The package uses ``from __future__ import annotations``, so annotations
     # arrive as their own source text and ``str(signature)`` quotes them:
     # ``tol: 'float'``.  Unquoting is all that is needed, and it keeps the
@@ -135,9 +152,7 @@ def signature_of(obj) -> str:
     # pages would depend on the version that generated them.
     sig = ANNOTATION.sub(r"\1\2", sig)
     sig = " ".join(sig.split())
-    if len(sig) > 110:
-        sig = sig[:107].rstrip(", ") + ", ...)"
-    return sig.replace("|", r"\|")
+    return sig
 
 
 class _Named:
@@ -150,7 +165,7 @@ class _Named:
         return self._name
 
 
-def _name_callable_defaults(sig: inspect.Signature) -> inspect.Signature:
+def _name_callable_defaults(sig: inspect.Signature, obj=None) -> inspect.Signature:
     """Render ``method=brent`` instead of ``method=<function brent at 0x...>``.
 
     The address in the default repr changes every run, which would make the
@@ -163,6 +178,16 @@ def _name_callable_defaults(sig: inspect.Signature) -> inspect.Signature:
             name = getattr(default, "__name__", None)
             if name:
                 param = param.replace(default=_Named(name))
+        elif type(default) is object:
+            # Optional arguments sometimes use an object() sentinel so that
+            # omitting the argument differs from explicitly passing None.
+            # Its repr contains a process-specific address. Prefer the name
+            # used in the defining module and never expose that address.
+            module = inspect.getmodule(obj) if obj is not None else None
+            names = [name for name, value in vars(module).items()
+                     if value is default] if module is not None else []
+            name = sorted(names)[0] if names else "<omitted>"
+            param = param.replace(default=_Named(name))
         params.append(param)
     return sig.replace(parameters=params)
 
@@ -215,6 +240,139 @@ def module_entries(package_name: str):
     return package, exported, ordered
 
 
+def doc_markdown(obj) -> str:
+    """Preserve complete source documentation with readable Markdown sections.
+
+    NumPy-style parameter blocks become definition lists. Example prompts are
+    fenced to keep their indentation and output, while section underlines are
+    converted rather than accidentally becoming Markdown headings.
+    """
+    doc = source_documentation(obj)
+    doc = RST_ROLE.sub(r"`\2`", doc).replace("``", "`")
+    lines = doc.splitlines()
+    out, index, section = [], 0, ""
+    fields = {"Parameters", "Returns", "Yields", "Raises", "Attributes"}
+    while index < len(lines):
+        line = lines[index]
+        if (index + 1 < len(lines) and line.strip()
+                and re.fullmatch(r"[-=]{3,}", lines[index + 1].strip())):
+            section = line.strip()
+            out.extend(["", f"**{section}**", ""])
+            index += 2
+            continue
+        if line.lstrip().startswith(">>>"):
+            block = []
+            while index < len(lines) and lines[index].strip():
+                block.append(lines[index])
+                index += 1
+            out.extend(["", "```pycon", *block, "```", ""])
+            continue
+        if section in fields and line and not line[0].isspace():
+            label = line.strip().replace("`", "")
+            description = []
+            index += 1
+            while index < len(lines) and (not lines[index].strip()
+                                          or lines[index][0].isspace()):
+                description.append(lines[index].strip())
+                index += 1
+            out.extend([f"`{label}`", f":   {' '.join(description).strip()}", ""])
+            continue
+        out.append(line)
+        index += 1
+    return "\n".join(out).strip()
+
+
+def signature_block(name, obj) -> str:
+    """Show every parameter, wrapping long signatures by parameter boundary."""
+    sig = signature_of(obj)
+    if not sig:
+        return ""
+    call = name + sig
+    if len(call) > 88:
+        try:
+            raw = _name_callable_defaults(inspect.signature(obj), obj)
+            params = []
+            positional_only = [p for p in raw.parameters.values()
+                               if p.kind == p.POSITIONAL_ONLY]
+            has_star = False
+            for param in raw.parameters.values():
+                if param.kind == param.KEYWORD_ONLY and not has_star:
+                    params.append("*")
+                    has_star = True
+                if param.kind == param.VAR_POSITIONAL:
+                    has_star = True
+                params.append(ANNOTATION.sub(r"\1\2", str(param)))
+                if positional_only and param is positional_only[-1]:
+                    params.append("/")
+            tail = sig[sig.rfind(")") + 1:]
+            call = name + "(\n" + "\n".join("    " + p + "," for p in params) + "\n)" + tail
+        except (ValueError, TypeError):
+            pass
+    return f"```python\n{call}\n```\n"
+
+
+def api_anchor(name: str) -> str:
+    """Keep case so distinct exports such as sobol and Sobol never collide."""
+    return "api-" + name
+
+
+@lru_cache(maxsize=1)
+def class_targets():
+    """Locate exported classes once for base-class cross references."""
+    targets = {}
+    for package_name, _, _ in SUBPACKAGES:
+        package = getattr(quadrivium, package_name)
+        for name in package.__all__:
+            obj = getattr(package, name)
+            if inspect.isclass(obj):
+                targets.setdefault(obj, (package_name, name))
+    return targets
+
+
+def class_reference(cls):
+    target = class_targets().get(cls)
+    if target:
+        package, name = target
+        return f"[`{name}`]({package}.md#{api_anchor(name)})"
+    if cls.__module__.startswith(("quadrivium._qnp", "quadrivium.numeric")):
+        return "[`numeric.ndarray`](../guides/numeric.md)"
+    return f"`{cls.__name__}`"
+
+
+# Numeric operators and container protocols are public behavior even though
+# Python spells them with underscores. Initialization already has its own
+# constructor signature; interpreter plumbing and repr hooks add no guidance.
+PUBLIC_PROTOCOLS = {
+    "__call__", "__getitem__", "__setitem__", "__iter__", "__len__",
+    "__float__", "__add__", "__radd__", "__sub__", "__rsub__", "__mul__",
+    "__rmul__", "__truediv__", "__rtruediv__", "__matmul__", "__rmatmul__",
+    "__neg__", "__abs__", "__pow__", "__rpow__",
+}
+
+
+def class_members(cls):
+    """Yield each public method/property once, resolving overrides by MRO.
+
+    Include Python implementations inherited from package base classes, but
+    do not duplicate the entire native ndarray interface on Chain's page.
+    """
+    seen = set()
+    for owner in cls.__mro__:
+        module = owner.__module__
+        if owner is not cls and (not module.startswith("quadrivium.")
+                                 or module.startswith(("quadrivium._qnp", "quadrivium.numeric"))):
+            continue
+        for name, raw in owner.__dict__.items():
+            if name in seen:
+                continue
+            seen.add(name)
+            if name.startswith("_") and name not in PUBLIC_PROTOCOLS:
+                continue
+            member = getattr(cls, name, None)
+            if isinstance(raw, property) or inspect.isroutine(member):
+                yield name, raw, owner
+
+
 def render(package_name: str, title: str, blurb: str) -> str:
     package, exported, groups = module_entries(package_name)
     out = [HEADER]
@@ -230,13 +388,12 @@ def render(package_name: str, title: str, blurb: str) -> str:
         f"**{len(exported)} public names.** Import them from the subpackage or, "
         f"where re-exported, from the top level:\n"
     )
-    out.append(
-        "```python\n"
-        f"from quadrivium.{package_name} import {exported[0] if exported else ''}\n"
-        f"import quadrivium as qd            # qd.{exported[0] if exported else ''}, "
-        "if re-exported\n"
-        "```\n"
-    )
+    out.append("```python\n" + f"from quadrivium import {package_name}\n" + "```\n")
+    out.append("Each entry includes the complete call signature and available source "
+               "documentation. Class entries also list public methods and properties "
+               "including inherited interfaces implemented by Quadrivium. Base-class "
+               "links identify shared contracts. Keyword support differs between methods; "
+               "check the specific entry before passing dispatcher options.\n")
 
     out.append("## Contents\n")
     for module_name, module, names in groups:
@@ -256,15 +413,39 @@ def render(package_name: str, title: str, blurb: str) -> str:
             out.append(prose(paragraphs[0]) + "\n")
             if len(paragraphs) > 1:
                 out.append(prose(paragraphs[1]) + "\n")
-        out.append("| Name | Signature | Summary |")
+        out.append("| Name | Kind | Purpose |")
         out.append("| --- | --- | --- |")
         for name in names:
             obj = getattr(package, name)
-            sig = signature_of(obj)
-            marker = "*class*&nbsp;" if kind_of(obj) == "class" else ""
-            sig_cell = f"`{sig}`" if sig else "&mdash;"
-            out.append(f"| {marker}`{name}` | {sig_cell} | {first_line(obj)} |")
+            out.append(f"| [`{name}`](#{api_anchor(name)}) | {kind_of(obj)} | {first_line(obj)} |")
         out.append("")
+        for name in names:
+            obj = getattr(package, name)
+            out.append(f"### `{name}` {{#{api_anchor(name)}}}\n")
+            if kind_of(obj) == "value":
+                out.append("```python\n" + pprint.pformat(obj, width=88, sort_dicts=False) + "\n```\n")
+                continue
+            out.append(signature_block(name, obj))
+            out.append(doc_markdown(obj) + "\n")
+            if inspect.isclass(obj):
+                bases = [class_reference(base) for base in obj.__bases__
+                         if base is not object]
+                if bases:
+                    out.append("Base classes: " + ", ".join(bases) + ".\n")
+                for member_name, raw, owner in class_members(obj):
+                    member = getattr(obj, member_name, None)
+                    out.append(f"#### `{name}.{member_name}` "
+                               f"{{#{api_anchor(name + '.' + member_name)}}}\n")
+                    if owner is not obj:
+                        out.append(f"Inherited from {class_reference(owner)}.\n")
+                    if isinstance(raw, property):
+                        out.append("Read-only property.\n" if raw.fset is None else "Property.\n")
+                        documentation = doc_markdown(raw)
+                    else:
+                        out.append(signature_block(f"{name}.{member_name}", member))
+                        documentation = doc_markdown(member)
+                    if documentation:
+                        out.append(documentation + "\n")
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -272,29 +453,32 @@ def render_index() -> str:
     out = [HEADER]
     out.append("# API reference\n")
     out.append(
-        "Every public name in the library, grouped by subpackage, with its real "
-        "signature and a one-line summary. These pages are generated from the "
-        "installed package by `tools/gen_docs.py`, so they cannot drift from "
-        "the code.\n"
+        "Every exported name in the numerical-method subpackages, with its real "
+        "complete signature, source documentation, and public class methods. "
+        "These pages are generated from this checkout by `tools/gen_docs.py`. "
+        "The generation check catches changes to exports, defaults, and docstrings; "
+        "the guides explain the numerical assumptions behind the calls.\n"
     )
     out.append(
         "The narrative [guides](../guides/linalg.md) explain when to reach for "
         "which method; this reference tells you what to call.\n"
     )
-    # The figure is drawn by tools/gen_figures.py from the same __all__ lists
-    # this page is built from, so the counts below and the bars agree.
-    out.append(
-        '<figure markdown="span">\n'
-        '  ![Public names by subpackage]'
-        '(../assets/figures/api-public-names.svg#only-light)\n'
-        '  ![Public names by subpackage]'
-        '(../assets/figures/api-public-names-dark.svg#only-dark)\n'
-        "  <figcaption>Every public name, by subpackage, with the portion "
-        "re-exported at the top level. The counts are read from the package's "
-        "own <code>__all__</code> lists when the figure is generated."
-        "</figcaption>\n"
-        "</figure>\n"
-    )
+    out.append("## How to read an entry\n")
+    out.append("A signature without `*` accepts ordinary positional arguments; "
+               "arguments after `*` are keyword-only. `None` often requests an "
+               "automatic choice, but its meaning is method-specific. A `**kwargs` "
+               "parameter forwards options to a selected implementation. Missing "
+               "return annotations do not imply that a routine returns `None`. In "
+               "class method signatures, `self` denotes the instance. An uppercase "
+               "private default such as `_UNSET` is an internal omission sentinel, "
+               "and `<factory>` creates a fresh dataclass default; callers normally "
+               "omit these arguments rather than importing the placeholder.\n")
+    out.append("Some routines return an array or scalar; others return a record "
+               "with status and diagnostics. Read [result contracts](../getting-started.md#result-records) "
+               "before interpreting tolerances or convergence flags. The "
+               "[array guide](../guides/numeric.md) documents `quadrivium.numeric`, "
+               "whose C-backed primitives are separate from the method catalogue below.\n")
+    out.append("## Subpackages\n")
     total = 0
     rows = ["| Subpackage | Public names | Covers |", "| --- | --- | --- |"]
     for name, title, blurb in SUBPACKAGES:
@@ -324,8 +508,8 @@ def render_index() -> str:
     out.append("```")
     out.append("")
     out.append(
-        f"That is {len(top)} names at the top level out of {total} public names in "
-        "total.\n"
+        f"That is {len(top)} names at the top level out of {total} exported names "
+        "in the method catalogue.\n"
     )
     return "\n".join(out).rstrip() + "\n"
 

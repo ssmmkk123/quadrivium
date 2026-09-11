@@ -1,244 +1,317 @@
-# Approximation
+# Approximation and fitting
 
-```python
-from quadrivium.approx import remez, pade, aaa, gauss_legendre_nodes
-import quadrivium as qd          # qd.polyfit, qd.chebyshev_fit, qd.legendre, ...
-```
+Approximation replaces a function or dataset with a simpler representation.
+Unlike interpolation, a fit can deliberately leave residuals at the supplied
+samples. This is useful when measurements contain noise, evaluations are
+expensive, or the goal is a compact model that can be differentiated,
+integrated, and evaluated repeatedly.
 
-38 routines in two groups: orthogonal polynomials with their Gauss quadrature
-nodes, and fitting — least squares, minimax, rational, and Fourier. Full
-signatures are in the [`approx` reference](../api/approx.md).
-
-Approximation differs from [interpolation](interpolate.md) in what it promises:
-an interpolant passes through every point, an approximation minimises an error
-measure over the whole interval. Which measure — least squares, uniform,
-weighted — is the choice this subpackage is organised around.
-
-## Fitting data
+The central choice is the error you want to control: squared error at samples,
+maximum error over an interval, relative error after a transformation, or a
+sample-based adaptive tolerance. These are different objectives and can
+produce different models from the same data.
 
 ```pycon
 >>> from quadrivium import numeric as np
->>> import quadrivium as qd
->>> x = np.array([0.0, 1.0, 2.0, 3.0])
->>> y = x**2 + x + 1
->>> [round(float(c), 10) for c in qd.polyfit(x, y, degree=2)]
-[1.0, 1.0, 1.0]
-
-```
-
-Coefficients come back highest degree first, so `numeric.polyval` evaluates them.
-
-| Data or goal | Function |
-| --- | --- |
-| polynomial least squares | `polyfit` |
-| known per-point variances | `weighted_polyfit` |
-| high degree, needs conditioning | `chebyshev_fit`, `legendre_fit` |
-| `y = a·e^{bx}` | `exponential_fit` |
-| `y = a·x^b` | `power_fit` |
-| `y = a + b·ln x` | `logarithmic_fit` |
-| a ratio of polynomials | `rational_fit`, `aaa` |
-| periodic data | `trigonometric_fit`, `fourier_series` |
-| smooth curve through noisy data | `spline_fit` |
-
-```mermaid
-flowchart TD
-    A["a function, or data"] --> B{"what is being minimised?"}
-    B -- "average error" --> C{"data or function?"}
-    C -- "noisy data" --> D["polyfit<br/>weighted_polyfit"]
-    C -- "a function" --> E["chebyshev_fit<br/>orthogonal_series_fit"]
-    B -- "worst error" --> F["remez<br/>chebyshev_economization"]
-    B -- "a Taylor series at a point" --> G["pade"]
-    B -- "poles or steep gradients" --> H["aaa, rational_fit"]
-    B -- "periodic structure" --> I["fourier_series<br/>trigonometric_fit"]
-```
-
-Above degree six or so, fitting in the monomial basis loses digits to
-conditioning — the Vandermonde matrix of a fine grid has a condition number
-that grows exponentially in the degree. Fitting in an orthogonal basis does
-not:
-
-```pycon
->>> t = np.linspace(-1, 1, 200)
->>> vals = np.exp(t)
->>> cheb = qd.chebyshev_fit(t, vals, degree=12)
->>> float(np.max(np.abs(cheb(t) - vals))) < 1e-12
+>>> from quadrivium import approx as ap
+>>> x = np.linspace(-1.0, 1.0, 9)
+>>> y = 1.0 + 2.0*x + 3.0*x*x
+>>> coefficients = ap.polyfit(x, y, degree=2)
+>>> np.allclose(coefficients, [3.0, 2.0, 1.0])
 True
 
 ```
 
-## Orthogonal polynomials
+The [approximation reference](../api/approx.md) lists constructors, coefficient
+conventions, and available polynomial families. See [interpolation](interpolate.md)
+when matching every supplied value is an explicit requirement.
 
-Six families, each evaluated by its stable three-term recurrence rather than by
-an explicit formula:
+## Choose an objective and representation
 
-```pycon
->>> from quadrivium.approx import legendre, chebyshev_t, hermite_physicists, laguerre
->>> round(float(legendre(3, 0.5)), 12)             # P₃(x) = (5x³ - 3x)/2
--0.4375
->>> round(float(chebyshev_t(5, np.cos(0.7))), 12) == round(float(np.cos(5 * 0.7)), 12)
-True
-
-```
-
-<figure markdown="span">
-  ![Legendre and Chebyshev polynomials of the first six degrees](../assets/figures/approx-orthogonal-families.svg#only-light)
-  ![Legendre and Chebyshev polynomials of the first six degrees](../assets/figures/approx-orthogonal-families-dark.svg#only-dark)
-  <figcaption>Both families are evaluated by their three-term recurrence, not by an explicit formula: the recurrence is stable where the formula is not. Legendre polynomials are orthogonal against weight 1, Chebyshev against 1/√(1−x²), which is why their extrema crowd differently.</figcaption>
-</figure>
-
-Orthogonality is the property they are for, and it holds numerically:
-
-```pycon
->>> from quadrivium.approx import gauss_legendre_nodes
->>> nodes, weights = gauss_legendre_nodes(20)
->>> inner = float(np.sum(weights * legendre(3, nodes) * legendre(5, nodes)))
->>> abs(inner) < 1e-14                             # ⟨P₃, P₅⟩ = 0
-True
->>> norm = float(np.sum(weights * legendre(3, nodes)**2))
->>> abs(norm - 2/7) < 1e-14                        # ⟨P₃, P₃⟩ = 2/(2n+1)
-True
-
-```
-
-`recurrence_coefficients` gives the three-term coefficients for any family, and
-`golub_welsch` turns them into quadrature nodes and weights by solving a
-symmetric tridiagonal eigenproblem — the algorithm behind every
-`gauss_*_nodes` function here:
-
-| Nodes | Weight function | Interval |
+| Goal | Starting point | What the method controls |
 | --- | --- | --- |
-| `gauss_legendre_nodes` | `1` | `[a, b]` |
-| `gauss_chebyshev_nodes` | `1/√(1−x²)` | `[−1, 1]` |
-| `gauss_hermite_nodes` | `e^{−x²}` | `(−∞, ∞)` |
-| `gauss_laguerre_nodes` | `x^α e^{−x}` | `[0, ∞)` |
-| `gauss_jacobi_nodes` | `(1−x)^α(1+x)^β` | `[−1, 1]` |
-| `gauss_lobatto_nodes` | `1`, endpoints included | `[a, b]` |
-| `gauss_radau_nodes` | `1`, one endpoint included | `[a, b]` |
+| Low-degree polynomial fit to observations | `polyfit` | Sum of squared sample residuals |
+| Unequal observation reliability | `weighted_polyfit` | Weighted squared sample residuals |
+| Polynomial fit at a higher degree | `chebyshev_fit`, `legendre_fit` | Sample least squares in a scaled basis |
+| Smooth callable, automatically chosen complexity | `chebfun` | Coefficient-tail and off-grid sample checks |
+| Uniform error over a finite interval | `remez`, `minimax_polynomial` | Approximate equioscillation search |
+| Local series with rational continuation | `pade` | Agreement of Taylor coefficients |
+| Rational model from values | `rational_fit`, `aaa` | Linearized or sampled rational approximation |
+| Periodic model | `fourier_series`, `trigonometric_fit` | Fourier projection or sample least squares |
+| Noisy smooth curve | `spline_fit` | Fidelity balanced against curvature |
 
-<figure markdown="span">
-  ![Node positions and weights for five families of quadrature nodes](../assets/figures/approx-gauss-nodes.svg#only-light)
-  ![Node positions and weights for five families of quadrature nodes](../assets/figures/approx-gauss-nodes-dark.svg#only-dark)
-  <figcaption>Marker area is the weight the node carries. Every Gauss family clusters its nodes near the ends of the interval, which is the same clustering that cures Runge's phenomenon, and none of them is equally spaced.</figcaption>
-</figure>
+A method that fits the samples best may predict worst between them. Keep
+training residuals and independent validation errors separate, and decide
+whether extrapolation is part of the intended use before choosing the model.
 
-`orthogonal_series_fit` expands a function in any of these families directly.
+## Polynomial least squares
 
-## Minimax approximation
-
-Least squares minimises the average error; the minimax (uniform) polynomial
-minimises the worst error, which is what you want when the approximation
-carries a guarantee. The Remez exchange algorithm computes it, and the answer
-is characterised by equioscillation — the error attains its maximum magnitude
-with alternating sign at `degree + 2` points:
+`polyfit(x, y, degree)` returns coefficients in **descending powers**, suitable
+for `np.polyval`. It constructs a Vandermonde matrix and solves with QR rather
+than explicitly forming the normal equations.
 
 ```pycon
->>> from quadrivium.approx import remez
->>> best = remez(np.exp, 4, -1, 1)
->>> grid = np.linspace(-1, 1, 2001)
->>> err = best(grid) - np.exp(grid)
->>> minimax_error = float(np.max(np.abs(err)))
->>> ls = qd.polyfit(grid, np.exp(grid), degree=4)
->>> ls_error = float(np.max(np.abs(np.polyval(ls, grid) - np.exp(grid))))
->>> minimax_error < ls_error          # smaller worst-case, by construction
+>>> prediction = np.polyval(coefficients, [-0.5, 0.5])
+>>> np.allclose(prediction, [0.75, 2.75])
+True
+>>> training_residual = np.polyval(coefficients, x) - y
+>>> float(np.max(np.abs(training_residual))) < 1e-12
 True
 
 ```
 
-<figure markdown="span">
-  ![The minimax error equioscillates; the least squares error does not](../assets/figures/approx-remez-equioscillation.svg#only-light)
-  ![The minimax error equioscillates; the least squares error does not](../assets/figures/approx-remez-equioscillation-dark.svg#only-dark)
-  <figcaption>Approximating exp on [−1, 1] by a degree-4 polynomial. The Remez error touches its maximum magnitude, with alternating sign, at degree + 2 points — the property that characterises the minimax polynomial and the one the exchange algorithm drives towards.</figcaption>
-</figure>
+Use matching finite vectors and enough independent sample locations for the
+requested degree. Repeated coordinates are acceptable in least squares when
+the overall design retains the needed rank, but many repeats do not create
+new information about polynomial shape.
 
-`chebyshev_economization` is the cheap approximation to the same idea: expand
-in Chebyshev polynomials, drop the highest terms, and the error added is
-exactly the size of the dropped coefficients, spread evenly.
+A large domain or a high degree can make powers of `x` poorly scaled even
+with QR. Center and scale the coordinate, or use an orthogonal basis.
+QR improves the numerical solve; it cannot resolve ambiguity in an
+underconstrained or noisy model.
 
-## Rational approximation
+### Weights describe the squared-error objective
 
-A rational function approximates far better than a polynomial of the same total
-degree when the target has poles or steep gradients. Padé matches a Taylor
-series term for term:
+`weighted_polyfit` uses weights in
+`sum(weights[i] * (prediction[i] - y[i])**2)`. Internally the design matrix and
+observations are multiplied by square-root weights. If known standard
+deviations are `sigma`, inverse-variance weights are `1/sigma**2`, subject to
+the assumptions of the measurement model.
 
 ```pycon
->>> from quadrivium.approx import pade, pade_evaluate
->>> taylor = [1.0, 1.0, 0.5, 1/6, 1/24]            # e^x to x⁴
->>> num, den = pade(taylor, 2, 2)
->>> at = 0.5
->>> pade_err = abs(float(pade_evaluate(num, den, at)) - float(np.exp(at)))
->>> taylor_err = abs(float(np.polyval(taylor[::-1], at)) - float(np.exp(at)))
->>> pade_err < taylor_err / 3          # same coefficients, better answer
+>>> weighted = ap.weighted_polyfit([0, 1, 2], [1, 3, 5], [1, 4, 1], degree=1)
+>>> np.allclose(weighted, [2.0, 1.0])
 True
 
 ```
 
-<figure markdown="span">
-  ![A Pade approximant against the Taylor polynomial it was built from](../assets/figures/approx-pade.svg#only-light)
-  ![A Pade approximant against the Taylor polynomial it was built from](../assets/figures/approx-pade-dark.svg#only-dark)
-  <figcaption>Both use exactly the same five Taylor coefficients of exp. Writing them as a ratio rather than a sum extends the useful range by an order of magnitude in the error, at no extra information cost.</figcaption>
-</figure>
+Use finite nonnegative weights and avoid zero total information. Weights do
+not provide automatic outlier rejection, confidence intervals, or a robust
+loss. For a different loss function, construct the objective explicitly and
+use the [optimization tools](optimize.md).
 
-Padé is a local approximation, built from derivatives at one point. For a
-global one from sampled values, AAA is the modern method: it places its support
-points greedily where the error is worst and keeps everything in barycentric
-form, which stays stable where an explicit ratio of polynomials would not:
+## Orthogonal bases and coordinate scaling
+
+Chebyshev and Legendre fitting map the specified domain to `[-1, 1]` and fit
+a linear combination of basis functions. The returned object is callable and
+stores `.coefficients` in increasing basis degree. Those are basis
+coefficients, not monomial coefficients: do not pass them to `np.polyval`.
 
 ```pycon
->>> from quadrivium.approx import aaa
->>> z = np.linspace(-1.2, 1.2, 400)
->>> r, support, values, weights = aaa(np.tan, z, tol=1e-12)
->>> float(np.max(np.abs(r(z) - np.tan(z)))) < 1e-10
+>>> model = ap.chebyshev_fit(x, y, degree=2, domain=(-1.0, 1.0))
+>>> np.allclose(model([-0.5, 0.5]), [0.75, 2.75])
 True
->>> len(support) < 25                              # few terms for that accuracy
+>>> model.coefficients.shape
+(3,)
+>>> legendre_model = ap.legendre_fit(x, y, degree=2, domain=(-1.0, 1.0))
+>>> np.allclose(legendre_model(x), y)
 True
 
 ```
 
-<figure markdown="span">
-  ![Rational approximation against polynomial approximation of tan](../assets/figures/approx-rational-vs-polynomial.svg#only-light)
-  ![Rational approximation against polynomial approximation of tan](../assets/figures/approx-rational-vs-polynomial-dark.svg#only-dark)
-  <figcaption>tan has poles just outside the interval, and a polynomial has to spend its degree imitating them. AAA places poles where the function has them and reaches 1e-12 with sixteen coefficients, where the polynomial is still at 1e-4 with twenty-seven.</figcaption>
-</figure>
+When `domain` is omitted, the data's minimum and maximum define it. A zero-width
+domain is unsuitable. Save the scaling interval with the model if storing
+coefficients for later use. Evaluation outside that interval extrapolates the
+basis expansion and can grow rapidly.
 
-## Fourier approximation
+An orthogonal polynomial family is orthogonal relative to a continuous weight
+and domain. Arbitrarily located sample columns are not automatically orthogonal
+in the discrete least-squares problem. The basis often improves conditioning,
+but the sample distribution still matters.
+
+## Choose complexity using independent errors
+
+Degree is a model-complexity parameter. A low degree may miss real curvature;
+a high degree may reproduce measurement noise and develop large boundary
+excursions. Compare candidate models at locations that did not determine their
+coefficients.
 
 ```pycon
->>> from quadrivium.approx import fourier_series
->>> square = lambda t: np.sign(np.sin(t))
->>> approx = fourier_series(square, n=25)
->>> abs(float(approx(1.0)) - 1.0) < 0.1            # away from the jump
+>>> rng = np.random.default_rng(5)
+>>> training_x = np.linspace(-1, 1, 25)
+>>> training_y = np.sin(training_x) + 0.01*rng.standard_normal(training_x.size)
+>>> fitted = ap.chebyshev_fit(training_x, training_y, degree=3, domain=(-1, 1))
+>>> validation_x = np.linspace(-0.95, 0.95, 40)
+>>> rmse = float(np.sqrt(np.mean((fitted(validation_x) - np.sin(validation_x))**2)))
+>>> rmse < 0.02
 True
 
 ```
 
-The Gibbs phenomenon is real and does not go away with more terms — the
-overshoot at a jump converges to about 9% of the jump height however many
-harmonics you add. `trigonometric_fit` fits harmonics to sampled data, and
-`fourier_coefficients` returns the coefficients themselves.
+Here the exact function is available because the data are synthetic. For real
+measurements, hold out observations or collect a separate validation dataset.
+If model selection repeatedly uses the same holdout, retain a final independent
+set for the ultimate assessment.
 
 <figure markdown="span">
-  ![Gibbs' phenomenon: the overshoot at a jump does not shrink](../assets/figures/approx-gibbs.svg#only-light)
-  ![Gibbs' phenomenon: the overshoot at a jump does not shrink](../assets/figures/approx-gibbs-dark.svg#only-dark)
-  <figcaption>Adding harmonics narrows the ringing but does not lower it: the first overshoot converges to 8.95% of the jump height. It is a property of the truncated series, not of the arithmetic.</figcaption>
+  ![Training error and error against the underlying function as polynomial degree changes](../assets/figures/approx-fit-generalization.svg#only-light)
+  ![Training error and error against the underlying function as polynomial degree changes](../assets/figures/approx-fit-generalization-dark.svg#only-dark)
+  <figcaption>Chebyshev fits of degrees 1 to 16 use 25 noisy sine samples with Gaussian noise σ=0.08 and seed 20260911. Training RMS is compared with RMS against the noise-free function at 501 query points; the curve profiles show how excess degree can follow noise instead of the underlying function.</figcaption>
 </figure>
 
-## Pitfalls
+Report the error statistic and its domain. Maximum absolute error emphasizes
+the worst sampled location; root-mean-square error summarizes typical squared
+error; relative error needs care near zeros. None of these is a certified
+continuous-domain bound when measured only on a finite grid.
 
-- **Least squares in the monomial basis is ill-conditioned.** Use
-  `chebyshev_fit` or `legendre_fit` above degree six.
-- **Minimax is not always what you want.** It is the right criterion when a
-  worst-case bound matters; least squares is right when the data is noisy.
-- **Padé approximants can have spurious poles** inside the region of interest,
-  from near-cancellation in the coefficients. Check the denominator's roots
-  (`qd.polynomial_roots`), or use `aaa`, which is built to avoid them.
-- **A truncated Fourier series overshoots at jumps.** No number of terms fixes
-  it; filter the coefficients or accept the ringing.
-- **Extrapolation is not approximation.** Every method here is fitted on an
-  interval and says nothing outside it.
+## Adaptive piecewise Chebyshev approximation
 
-## See also
+`chebfun(f, domain, ...)` constructs a `ChebyshevApproximation` of a finite
+real-valued scalar callable on a finite interval. It increases polynomial
+degree, checks coefficient tails and independent off-grid probes, and bisects
+difficult pieces when increasing degree is insufficient.
 
-- [`approx` API reference](../api/approx.md) — every signature.
-- [Interpolation guide](interpolate.md) — passing through the points exactly.
-- [Integration guide](integrate.md) — the Gauss rules these nodes drive.
-- [Transforms guide](transforms.md) — the FFT route to Fourier coefficients.
+```pycon
+>>> adaptive = ap.chebfun(np.exp, domain=(-1.0, 1.0), atol=1e-12, rtol=1e-10)
+>>> adaptive.converged
+True
+>>> float(np.max(np.abs(adaptive(x) - np.exp(x)))) < 1e-9
+True
+>>> adaptive.function_calls > 0 and len(adaptive.pieces) >= 1
+True
+
+```
+
+`atol` and `rtol` set the sample-based target. `max_degree` bounds the degree
+of each attempted piece and must be at least 16; `max_pieces` bounds subdivision.
+If the budget is exhausted before the criterion is satisfied,
+`.converged` is false and the constructed approximation remains available.
+Inspect `.error_estimate`, `.function_calls`, and the piece count alongside
+that flag.
+
+The error estimate is based on sampled evidence. A narrow feature can escape
+all sample points. Validate at additional locations, particularly around known
+singularities, transitions, or rapid oscillations. Providing a tighter
+tolerance alone does not certify behavior between samples.
+
+### Calculus on the representation
+
+The adaptive object supports evaluation, `derivative(order)`, `integrate(a,b)`,
+and `roots()`. Evaluation and integration limits must remain within the
+construction domain; out-of-domain queries raise rather than extrapolate.
+
+```pycon
+>>> derivative = adaptive.derivative()
+>>> abs(derivative(0.25) - np.exp(0.25)) < 1e-8
+True
+>>> abs(adaptive.integrate() - (np.e - 1/np.e)) < 1e-9
+True
+>>> quadratic = ap.chebfun(lambda t: t*t - 0.25, domain=(-1, 1))
+>>> np.allclose(quadratic.roots(), [-0.5, 0.5], atol=1e-8)
+True
+
+```
+
+Differentiation amplifies coefficient errors. The derivative object does not
+supply a fresh derivative-error certificate; its error estimate is unavailable.
+Roots are roots of the represented pieces, deduplicated near shared boundaries.
+An identically zero piece has infinitely many roots and raises an error.
+Check important roots against the original function using [root finding](rootfind.md).
+
+## Transformed elementary models
+
+`exponential_fit` fits `y = a*exp(b*x)` after taking `log(y)` and requires
+strictly positive responses. `power_fit` fits `y = a*x**b` in log-log space and
+requires positive coordinates and responses. `logarithmic_fit` fits
+`y = a + b*log(x)` and requires a positive coordinate domain.
+
+```pycon
+>>> amplitude, rate = ap.exponential_fit([0.0, 1.0, 2.0],
+...                                    [2.0, 2.0*np.e, 2.0*np.e**2])
+>>> abs(amplitude - 2.0) < 1e-12 and abs(rate - 1.0) < 1e-12
+True
+
+```
+
+Least squares after a logarithm minimizes errors in transformed space, not
+squared errors in the original response. This can be appropriate for
+multiplicative noise and inappropriate for additive noise. If the objective
+is original-scale error, fit that nonlinear model directly.
+
+## Rational approximation and Padé coefficients
+
+A rational representation `P/Q` can capture pole-like behavior with fewer
+coefficients than a polynomial. It can also introduce unwanted denominator
+zeros. Check its poles and evaluation range before using it as a surrogate.
+
+`pade(coeffs, m, n)` accepts **ascending Taylor coefficients**, including the
+constant term, and returns ascending numerator and denominator coefficients.
+It needs at least `m+n+1` terms. Use `pade_evaluate` to avoid mixing conventions.
+
+```pycon
+>>> numerator, denominator = ap.pade([1.0, 1.0, 0.5], m=1, n=1)
+>>> np.allclose(numerator, [1.0, 0.5])
+True
+>>> np.allclose(denominator, [1.0, -0.5])
+True
+>>> abs(float(ap.pade_evaluate(numerator, denominator, 0.1)) - np.exp(0.1)) < 1e-4
+True
+
+```
+
+Padé matches a local series; it does not minimize error over an arbitrary
+interval. Degenerate coefficient systems may use a minimum-norm solve, so
+inspect the represented rational function rather than assuming a requested
+nominal degree produces that effective degree.
+
+`rational_fit(x, y, m, n)` uses a linearized least-squares formulation with
+`Q(0)=1`. Its objective is not identical to minimizing original rational
+prediction residuals. It returns a callable with ascending `.numerator` and
+`.denominator` arrays.
+
+`aaa(f, points=..., ...)` adaptively chooses support points from supplied
+samples and returns `(evaluator, support, weights, fvals)`. A values-based
+call is also available with `values=...`. The sampling set defines what the
+algorithm can see; a small sampled residual does not rule out poles or large
+errors between samples. Keep denominator behavior and independent validation
+in the assessment.
+
+## Minimax and Fourier representations
+
+`remez` and `minimax_polynomial` seek a polynomial with nearly equal alternating
+error extrema. The implementation locates candidate extrema on a finite grid.
+The returned callable exposes ascending monomial `.coefficients`, `.nodes`,
+and `.error`; that last value is an exchange-system error level, not a
+certified uniform bound or a convergence flag. Check the error on a finer,
+independent grid and refine extrema when a strict bound matters.
+
+Fourier representations are appropriate when the model is periodic.
+`fourier_coefficients` computes cosine and sine coefficients by quadrature;
+`fourier_series` returns an evaluator; `trigonometric_fit` solves a
+least-squares problem using sampled observations and a chosen harmonic count.
+
+```pycon
+>>> periodic = ap.trigonometric_fit(np.linspace(0, 2*np.pi, 24, endpoint=False),
+...                                np.sin(np.linspace(0, 2*np.pi, 24, endpoint=False)),
+...                                n_harmonics=1, period=2*np.pi)
+>>> abs(float(periodic(0.3)) - np.sin(0.3)) < 1e-12
+True
+
+```
+
+An incorrect period or an endpoint mismatch produces artificial nonsmoothness.
+Sharp jumps yield ringing and slower convergence. More harmonics also require
+enough independent samples to distinguish their frequencies. See
+[transforms](transforms.md) for sampling and Fourier conventions.
+
+## Orthogonal polynomials and quadrature nodes
+
+The module evaluates Legendre, Chebyshev, Hermite, Laguerre, Jacobi, and
+Gegenbauer families. The two Hermite conventions are explicitly named:
+`hermite_physicists` and `hermite_probabilists`. Their weights and scaling
+differ, so do not substitute one for the other by name alone.
+
+`gauss_legendre_nodes` and related helpers return `(nodes, weights)` for their
+respective weighted integral. The weight is part of the mathematical rule.
+For example, Hermite quadrature includes `exp(-x*x)` in the measure.
+
+```pycon
+>>> nodes, weights = ap.gauss_legendre_nodes(4, a=0.0, b=1.0)
+>>> abs(float(weights @ nodes**7) - 1.0/8.0) < 1e-12
+True
+
+```
+
+Use [integration](integrate.md) to apply these rules to callables. For the
+linear algebra underlying fits, including rank deficiency and regularization,
+continue with [linear algebra](linalg.md).

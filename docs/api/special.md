@@ -10,9 +10,10 @@ For worked examples and guidance on choosing between these routines, see the [sp
 **52 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.special import gamma
-import quadrivium as qd            # qd.gamma, if re-exported
+from quadrivium import special
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
@@ -26,57 +27,566 @@ Special functions used throughout the library.
 
 Implemented from scratch (Lanczos, continued fractions, series/asymptotic switching) so the package depends on nothing beyond NumPy.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `gamma` | `(x)` | Gamma function for real arguments. |
-| `log_gamma` | `(x)` | Log-gamma by the Lanczos approximation (accurate to ~15 digits). |
-| `digamma` | `(x)` | Digamma ``psi(x) = d/dx log Gamma(x)`` by recurrence plus asymptotics. |
-| `beta` | `(a, b)` | Euler beta function ``B(a, b) = Gamma(a)Gamma(b)/Gamma(a+b)``. |
-| `log_beta` | `(a, b)` | Logarithm of the beta function. |
-| `factorial` | `(n)` | Factorial via the gamma function (exact for small integers). |
-| `binomial` | `(n, k)` | Binomial coefficient, computed in log space for large arguments. |
-| `erf` | `(x)` | Error function, correctly rounded over the whole real line. |
-| `erfc` | `(x)` | Complementary error function ``1 - erf(x)``, accurate in the tail. |
-| `erfinv` | `(y, tol: float = 1e-14, max_iter: int = 100)` | Inverse error function by Newton iteration on a rational initial guess. |
-| `incomplete_gamma_lower` | `(a, x)` | Unregularized lower incomplete gamma ``gamma(a, x)``. |
-| `incomplete_gamma_upper` | `(a, x)` | Unregularized upper incomplete gamma ``Gamma(a, x)``. |
-| `regularized_gamma_p` | `(a, x, tol: float = 1e-15, max_iter: int = 300)` | Regularized lower incomplete gamma ``P(a, x)``. |
-| `regularized_gamma_q` | `(a, x, tol: float = 1e-15, max_iter: int = 300)` | Regularized upper incomplete gamma ``Q(a, x) = 1 - P(a, x)``. |
-| `incomplete_beta` | `(a, b, x, tol: float = 1e-15, max_iter: int = 300)` | Regularized incomplete beta ``I_x(a, b)`` by continued fraction. |
-| `bessel_j0` | `(x)` | Bessel function of the first kind, order 0. |
-| `bessel_j1` | `(x)` | Bessel function of the first kind, order 1. |
-| `bessel_jn` | `(n: int, x)` | Bessel ``J_n`` by upward or downward recurrence as stability requires. |
-| `bessel_y0` | `(x)` | Bessel function of the second kind, order 0 (requires ``x > 0``). |
-| `bessel_y1` | `(x)` | Bessel function of the second kind, order 1 (requires ``x > 0``). |
-| `bessel_yn` | `(n: int, x)` | Bessel ``Y_n`` by upward recurrence (stable for ``Y``). |
-| `bessel_i0` | `(x)` | Modified Bessel function of the first kind, order 0. |
-| `bessel_i1` | `(x)` | Modified Bessel function of the first kind, order 1 (odd in ``x``). |
-| `bessel_in` | `(n: int, x)` | Modified Bessel ``I_n`` for integer order by Miller's recurrence. |
-| `bessel_k0` | `(x)` | Modified Bessel function of the second kind, order 0. |
-| `bessel_k1` | `(x)` | Modified Bessel function of the second kind, order 1. |
-| `bessel_kn` | `(n: int, x)` | Modified Bessel ``K_n`` for integer order. |
-| `airy_ai` | `(x, terms: int = 60)` | Airy function ``Ai(x)``. |
-| `airy_bi` | `(x, terms: int = 60)` | Airy function ``Bi(x)``. |
-| `elliptic_k` | `(m, tol: float = 1e-15)` | Complete elliptic integral of the first kind by the AGM. |
-| `elliptic_e` | `(m, tol: float = 1e-15)` | Complete elliptic integral of the second kind by the AGM. |
-| `exponential_integral` | `(x, max_iter: int = 200, tol: float = 1e-15)` | Exponential integral ``Ei(x)`` for ``x != 0``. |
-| `sine_integral` | `(x, terms: int = 200, tol: float = 1e-16)` | Sine integral ``Si(x)``. |
-| `cosine_integral` | `(x, terms: int = 200, tol: float = 1e-16)` | Cosine integral ``Ci(x)`` for ``x > 0``. |
-| `zeta` | `(s, terms: int = 100000, tol: float = 1e-15)` | Riemann zeta function, for any real ``s != 1``. |
-| `lambert_w` | `(x, branch: int = 0, tol: float = 1e-14, max_iter: int = 100)` | Lambert W: the solution of ``W e^W = x``. |
-| `dawson` | `(x, h: float = 0.2, terms: int = 60)` | Dawson's function ``F(x) = e^{-x^2} int_0^x e^{t^2} dt``. |
-| `fresnel_s` | `(x, tol: float = 1e-15)` | Fresnel sine integral ``S(x) = int_0^x sin(pi t^2 / 2) dt``. |
-| `fresnel_c` | `(x, tol: float = 1e-15)` | Fresnel cosine integral ``C(x) = int_0^x cos(pi t^2 / 2) dt``. |
-| `erfcx` | `(x)` | Scaled complementary error function ``e^{x^2} erfc(x)``. |
-| `polygamma` | `(n: int, x)` | Polygamma ``psi^(n)(x)``, the ``n``-th derivative of ``log Gamma``. |
-| `trigamma` | `(x)` | Trigamma function ``psi'(x)``. |
-| `spherical_bessel_j` | `(n: int, x)` | Spherical Bessel ``j_n(x) = sqrt(pi/2x) J_{n+1/2}(x)``. |
-| `spherical_bessel_y` | `(n: int, x)` | Spherical Bessel ``y_n(x) = sqrt(pi/2x) Y_{n+1/2}(x)``. |
-| `associated_legendre` | `(l: int, m: int, x)` | Associated Legendre ``P_l^m(x)`` on ``[-1, 1]`` (Condon-Shortley phase). |
-| `spherical_harmonic` | `(l: int, m: int, theta, phi)` | Complex spherical harmonic ``Y_l^m(theta, phi)``. |
-| `hyp1f1` | `(a, b, z, tol: float = 1e-15, max_terms: int = 5000)` | Confluent hypergeometric ``1F1(a; b; z)`` (Kummer's function). |
-| `hyp2f1` | `(a, b, c, z, tol: float = 1e-15, max_terms: int = 20000)` | Gauss hypergeometric ``2F1(a, b; c; z)`` for real ``\|z\| < 1``. |
-| `expint_n` | `(n: int, x, tol: float = 1e-14, max_iter: int = 200)` | Generalized exponential integral ``E_n(x) = int_1^inf e^{-xt}/t^n dt``. |
-| `struve_h0` | `(x, tol: float = 1e-14, max_terms: int = 300)` | Struve function ``H_0(x)``: the particular solution of the driven Bessel equation. |
-| `logistic` | `(x)` | Logistic sigmoid, written to avoid overflow for either sign of ``x``. |
-| `logit` | `(p)` | Inverse of ``logistic``: ``log(p / (1 - p))``. |
+| [`gamma`](#api-gamma) | function | Gamma function for real arguments. |
+| [`log_gamma`](#api-log_gamma) | function | Log-gamma by the Lanczos approximation (accurate to ~15 digits). |
+| [`digamma`](#api-digamma) | function | Digamma ``psi(x) = d/dx log Gamma(x)`` by recurrence plus asymptotics. |
+| [`beta`](#api-beta) | function | Euler beta function ``B(a, b) = Gamma(a)Gamma(b)/Gamma(a+b)``. |
+| [`log_beta`](#api-log_beta) | function | Logarithm of the beta function. |
+| [`factorial`](#api-factorial) | function | Factorial via the gamma function (exact for small integers). |
+| [`binomial`](#api-binomial) | function | Binomial coefficient, computed in log space for large arguments. |
+| [`erf`](#api-erf) | function | Error function, correctly rounded over the whole real line. |
+| [`erfc`](#api-erfc) | function | Complementary error function ``1 - erf(x)``, accurate in the tail. |
+| [`erfinv`](#api-erfinv) | function | Inverse error function by Newton iteration on a rational initial guess. |
+| [`incomplete_gamma_lower`](#api-incomplete_gamma_lower) | function | Unregularized lower incomplete gamma ``gamma(a, x)``. |
+| [`incomplete_gamma_upper`](#api-incomplete_gamma_upper) | function | Unregularized upper incomplete gamma ``Gamma(a, x)``. |
+| [`regularized_gamma_p`](#api-regularized_gamma_p) | function | Regularized lower incomplete gamma ``P(a, x)``. |
+| [`regularized_gamma_q`](#api-regularized_gamma_q) | function | Regularized upper incomplete gamma ``Q(a, x) = 1 - P(a, x)``. |
+| [`incomplete_beta`](#api-incomplete_beta) | function | Regularized incomplete beta ``I_x(a, b)`` by continued fraction. |
+| [`bessel_j0`](#api-bessel_j0) | function | Bessel function of the first kind, order 0. |
+| [`bessel_j1`](#api-bessel_j1) | function | Bessel function of the first kind, order 1. |
+| [`bessel_jn`](#api-bessel_jn) | function | Bessel ``J_n`` by upward or downward recurrence as stability requires. |
+| [`bessel_y0`](#api-bessel_y0) | function | Bessel function of the second kind, order 0 (requires ``x > 0``). |
+| [`bessel_y1`](#api-bessel_y1) | function | Bessel function of the second kind, order 1 (requires ``x > 0``). |
+| [`bessel_yn`](#api-bessel_yn) | function | Bessel ``Y_n`` by upward recurrence (stable for ``Y``). |
+| [`bessel_i0`](#api-bessel_i0) | function | Modified Bessel function of the first kind, order 0. |
+| [`bessel_i1`](#api-bessel_i1) | function | Modified Bessel function of the first kind, order 1 (odd in ``x``). |
+| [`bessel_in`](#api-bessel_in) | function | Modified Bessel ``I_n`` for integer order by Miller's recurrence. |
+| [`bessel_k0`](#api-bessel_k0) | function | Modified Bessel function of the second kind, order 0. |
+| [`bessel_k1`](#api-bessel_k1) | function | Modified Bessel function of the second kind, order 1. |
+| [`bessel_kn`](#api-bessel_kn) | function | Modified Bessel ``K_n`` for integer order. |
+| [`airy_ai`](#api-airy_ai) | function | Airy function ``Ai(x)``. |
+| [`airy_bi`](#api-airy_bi) | function | Airy function ``Bi(x)``. |
+| [`elliptic_k`](#api-elliptic_k) | function | Complete elliptic integral of the first kind by the AGM. |
+| [`elliptic_e`](#api-elliptic_e) | function | Complete elliptic integral of the second kind by the AGM. |
+| [`exponential_integral`](#api-exponential_integral) | function | Exponential integral ``Ei(x)`` for ``x != 0``. |
+| [`sine_integral`](#api-sine_integral) | function | Sine integral ``Si(x)``. |
+| [`cosine_integral`](#api-cosine_integral) | function | Cosine integral ``Ci(x)`` for ``x > 0``. |
+| [`zeta`](#api-zeta) | function | Riemann zeta function, for any real ``s != 1``. |
+| [`lambert_w`](#api-lambert_w) | function | Lambert W: the solution of ``W e^W = x``. |
+| [`dawson`](#api-dawson) | function | Dawson's function ``F(x) = e^{-x^2} int_0^x e^{t^2} dt``. |
+| [`fresnel_s`](#api-fresnel_s) | function | Fresnel sine integral ``S(x) = int_0^x sin(pi t^2 / 2) dt``. |
+| [`fresnel_c`](#api-fresnel_c) | function | Fresnel cosine integral ``C(x) = int_0^x cos(pi t^2 / 2) dt``. |
+| [`erfcx`](#api-erfcx) | function | Scaled complementary error function ``e^{x^2} erfc(x)``. |
+| [`polygamma`](#api-polygamma) | function | Polygamma ``psi^(n)(x)``, the ``n``-th derivative of ``log Gamma``. |
+| [`trigamma`](#api-trigamma) | function | Trigamma function ``psi'(x)``. |
+| [`spherical_bessel_j`](#api-spherical_bessel_j) | function | Spherical Bessel ``j_n(x) = sqrt(pi/2x) J_{n+1/2}(x)``. |
+| [`spherical_bessel_y`](#api-spherical_bessel_y) | function | Spherical Bessel ``y_n(x) = sqrt(pi/2x) Y_{n+1/2}(x)``. |
+| [`associated_legendre`](#api-associated_legendre) | function | Associated Legendre ``P_l^m(x)`` on ``[-1, 1]`` (Condon-Shortley phase). |
+| [`spherical_harmonic`](#api-spherical_harmonic) | function | Complex spherical harmonic ``Y_l^m(theta, phi)``. |
+| [`hyp1f1`](#api-hyp1f1) | function | Confluent hypergeometric ``1F1(a; b; z)`` (Kummer's function). |
+| [`hyp2f1`](#api-hyp2f1) | function | Gauss hypergeometric ``2F1(a, b; c; z)`` for real ``\|z\| < 1``. |
+| [`expint_n`](#api-expint_n) | function | Generalized exponential integral ``E_n(x) = int_1^inf e^{-xt}/t^n dt``. |
+| [`struve_h0`](#api-struve_h0) | function | Struve function ``H_0(x)``: the particular solution of the driven Bessel equation. |
+| [`logistic`](#api-logistic) | function | Logistic sigmoid, written to avoid overflow for either sign of ``x``. |
+| [`logit`](#api-logit) | function | Inverse of ``logistic``: ``log(p / (1 - p))``. |
+
+### `gamma` {#api-gamma}
+
+```python
+gamma(x)
+```
+
+Gamma function for real arguments.
+
+Poles at the non-positive integers return `+inf`, and arguments large
+enough to overflow the double range return `+inf` rather than raising.
+
+### `log_gamma` {#api-log_gamma}
+
+```python
+log_gamma(x)
+```
+
+Log-gamma by the Lanczos approximation (accurate to ~15 digits).
+
+### `digamma` {#api-digamma}
+
+```python
+digamma(x)
+```
+
+Digamma `psi(x) = d/dx log Gamma(x)` by recurrence plus asymptotics.
+
+### `beta` {#api-beta}
+
+```python
+beta(a, b)
+```
+
+Euler beta function `B(a, b) = Gamma(a)Gamma(b)/Gamma(a+b)`.
+
+### `log_beta` {#api-log_beta}
+
+```python
+log_beta(a, b)
+```
+
+Logarithm of the beta function.
+
+### `factorial` {#api-factorial}
+
+```python
+factorial(n)
+```
+
+Factorial via the gamma function (exact for small integers).
+
+### `binomial` {#api-binomial}
+
+```python
+binomial(n, k)
+```
+
+Binomial coefficient, computed in log space for large arguments.
+
+### `erf` {#api-erf}
+
+```python
+erf(x)
+```
+
+Error function, correctly rounded over the whole real line.
+
+### `erfc` {#api-erfc}
+
+```python
+erfc(x)
+```
+
+Complementary error function `1 - erf(x)`, accurate in the tail.
+
+### `erfinv` {#api-erfinv}
+
+```python
+erfinv(y, tol: float = 1e-14, max_iter: int = 100)
+```
+
+Inverse error function by Newton iteration on a rational initial guess.
+
+### `incomplete_gamma_lower` {#api-incomplete_gamma_lower}
+
+```python
+incomplete_gamma_lower(a, x)
+```
+
+Unregularized lower incomplete gamma `gamma(a, x)`.
+
+### `incomplete_gamma_upper` {#api-incomplete_gamma_upper}
+
+```python
+incomplete_gamma_upper(a, x)
+```
+
+Unregularized upper incomplete gamma `Gamma(a, x)`.
+
+### `regularized_gamma_p` {#api-regularized_gamma_p}
+
+```python
+regularized_gamma_p(a, x, tol: float = 1e-15, max_iter: int = 300)
+```
+
+Regularized lower incomplete gamma `P(a, x)`.
+
+Uses the series for `x < a+1` and the continued fraction beyond, which is
+where each converges quickly.
+
+### `regularized_gamma_q` {#api-regularized_gamma_q}
+
+```python
+regularized_gamma_q(a, x, tol: float = 1e-15, max_iter: int = 300)
+```
+
+Regularized upper incomplete gamma `Q(a, x) = 1 - P(a, x)`.
+
+### `incomplete_beta` {#api-incomplete_beta}
+
+```python
+incomplete_beta(a, b, x, tol: float = 1e-15, max_iter: int = 300)
+```
+
+Regularized incomplete beta `I_x(a, b)` by continued fraction.
+
+### `bessel_j0` {#api-bessel_j0}
+
+```python
+bessel_j0(x)
+```
+
+Bessel function of the first kind, order 0.
+
+Machine precision for `|x| < 10`, better than `1e-10` beyond, where the
+Hankel asymptotic expansion takes over.
+
+### `bessel_j1` {#api-bessel_j1}
+
+```python
+bessel_j1(x)
+```
+
+Bessel function of the first kind, order 1.
+
+### `bessel_jn` {#api-bessel_jn}
+
+```python
+bessel_jn(n: int, x)
+```
+
+Bessel `J_n` by upward or downward recurrence as stability requires.
+
+### `bessel_y0` {#api-bessel_y0}
+
+```python
+bessel_y0(x)
+```
+
+Bessel function of the second kind, order 0 (requires `x > 0`).
+
+### `bessel_y1` {#api-bessel_y1}
+
+```python
+bessel_y1(x)
+```
+
+Bessel function of the second kind, order 1 (requires `x > 0`).
+
+### `bessel_yn` {#api-bessel_yn}
+
+```python
+bessel_yn(n: int, x)
+```
+
+Bessel `Y_n` by upward recurrence (stable for `Y`).
+
+### `bessel_i0` {#api-bessel_i0}
+
+```python
+bessel_i0(x)
+```
+
+Modified Bessel function of the first kind, order 0.
+
+### `bessel_i1` {#api-bessel_i1}
+
+```python
+bessel_i1(x)
+```
+
+Modified Bessel function of the first kind, order 1 (odd in `x`).
+
+### `bessel_in` {#api-bessel_in}
+
+```python
+bessel_in(n: int, x)
+```
+
+Modified Bessel `I_n` for integer order by Miller's recurrence.
+
+Forward recurrence on `I` is violently unstable -- it amplifies the
+`K` solution, which grows in the direction of increasing order.  Running
+the recurrence *backwards* from a high starting order damps that
+contaminant instead, and the result is fixed by normalizing against
+`I_0`.
+
+### `bessel_k0` {#api-bessel_k0}
+
+```python
+bessel_k0(x)
+```
+
+Modified Bessel function of the second kind, order 0.
+
+### `bessel_k1` {#api-bessel_k1}
+
+```python
+bessel_k1(x)
+```
+
+Modified Bessel function of the second kind, order 1.
+
+### `bessel_kn` {#api-bessel_kn}
+
+```python
+bessel_kn(n: int, x)
+```
+
+Modified Bessel `K_n` for integer order.
+
+Unlike `I`, forward recurrence is the *stable* direction for `K`: it
+grows with order, so rounding error stays relatively small.
+
+### `airy_ai` {#api-airy_ai}
+
+```python
+airy_ai(x, terms: int = 60)
+```
+
+Airy function `Ai(x)`.
+
+Positive arguments use `Ai(x) = sqrt(x/3) K_{1/3}(2 x^{3/2} / 3) / pi`,
+which holds full relative accuracy where the Maclaurin series cannot:
+that series has no correct digits left at `x = 8` and returns the wrong
+sign at `x = 10`.  Large negative arguments use the oscillatory
+asymptotic form, and the series serves the moderate range between them.
+
+### `airy_bi` {#api-airy_bi}
+
+```python
+airy_bi(x, terms: int = 60)
+```
+
+Airy function `Bi(x)`.
+
+Nothing cancels for `x >= 0`, where both sums are positive, so the
+series serves the moderate range exactly; beyond it the two exponential
+forms take over -- growing for large positive `x`, where the series
+would run out of terms, and oscillatory for large negative `x`, which
+cancels exactly as `Ai` does.
+
+### `elliptic_k` {#api-elliptic_k}
+
+```python
+elliptic_k(m, tol: float = 1e-15)
+```
+
+Complete elliptic integral of the first kind by the AGM.
+
+### `elliptic_e` {#api-elliptic_e}
+
+```python
+elliptic_e(m, tol: float = 1e-15)
+```
+
+Complete elliptic integral of the second kind by the AGM.
+
+### `exponential_integral` {#api-exponential_integral}
+
+```python
+exponential_integral(x, max_iter: int = 200, tol: float = 1e-15)
+```
+
+Exponential integral `Ei(x)` for `x != 0`.
+
+### `sine_integral` {#api-sine_integral}
+
+```python
+sine_integral(x, terms: int = 200, tol: float = 1e-16)
+```
+
+Sine integral `Si(x)`.
+
+The ascending series is used while it is still free of cancellation, and
+the continued fraction for `E_1(ix)` beyond that.
+
+### `cosine_integral` {#api-cosine_integral}
+
+```python
+cosine_integral(x, terms: int = 200, tol: float = 1e-16)
+```
+
+Cosine integral `Ci(x)` for `x > 0`.
+
+### `zeta` {#api-zeta}
+
+```python
+zeta(s, terms: int = 100000, tol: float = 1e-15)
+```
+
+Riemann zeta function, for any real `s != 1`.
+
+`s > 1` uses Euler-Maclaurin acceleration directly.  `s < 1` is
+reflected through the functional equation
+`zeta(s) = 2^s pi^{s-1} sin(pi s / 2) Gamma(1-s) zeta(1-s)`,
+which is how values like `zeta(-1) = -1/12` arise.  `s = 1` is the
+pole, and the negative even integers are the trivial zeros.
+
+### `lambert_w` {#api-lambert_w}
+
+```python
+lambert_w(x, branch: int = 0, tol: float = 1e-14, max_iter: int = 100)
+```
+
+Lambert W: the solution of `W e^W = x`.
+
+`branch=0` is the principal branch (`W >= -1`), defined for
+`x >= -1/e`; `branch=-1` is the lower real branch (`W <= -1`),
+defined on `[-1/e, 0)`.  Solved by Halley's method, which converges
+cubically and handles the square-root behaviour near the branch point
+`x = -1/e` where Newton's method crawls.
+
+### `dawson` {#api-dawson}
+
+```python
+dawson(x, h: float = 0.2, terms: int = 60)
+```
+
+Dawson's function `F(x) = e^{-x^2} int_0^x e^{t^2} dt`.
+
+Rybicki's method: the trapezoid rule applied to the integral's Fourier
+representation collapses to the sum below, whose error falls off like
+`exp(-(pi/2h)^2)` -- full double precision at `h = 0.2` with no
+cancellation anywhere.  The naive alternatives both fail: computing
+`e^{-x^2}` and the integral separately loses everything to overflow at
+large `x`, while the Maclaurin series has terms of size `e^{x^2}`
+that cancel down to an answer of order `1/2x`.
+
+### `fresnel_s` {#api-fresnel_s}
+
+```python
+fresnel_s(x, tol: float = 1e-15)
+```
+
+Fresnel sine integral `S(x) = int_0^x sin(pi t^2 / 2) dt`.
+
+### `fresnel_c` {#api-fresnel_c}
+
+```python
+fresnel_c(x, tol: float = 1e-15)
+```
+
+Fresnel cosine integral `C(x) = int_0^x cos(pi t^2 / 2) dt`.
+
+### `erfcx` {#api-erfcx}
+
+```python
+erfcx(x)
+```
+
+Scaled complementary error function `e^{x^2} erfc(x)`.
+
+Stays finite and smooth for large positive `x`, where `erfc` itself
+underflows to zero and `e^{x^2}` overflows -- the product is the only
+numerically usable form.
+
+### `polygamma` {#api-polygamma}
+
+```python
+polygamma(n: int, x)
+```
+
+Polygamma `psi^(n)(x)`, the `n`-th derivative of `log Gamma`.
+
+`n = 0` delegates to `digamma`.  For `n >= 1` the recurrence
+`psi^(n)(x) = psi^(n)(x+1) + (-1)^n n! / x^{n+1}` pushes the argument
+into the range where the Hurwitz-zeta asymptotic series is accurate:
+`psi^(n)(x) = (-1)^{n+1} n! zeta(n+1, x)`.
+
+### `trigamma` {#api-trigamma}
+
+```python
+trigamma(x)
+```
+
+Trigamma function `psi'(x)`.
+
+### `spherical_bessel_j` {#api-spherical_bessel_j}
+
+```python
+spherical_bessel_j(n: int, x)
+```
+
+Spherical Bessel `j_n(x) = sqrt(pi/2x) J_{n+1/2}(x)`.
+
+Uses upward recurrence when `n < x` and downward (Miller) recurrence
+otherwise.  Upward recurrence is unstable in the regime `n > x`, where
+`j_n` is decaying and any `y_n` contamination grows -- the same
+stability question as for the cylindrical functions.
+
+### `spherical_bessel_y` {#api-spherical_bessel_y}
+
+```python
+spherical_bessel_y(n: int, x)
+```
+
+Spherical Bessel `y_n(x) = sqrt(pi/2x) Y_{n+1/2}(x)`.
+
+Upward recurrence is stable for `y` at every order -- it is the growing
+solution, so relative error does not accumulate.
+
+### `associated_legendre` {#api-associated_legendre}
+
+```python
+associated_legendre(l: int, m: int, x)
+```
+
+Associated Legendre `P_l^m(x)` on `[-1, 1]` (Condon-Shortley phase).
+
+Built from the closed form for `P_m^m` and then recurred up in `l`,
+which is the stable direction.
+
+### `spherical_harmonic` {#api-spherical_harmonic}
+
+```python
+spherical_harmonic(l: int, m: int, theta, phi)
+```
+
+Complex spherical harmonic `Y_l^m(theta, phi)`.
+
+`theta` is the polar angle and `phi` the azimuth.  Negative `m` uses
+`Y_l^{-m} = (-1)^m conj(Y_l^m)`.  Normalized so that the harmonics are
+orthonormal over the sphere.
+
+### `hyp1f1` {#api-hyp1f1}
+
+```python
+hyp1f1(a, b, z, tol: float = 1e-15, max_terms: int = 5000)
+```
+
+Confluent hypergeometric `1F1(a; b; z)` (Kummer's function).
+
+For `z < 0` the ascending series alternates, with terms as large as
+`e^{|z|}` summing to something of size `e^{-|z|}` -- so it loses
+`2|z|` nepers of precision and returns noise well before `z = -20`.
+Kummer's transformation `1F1(a;b;z) = e^z 1F1(b-a;b;-z)` maps the
+argument to the positive axis, where (for `b > a`) every term is
+positive and nothing cancels.  It is therefore applied for *all* negative
+`z`, not just large ones.
+
+### `hyp2f1` {#api-hyp2f1}
+
+```python
+hyp2f1(a, b, c, z, tol: float = 1e-15, max_terms: int = 20000)
+```
+
+Gauss hypergeometric `2F1(a, b; c; z)` for real `|z| < 1`.
+
+The series converges only inside the unit disc.  For `z` in
+`(-1, -0.5)` the Pfaff transformation moves the argument into
+`(0, 1/2)`, where convergence is fast; without it the series near
+`z = -1` needs impractically many terms.
+
+### `expint_n` {#api-expint_n}
+
+```python
+expint_n(n: int, x, tol: float = 1e-14, max_iter: int = 200)
+```
+
+Generalized exponential integral `E_n(x) = int_1^inf e^{-xt}/t^n dt`.
+
+A continued fraction for `x > 1` and a series for `x <= 1`; the two
+regimes are exactly where each converges quickly.
+
+### `struve_h0` {#api-struve_h0}
+
+```python
+struve_h0(x, tol: float = 1e-14, max_terms: int = 300)
+```
+
+Struve function `H_0(x)`: the particular solution of the driven Bessel equation.
+
+### `logistic` {#api-logistic}
+
+```python
+logistic(x)
+```
+
+Logistic sigmoid, written to avoid overflow for either sign of `x`.
+
+### `logit` {#api-logit}
+
+```python
+logit(p)
+```
+
+Inverse of `logistic`: `log(p / (1 - p))`.

@@ -7,15 +7,17 @@ Parabolic, hyperbolic, elliptic, multigrid, FEM, FVM, spectral, WENO, incompress
 
 For worked examples and guidance on choosing between these routines, see the [partial differential equations guide](../guides/pde.md).
 
-**72 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**78 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.pde import heat_ftcs
-import quadrivium as qd            # qd.heat_ftcs, if re-exported
+from quadrivium import pde
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
+- [`adaptive_fem`](#adaptive_fem) &mdash; sparse p1 assembly, residual estimators, and conforming local refinement (6)
 - [`elliptic`](#elliptic) &mdash; elliptic pdes: laplace and poisson problems on rectangular grids (9)
 - [`fem`](#fem) &mdash; finite element methods in one and two dimensions (7)
 - [`fvm`](#fvm) &mdash; finite volume methods for conservation laws (9)
@@ -25,23 +27,241 @@ import quadrivium as qd            # qd.heat_ftcs, if re-exported
 - [`parabolic`](#parabolic) &mdash; parabolic pdes: the heat / diffusion equation and its relatives (9)
 - [`spectral`](#spectral) &mdash; spectral methods for pdes (7)
 
+## `adaptive_fem`
+
+<small>`quadrivium.pde.adaptive_fem`</small>
+
+Sparse P1 assembly, residual estimators, and conforming local refinement.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`TriangularMesh`](#api-TriangularMesh) | class | Planar triangular mesh with validated cells and inferred boundary nodes. |
+| [`assemble_triangular`](#api-assemble_triangular) | function | Assemble the full CSR stiffness and load in O(elements) storage. |
+| [`fem_error_estimate`](#api-fem_error_estimate) | function | Cellwise residual/normal-flux-jump indicators for conforming linear FEM. |
+| [`refine_triangles`](#api-refine_triangles) | function | Conforming local red/green refinement; no hanging nodes are introduced. |
+| [`adaptive_fem`](#api-adaptive_fem) | function | Solve-estimate-mark-refine loop with Dörfler bulk marking and a mesh cap. |
+| [`solve_fem_mesh`](#api-solve_fem_mesh) | function | Solve a scalar Dirichlet elliptic problem using sparse assembly and PCG. |
+
+### `TriangularMesh` {#api-TriangularMesh}
+
+```python
+TriangularMesh(points: object, triangles: object, boundary: object = None) -> None
+```
+
+Planar triangular mesh with validated cells and inferred boundary nodes.
+
+### `assemble_triangular` {#api-assemble_triangular}
+
+```python
+assemble_triangular(mesh, source=0.0, c_diff=1.0)
+```
+
+Assemble the full CSR stiffness and load in O(elements) storage.
+
+Diffusion is sampled at cell centroids; the load uses a degree-two,
+three-point triangle rule. Duplicate element contributions are summed.
+
+### `fem_error_estimate` {#api-fem_error_estimate}
+
+```python
+fem_error_estimate(mesh, values, source, c_diff=1.0)
+```
+
+Cellwise residual/normal-flux-jump indicators for conforming linear FEM.
+
+Returns nonnegative energy-error indicators (one per triangle), including
+coefficient derivatives in the volume residual for callable diffusion.
+These are estimators, not guaranteed upper error bounds.
+
+### `refine_triangles` {#api-refine_triangles}
+
+```python
+refine_triangles(mesh, marked)
+```
+
+Conforming local red/green refinement; no hanging nodes are introduced.
+
+Marked triangles split all three edges. Adjacent triangles receive one- or
+two-edge green subdivisions, using globally shared edge midpoint indices.
+
+### `adaptive_fem` {#api-adaptive_fem}
+
+```python
+adaptive_fem(
+    source,
+    mesh=None,
+    *,
+    bc=0.0,
+    c_diff=1.0,
+    tol=0.001,
+    marking_fraction=0.5,
+    max_refinements=8,
+    max_elements=100000,
+    linear_tol=1e-10,
+    callback=None,
+)
+```
+
+Solve-estimate-mark-refine loop with Dörfler bulk marking and a mesh cap.
+
+### `solve_fem_mesh` {#api-solve_fem_mesh}
+
+```python
+solve_fem_mesh(mesh, source, bc=0.0, c_diff=1.0, tol=1e-10, max_iter=None)
+```
+
+Solve a scalar Dirichlet elliptic problem using sparse assembly and PCG.
+
 ## `elliptic`
 
 <small>`quadrivium.pde.elliptic`</small>
 
 Elliptic PDEs: Laplace and Poisson problems on rectangular grids.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `poisson_2d_direct` | `(f, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0, stencil: int = 5)` | Solve ``u_xx + u_yy = f`` by forming and factorizing the linear system. |
-| `poisson_2d_iterative` | `(f, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0, method: str = 'sor', omega=None, tol: float = 1e-10, ...)` | Solve the Poisson equation by a stationary iteration on the grid. |
-| `laplace_2d` | `(x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0, **kwargs)` | Solve Laplace's equation ``u_xx + u_yy = 0``. |
-| `poisson_1d` | `(f, x_span, bc=(0.0, 0.0), nx: int = 100)` | Solve ``u'' = f(x)`` with Dirichlet conditions, by the Thomas algorithm. |
-| `poisson_9point` | `(f, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0)` | Fourth-order accurate 9-point ("Mehrstellen") Poisson solver. |
-| `poisson_neumann` | `(f, x_span, y_span, nx: int = 40, ny: int = 40, tol: float = 1e-10, max_iter: int = 50000, method: str = 'd, ...)` | Poisson with homogeneous Neumann conditions on all four sides. |
-| `helmholtz_2d` | `(f, k: float, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0)` | Solve the Helmholtz equation ``u_xx + u_yy + k^2 u = f``. |
-| `laplacian_matrix` | `(nx: int, ny: int = None, dx: float = 1.0, dy: float = None, stencil: int = 5)` | Sparse-pattern Laplacian on a grid of interior points (Dirichlet). |
-| `poisson_fft` | `(f, x_span, y_span, nx: int = 64, ny: int = 64)` | Fast Poisson solver with homogeneous Dirichlet data, via the sine transform. |
+| [`poisson_2d_direct`](#api-poisson_2d_direct) | function | Solve ``u_xx + u_yy = f`` by forming and factorizing the linear system. |
+| [`poisson_2d_iterative`](#api-poisson_2d_iterative) | function | Solve the Poisson equation by a stationary iteration on the grid. |
+| [`laplace_2d`](#api-laplace_2d) | function | Solve Laplace's equation ``u_xx + u_yy = 0``. |
+| [`poisson_1d`](#api-poisson_1d) | function | Solve ``u'' = f(x)`` with Dirichlet conditions, by the Thomas algorithm. |
+| [`poisson_9point`](#api-poisson_9point) | function | Fourth-order accurate 9-point ("Mehrstellen") Poisson solver. |
+| [`poisson_neumann`](#api-poisson_neumann) | function | Poisson with homogeneous Neumann conditions on all four sides. |
+| [`helmholtz_2d`](#api-helmholtz_2d) | function | Solve the Helmholtz equation ``u_xx + u_yy + k^2 u = f``. |
+| [`laplacian_matrix`](#api-laplacian_matrix) | function | Sparse-pattern Laplacian on a grid of interior points (Dirichlet). |
+| [`poisson_fft`](#api-poisson_fft) | function | Fast Poisson solver with homogeneous Dirichlet data, via the sine transform. |
+
+### `poisson_2d_direct` {#api-poisson_2d_direct}
+
+```python
+poisson_2d_direct(
+    f,
+    x_span,
+    y_span,
+    nx: int = 40,
+    ny: int = 40,
+    bc=0.0,
+    stencil: int = 5,
+)
+```
+
+Solve `u_xx + u_yy = f` by forming and factorizing the linear system.
+
+`stencil=5` is the standard second-order scheme. `stencil=9` is the
+Mehrstellen scheme, which reaches fourth order only when the right-hand
+side carries the `h^2/12 * laplacian(f)` correction -- included here, and
+requiring a square grid (`dx == dy`).
+
+Exact up to round-off, but the `O(N^3)` factorization limits it to modest
+grids; use `poisson_2d_iterative` or multigrid for larger ones.
+
+### `poisson_2d_iterative` {#api-poisson_2d_iterative}
+
+```python
+poisson_2d_iterative(
+    f,
+    x_span,
+    y_span,
+    nx: int = 40,
+    ny: int = 40,
+    bc=0.0,
+    method: str = 'sor',
+    omega=None,
+    tol: float = 1e-10,
+    max_iter: int = 20000,
+)
+```
+
+Solve the Poisson equation by a stationary iteration on the grid.
+
+`method` is `'jacobi'`, `'gauss_seidel'`, `'sor'` or `'cg'`.
+
+### `laplace_2d` {#api-laplace_2d}
+
+```python
+laplace_2d(x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0, **kwargs)
+```
+
+Solve Laplace's equation `u_xx + u_yy = 0`.
+
+### `poisson_1d` {#api-poisson_1d}
+
+```python
+poisson_1d(f, x_span, bc=(0.0, 0.0), nx: int = 100)
+```
+
+Solve `u'' = f(x)` with Dirichlet conditions, by the Thomas algorithm.
+
+### `poisson_9point` {#api-poisson_9point}
+
+```python
+poisson_9point(f, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0)
+```
+
+Fourth-order accurate 9-point ("Mehrstellen") Poisson solver.
+
+### `poisson_neumann` {#api-poisson_neumann}
+
+```python
+poisson_neumann(
+    f,
+    x_span,
+    y_span,
+    nx: int = 40,
+    ny: int = 40,
+    tol: float = 1e-10,
+    max_iter: int = 50000,
+    method: str = 'dct',
+    omega: float = None,
+)
+```
+
+Poisson with homogeneous Neumann conditions on all four sides.
+
+The solution is unique only up to a constant, and exists only if the source
+integrates to zero, so `f` is projected onto that constraint and the
+result normalized to zero mean.
+
+`method="dct"` (default) diagonalizes the operator with a cosine
+transform and is exact up to round-off; `method="sor"` runs the
+relaxation sweep instead.  Both are second-order accurate: the boundary
+rows use the *ghost point* form of the condition, reflecting `u` about
+the edge so that the interior stencil applies unchanged at the boundary.
+Setting `U[0] = U[1]` instead -- a one-sided difference -- would satisfy
+`u_n = 0` only to first order and drag the whole solution down with it.
+
+### `helmholtz_2d` {#api-helmholtz_2d}
+
+```python
+helmholtz_2d(f, k: float, x_span, y_span, nx: int = 40, ny: int = 40, bc=0.0)
+```
+
+Solve the Helmholtz equation `u_xx + u_yy + k^2 u = f`.
+
+### `laplacian_matrix` {#api-laplacian_matrix}
+
+```python
+laplacian_matrix(
+    nx: int,
+    ny: int = None,
+    dx: float = 1.0,
+    dy: float = None,
+    stencil: int = 5,
+)
+```
+
+Sparse-pattern Laplacian on a grid of interior points (Dirichlet).
+
+Returns the dense matrix of the 5-point (or 9-point) stencil.
+
+### `poisson_fft` {#api-poisson_fft}
+
+```python
+poisson_fft(f, x_span, y_span, nx: int = 64, ny: int = 64)
+```
+
+Fast Poisson solver with homogeneous Dirichlet data, via the sine transform.
+
+Diagonalizes the discrete Laplacian in `O(N log N)`.
 
 ## `fem`
 
@@ -51,15 +271,123 @@ Finite element methods in one and two dimensions.
 
 Assembles the weak form element by element, which is what lets the method handle unstructured meshes and complicated geometry.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `fem_1d_linear` | `(source, x_span, bc=(0.0, 0.0), n: int = 50, c_diff=1.0, c_react=0.0, nodes=None)` | Solve ``-(c u')' + r u = f`` with linear elements and Dirichlet data. |
-| `fem_1d_quadratic` | `(source, x_span, bc=(0.0, 0.0), n: int = 25, c_diff=1.0, c_react=0.0)` | Solve with quadratic (P2) elements: one interior node per element. |
-| `fem_1d_mass_stiffness` | `(nodes, order: int = 1)` | Assemble the mass and stiffness matrices for 1-D Lagrange elements. |
-| `fem_2d_triangular` | `(source, points=None, triangles=None, boundary=None, n: int = 8, bc=0.0, c_diff=1.0)` | P1 finite elements on a triangular mesh for ``-c lap u = f``. |
-| `unit_square_mesh` | `(n: int = 8, x_span=(0.0, 1.0), y_span=(0.0, 1.0))` | Triangulate a rectangle into ``2 n^2`` right triangles. |
-| `assemble_1d` | `(nodes, c_diff=1.0, c_react=0.0, source=None)` | Assemble ``-(c u')' + r u = f`` on a 1-D mesh with linear elements. |
-| `fem_1d_time_dependent` | `(u0, source, x_span, t_span, n: int = 50, nt: int = 100, bc=(0.0, 0.0), c_diff=1.0, theta: float = 0.5)` | Finite elements in space, theta method in time, for ``u_t = (c u')' + f``. |
+| [`fem_1d_linear`](#api-fem_1d_linear) | function | Solve ``-(c u')' + r u = f`` with linear elements and Dirichlet data. |
+| [`fem_1d_quadratic`](#api-fem_1d_quadratic) | function | Solve with quadratic (P2) elements: one interior node per element. |
+| [`fem_1d_mass_stiffness`](#api-fem_1d_mass_stiffness) | function | Assemble the mass and stiffness matrices for 1-D Lagrange elements. |
+| [`fem_2d_triangular`](#api-fem_2d_triangular) | function | P1 finite elements on a triangular mesh for ``-c lap u = f``. |
+| [`unit_square_mesh`](#api-unit_square_mesh) | function | Triangulate a rectangle into ``2 n^2`` right triangles. |
+| [`assemble_1d`](#api-assemble_1d) | function | Assemble ``-(c u')' + r u = f`` on a 1-D mesh with linear elements. |
+| [`fem_1d_time_dependent`](#api-fem_1d_time_dependent) | function | Finite elements in space, theta method in time, for ``u_t = (c u')' + f``. |
+
+### `fem_1d_linear` {#api-fem_1d_linear}
+
+```python
+fem_1d_linear(
+    source,
+    x_span,
+    bc=(0.0, 0.0),
+    n: int = 50,
+    c_diff=1.0,
+    c_react=0.0,
+    nodes=None,
+)
+```
+
+Solve `-(c u')' + r u = f` with linear elements and Dirichlet data.
+
+For the pure diffusion problem in one dimension the Galerkin solution is
+*nodally exact* -- the error vanishes at every node, and only the load
+quadrature limits accuracy. That superconvergence is why P1 can beat P2
+when compared at the nodes.
+
+### `fem_1d_quadratic` {#api-fem_1d_quadratic}
+
+```python
+fem_1d_quadratic(source, x_span, bc=(0.0, 0.0), n: int = 25, c_diff=1.0, c_react=0.0)
+```
+
+Solve with quadratic (P2) elements: one interior node per element.
+
+### `fem_1d_mass_stiffness` {#api-fem_1d_mass_stiffness}
+
+```python
+fem_1d_mass_stiffness(nodes, order: int = 1)
+```
+
+Assemble the mass and stiffness matrices for 1-D Lagrange elements.
+
+### `fem_2d_triangular` {#api-fem_2d_triangular}
+
+```python
+fem_2d_triangular(
+    source,
+    points=None,
+    triangles=None,
+    boundary=None,
+    n: int = 8,
+    bc=0.0,
+    c_diff=1.0,
+    sparse: bool = True,
+)
+```
+
+P1 finite elements on a triangular mesh for `-c lap u = f`.
+
+Uses the closed-form gradients of the linear shape functions on each
+triangle, so element assembly needs no quadrature for the stiffness matrix.
+
+### `unit_square_mesh` {#api-unit_square_mesh}
+
+```python
+unit_square_mesh(n: int = 8, x_span=(0.0, 1.0), y_span=(0.0, 1.0))
+```
+
+Triangulate a rectangle into `2 n^2` right triangles.
+
+Returns `(points, triangles, boundary_indices)`.
+
+### `assemble_1d` {#api-assemble_1d}
+
+```python
+assemble_1d(nodes, c_diff=1.0, c_react=0.0, source=None)
+```
+
+Assemble `-(c u')' + r u = f` on a 1-D mesh with linear elements.
+
+### `fem_1d_time_dependent` {#api-fem_1d_time_dependent}
+
+```python
+fem_1d_time_dependent(
+    u0,
+    source,
+    x_span,
+    t_span,
+    n: int = 50,
+    nt: int = 100,
+    bc=(0.0, 0.0),
+    c_diff=1.0,
+    theta: float = 0.5,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Finite elements in space, theta method in time, for `u_t = (c u')' + f`.
+
+`source` may be `f(x)` for a steady load or `f(x, t)` for a genuinely
+time-dependent one; the arity is detected once and the load vector is then
+reassembled each step.  The two loads are combined as
+`theta*f(t_{k+1}) + (1-theta)*f(t_k)`, matching the time weighting of the
+operator -- using a single load would silently drop Crank-Nicolson
+(`theta=0.5`) back to first order in time.
+
+`c_diff` may be a constant or a callable `c(x)`; a variable coefficient
+is integrated element by element rather than frozen at one sample point.
 
 ## `fvm`
 
@@ -69,17 +397,142 @@ Finite volume methods for conservation laws.
 
 The finite volume formulation updates cell averages through fluxes at the cell faces, so mass is conserved to round-off by construction -- the property that makes it the standard choice for shocks and for CFD.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `fvm_1d_conservation` | `(u0, flux, wave_speed, x_span, t_span, nx: int = 200, nt: int = 400, numerical_flux: str = 'rusanov', bc: s, ...)` | Finite volume solver for ``u_t + f(u)_x = 0`` (first order in space). |
-| `fvm_diffusion` | `(u0, alpha: float, x_span, t_span, nx: int = 100, nt: int = 500, bc=(0.0, 0.0))` | Finite volume discretization of the diffusion equation. |
-| `riemann_solver_burgers` | `(ul, ur)` | Exact Riemann flux for the Burgers equation. |
-| `riemann_solver_linear` | `(ul, ur, c: float)` | Exact Riemann flux for linear advection ``u_t + c u_x = 0``. |
-| `rusanov_flux` | `(ul, ur, flux, wave_speed)` | Rusanov (local Lax-Friedrichs) flux: robust for any convex flux. |
-| `hll_flux` | `(ul, ur, flux, wave_speed)` | HLL approximate Riemann solver using two-wave speed estimates. |
-| `muscl_reconstruct` | `(u, limiter='minmod')` | MUSCL reconstruction: limited linear states at the two cell faces. |
-| `fvm_muscl` | `(u0, flux, wave_speed, x_span, t_span, nx: int = 200, nt: int = 400, limiter: str = 'minmod')` | Second-order MUSCL-Hancock finite volume scheme with SSP-RK2 in time. |
-| `minmod` | `(a, b)` | Minmod limiter: zero when the arguments disagree in sign. |
+| [`fvm_1d_conservation`](#api-fvm_1d_conservation) | function | Finite volume solver for ``u_t + f(u)_x = 0`` (first order in space). |
+| [`fvm_diffusion`](#api-fvm_diffusion) | function | Finite volume discretization of the diffusion equation. |
+| [`riemann_solver_burgers`](#api-riemann_solver_burgers) | function | Exact Riemann flux for the Burgers equation. |
+| [`riemann_solver_linear`](#api-riemann_solver_linear) | function | Exact Riemann flux for linear advection ``u_t + c u_x = 0``. |
+| [`rusanov_flux`](#api-rusanov_flux) | function | Rusanov (local Lax-Friedrichs) flux: robust for any convex flux. |
+| [`hll_flux`](#api-hll_flux) | function | HLL approximate Riemann solver using two-wave speed estimates. |
+| [`muscl_reconstruct`](#api-muscl_reconstruct) | function | MUSCL reconstruction: limited linear states at the two cell faces. |
+| [`fvm_muscl`](#api-fvm_muscl) | function | Second-order MUSCL-Hancock finite volume scheme with SSP-RK2 in time. |
+| [`minmod`](#api-minmod) | function | Minmod limiter: zero when the arguments disagree in sign. |
+
+### `fvm_1d_conservation` {#api-fvm_1d_conservation}
+
+```python
+fvm_1d_conservation(
+    u0,
+    flux,
+    wave_speed,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    numerical_flux: str = 'rusanov',
+    bc: str = 'periodic',
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Finite volume solver for `u_t + f(u)_x = 0` (first order in space).
+
+`numerical_flux` selects `'rusanov'`, `'hll'` or `'lax_friedrichs'`.
+
+### `fvm_diffusion` {#api-fvm_diffusion}
+
+```python
+fvm_diffusion(
+    u0,
+    alpha: float,
+    x_span,
+    t_span,
+    nx: int = 100,
+    nt: int = 500,
+    bc=(0.0, 0.0),
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Finite volume discretization of the diffusion equation.
+
+Fluxes at the faces are the centred gradients, which makes the scheme
+conservative even on a non-uniform mesh.
+
+### `riemann_solver_burgers` {#api-riemann_solver_burgers}
+
+```python
+riemann_solver_burgers(ul, ur)
+```
+
+Exact Riemann flux for the Burgers equation.
+
+### `riemann_solver_linear` {#api-riemann_solver_linear}
+
+```python
+riemann_solver_linear(ul, ur, c: float)
+```
+
+Exact Riemann flux for linear advection `u_t + c u_x = 0`.
+
+### `rusanov_flux` {#api-rusanov_flux}
+
+```python
+rusanov_flux(ul, ur, flux, wave_speed)
+```
+
+Rusanov (local Lax-Friedrichs) flux: robust for any convex flux.
+
+### `hll_flux` {#api-hll_flux}
+
+```python
+hll_flux(ul, ur, flux, wave_speed)
+```
+
+HLL approximate Riemann solver using two-wave speed estimates.
+
+### `muscl_reconstruct` {#api-muscl_reconstruct}
+
+```python
+muscl_reconstruct(u, limiter='minmod')
+```
+
+MUSCL reconstruction: limited linear states at the two cell faces.
+
+Returns `(u_left_of_face, u_right_of_face)` for the face to the right of
+each cell, giving second-order accuracy away from extrema.
+
+### `fvm_muscl` {#api-fvm_muscl}
+
+```python
+fvm_muscl(
+    u0,
+    flux,
+    wave_speed,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    limiter: str = 'minmod',
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Second-order MUSCL-Hancock finite volume scheme with SSP-RK2 in time.
+
+Combines limited reconstruction with a strong-stability-preserving time
+step, so it stays non-oscillatory while being second order in smooth regions.
+
+### `minmod` {#api-minmod}
+
+```python
+minmod(a, b)
+```
+
+Minmod limiter: zero when the arguments disagree in sign.
 
 ## `highres`
 
@@ -89,18 +542,217 @@ High-resolution schemes and incompressible flow.
 
 WENO reconstruction with SSP time stepping for conservation laws, and a projection method for the incompressible Navier-Stokes equations.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `weno5_reconstruct` | `(u, eps: float = 1e-06)` | Fifth-order WENO reconstruction of the left interface state ``u_{i+1/2}^-``. |
-| `weno3_reconstruct` | `(u, eps: float = 1e-06)` | Third-order WENO reconstruction of the left state at each interface. |
-| `ssp_rk3` | `(rhs, u, dt)` | Strong-stability-preserving RK3 (Shu-Osher) -- one step. |
-| `ssp_rk2` | `(rhs, u, dt)` | Strong-stability-preserving RK2 (Heun) -- one step. |
-| `weno_conservation_law` | `(u0, flux, wave_speed, x_span, t_span, nx: int = 200, cfl: float = 0.4, order: int = 5)` | Solve ``u_t + f(u)_x = 0`` with WENO reconstruction and SSP-RK3. |
-| `weno_burgers` | `(u0, x_span, t_span, nx: int = 200, cfl: float = 0.4)` | Inviscid Burgers with WENO5 and SSP-RK3. |
-| `navier_stokes_2d` | `(u0, v0, nu: float, t_span, nx: int = 64, ny: int = 64, L: float = 6.283185307179586, nt: int = 200, forcin, ...)` | Incompressible Navier-Stokes in 2-D by Chorin's projection method. |
-| `lid_driven_cavity` | `(re: float = 100.0, n: int = 41, tol: float = 1e-06, max_iter: int = 50000, dt=None)` | Steady lid-driven cavity flow, vorticity-streamfunction on a unit square. |
-| `vorticity_streamfunction` | `(omega0, nu: float, t_span, nx: int = 64, ny: int = 64, L: float = 6.283185307179586, nt: int = 200)` | 2-D Navier-Stokes in vorticity-streamfunction form, pseudo-spectral. |
-| `poisson_periodic_fft` | `(f, dx: float, dy: float, stencil: str = 'wide')` | Doubly periodic Poisson solve ``lap p = f`` by FFT. |
+| [`weno5_reconstruct`](#api-weno5_reconstruct) | function | Fifth-order WENO reconstruction of the left interface state ``u_{i+1/2}^-``. |
+| [`weno3_reconstruct`](#api-weno3_reconstruct) | function | Third-order WENO reconstruction of the left state at each interface. |
+| [`ssp_rk3`](#api-ssp_rk3) | function | Strong-stability-preserving RK3 (Shu-Osher) -- one step. |
+| [`ssp_rk2`](#api-ssp_rk2) | function | Strong-stability-preserving RK2 (Heun) -- one step. |
+| [`weno_conservation_law`](#api-weno_conservation_law) | function | Solve ``u_t + f(u)_x = 0`` with WENO reconstruction and SSP-RK3. |
+| [`weno_burgers`](#api-weno_burgers) | function | Inviscid Burgers with WENO5 and SSP-RK3. |
+| [`navier_stokes_2d`](#api-navier_stokes_2d) | function | Incompressible Navier-Stokes in 2-D by Chorin's projection method. |
+| [`lid_driven_cavity`](#api-lid_driven_cavity) | function | Steady lid-driven cavity flow, vorticity-streamfunction on a unit square. |
+| [`vorticity_streamfunction`](#api-vorticity_streamfunction) | function | 2-D Navier-Stokes in vorticity-streamfunction form, pseudo-spectral. |
+| [`poisson_periodic_fft`](#api-poisson_periodic_fft) | function | Doubly periodic Poisson solve ``lap p = f`` by FFT. |
+
+### `weno5_reconstruct` {#api-weno5_reconstruct}
+
+```python
+weno5_reconstruct(u, eps: float = 1e-06)
+```
+
+Fifth-order WENO reconstruction of the left interface state `u_{i+1/2}^-`.
+
+Three candidate third-order stencils are blended with weights driven by
+*smoothness indicators*.  Where the solution is smooth the weights approach
+the linear ones and the combination is fifth-order accurate; near a
+discontinuity the indicator on the offending stencil blows up, its weight
+collapses, and the scheme quietly falls back to the smooth stencils.  That
+automatic, continuous switching is why WENO captures shocks without the
+oscillations of a fixed high-order stencil and without the smearing of a
+limiter that clips to first order.
+
+Periodic boundaries; `u` is the cell-average array.
+
+### `weno3_reconstruct` {#api-weno3_reconstruct}
+
+```python
+weno3_reconstruct(u, eps: float = 1e-06)
+```
+
+Third-order WENO reconstruction of the left state at each interface.
+
+### `ssp_rk3` {#api-ssp_rk3}
+
+```python
+ssp_rk3(rhs, u, dt)
+```
+
+Strong-stability-preserving RK3 (Shu-Osher) -- one step.
+
+Every stage is a convex combination of forward-Euler steps, so any bound
+that forward Euler respects -- positivity, a maximum principle, total
+variation -- survives the whole step.  A general third-order RK method has
+negative coefficients somewhere and gives no such guarantee, which is why
+a high-resolution spatial scheme is paired with an SSP integrator and not
+just any RK3.
+
+### `ssp_rk2` {#api-ssp_rk2}
+
+```python
+ssp_rk2(rhs, u, dt)
+```
+
+Strong-stability-preserving RK2 (Heun) -- one step.
+
+### `weno_conservation_law` {#api-weno_conservation_law}
+
+```python
+weno_conservation_law(
+    u0,
+    flux,
+    wave_speed,
+    x_span,
+    t_span,
+    nx: int = 200,
+    cfl: float = 0.4,
+    order: int = 5,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Solve `u_t + f(u)_x = 0` with WENO reconstruction and SSP-RK3.
+
+Uses a Lax-Friedrichs flux split so that each half carries information in a
+single direction; WENO is then applied to each half with the appropriate
+upwind bias.  Periodic boundaries.
+
+### `weno_burgers` {#api-weno_burgers}
+
+```python
+weno_burgers(
+    u0,
+    x_span,
+    t_span,
+    nx: int = 200,
+    cfl: float = 0.4,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Inviscid Burgers with WENO5 and SSP-RK3.
+
+### `navier_stokes_2d` {#api-navier_stokes_2d}
+
+```python
+navier_stokes_2d(
+    u0,
+    v0,
+    nu: float,
+    t_span,
+    nx: int = 64,
+    ny: int = 64,
+    L: float = 6.283185307179586,
+    nt: int = 200,
+    forcing=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Incompressible Navier-Stokes in 2-D by Chorin's projection method.
+
+Each step advances velocity ignoring pressure, then *projects* the result
+onto the divergence-free subspace by solving a Poisson equation for the
+pressure correction.  The projection is what enforces incompressibility:
+pressure in an incompressible flow is not a thermodynamic variable at all
+but the Lagrange multiplier of the constraint `div u = 0`, which is why
+it is solved for rather than stepped.
+
+Doubly periodic.  Returns a `PDESolution` whose `u` is stacked
+`(u, v)` fields over time.
+
+### `lid_driven_cavity` {#api-lid_driven_cavity}
+
+```python
+lid_driven_cavity(
+    re: float = 100.0,
+    n: int = 41,
+    tol: float = 1e-06,
+    max_iter: int = 50000,
+    dt=None,
+)
+```
+
+Steady lid-driven cavity flow, vorticity-streamfunction on a unit square.
+
+The canonical incompressible benchmark.  The wall vorticity comes from
+Thom's formula, which encodes the no-slip condition -- getting that
+boundary treatment right, rather than the interior scheme, is what
+determines whether the solution is correct.
+
+Returns `(psi, omega, x)`.
+
+### `vorticity_streamfunction` {#api-vorticity_streamfunction}
+
+```python
+vorticity_streamfunction(
+    omega0,
+    nu: float,
+    t_span,
+    nx: int = 64,
+    ny: int = 64,
+    L: float = 6.283185307179586,
+    nt: int = 200,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+2-D Navier-Stokes in vorticity-streamfunction form, pseudo-spectral.
+
+Eliminating pressure and velocity in favour of the scalar vorticity turns
+the system into one transport equation plus one Poisson solve.  In two
+dimensions this is exact -- there is no vortex stretching -- so nothing is
+lost, and incompressibility is satisfied identically because the velocity
+is defined as the curl of a stream function.
+
+### `poisson_periodic_fft` {#api-poisson_periodic_fft}
+
+```python
+poisson_periodic_fft(f, dx: float, dy: float, stencil: str = 'wide')
+```
+
+Doubly periodic Poisson solve `lap p = f` by FFT.
+
+The mean of `f` is removed first: with periodic boundaries on all sides
+the Laplacian annihilates constants, so a source with nonzero mean has no
+solution at all.  The pressure is likewise pinned to zero mean.
+
+`stencil` selects which *discrete* symbol is inverted, and it must match
+the difference operators the caller uses, not the continuous `-k^2`:
+
+- `"compact"` inverts the 5-point Laplacian, the composition of forward
+  and backward differences.
+- `"wide"` (default) inverts the composition of two *central*
+  differences, which is what a collocated projection method needs.  Its
+  symbol vanishes at the Nyquist modes -- the classic odd-even
+  decoupling -- so those modes are simply pinned to zero rather than
+  divided by something near zero.
 
 ## `hyperbolic`
 
@@ -110,21 +762,283 @@ Hyperbolic PDEs: wave propagation and conservation laws.
 
 Linear advection exposes the central tension of the field -- accuracy versus monotonicity (Godunov's theorem) -- which is why the high-resolution schemes here blend a low-order and a high-order flux through a limiter.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `wave_explicit` | `(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200, bc=(0.0, 0.0), check_stability: bool = True)` | Explicit central scheme for ``u_tt = c^2 u_xx``. |
-| `wave_implicit` | `(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200, bc=(0.0, 0.0), theta: float = 0.25)` | Newmark-style implicit wave scheme: unconditionally stable for ``theta >= 1/4``. |
-| `advection_upwind` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400)` | First-order upwind: monotone but strongly diffusive. |
-| `lax_friedrichs` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400)` | Lax-Friedrichs: first order, stable, even more diffusive than upwind. |
-| `lax_wendroff` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400)` | Lax-Wendroff: second order, but oscillates near discontinuities. |
-| `beam_warming` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400)` | Beam-Warming: second order, one-sided (upwind-biased) stencil. |
-| `maccormack` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400)` | MacCormack predictor-corrector: second order, equivalent to Lax-Wendroff for linear advection but generalizing directly to nonlinear systems. |
-| `leapfrog_advection` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400)` | Leapfrog: second order and non-dissipative, but needs two levels. |
-| `tvd_scheme` | `(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400, limiter: str = 'van_leer')` | High-resolution TVD scheme: second-order accurate yet non-oscillatory. |
-| `flux_limiter` | `(r, kind: str = 'van_leer')` | Flux limiter ``phi(r)`` blending high- and low-order fluxes. |
-| `godunov_burgers` | `(u0, x_span, t_span, nx: int = 200, nt: int = 400)` | Godunov's method for the inviscid Burgers equation ``u_t + (u^2/2)_x = 0``. |
-| `lax_friedrichs_burgers` | `(u0, x_span, t_span, nx: int = 200, nt: int = 400)` | Lax-Friedrichs for Burgers: robust and monotone, but smears shocks. |
-| `cfl_number` | `(c: float, dt: float, dx: float) -> float` | Courant number ``C = c dt / dx``; explicit schemes need ``\|C\| <= 1``. |
+| [`wave_explicit`](#api-wave_explicit) | function | Explicit central scheme for ``u_tt = c^2 u_xx``. |
+| [`wave_implicit`](#api-wave_implicit) | function | Newmark-style implicit wave scheme: unconditionally stable for ``theta >= 1/4``. |
+| [`advection_upwind`](#api-advection_upwind) | function | First-order upwind: monotone but strongly diffusive. |
+| [`lax_friedrichs`](#api-lax_friedrichs) | function | Lax-Friedrichs: first order, stable, even more diffusive than upwind. |
+| [`lax_wendroff`](#api-lax_wendroff) | function | Lax-Wendroff: second order, but oscillates near discontinuities. |
+| [`beam_warming`](#api-beam_warming) | function | Beam-Warming: second order, one-sided (upwind-biased) stencil. |
+| [`maccormack`](#api-maccormack) | function | MacCormack predictor-corrector: second order, equivalent to Lax-Wendroff for linear advection but generalizing directly to nonlinear systems. |
+| [`leapfrog_advection`](#api-leapfrog_advection) | function | Leapfrog: second order and non-dissipative, but needs two levels. |
+| [`tvd_scheme`](#api-tvd_scheme) | function | High-resolution TVD scheme: second-order accurate yet non-oscillatory. |
+| [`flux_limiter`](#api-flux_limiter) | function | Flux limiter ``phi(r)`` blending high- and low-order fluxes. |
+| [`godunov_burgers`](#api-godunov_burgers) | function | Godunov's method for the inviscid Burgers equation ``u_t + (u^2/2)_x = 0``. |
+| [`lax_friedrichs_burgers`](#api-lax_friedrichs_burgers) | function | Lax-Friedrichs for Burgers: robust and monotone, but smears shocks. |
+| [`cfl_number`](#api-cfl_number) | function | Courant number ``C = c dt / dx``; explicit schemes need ``\|C\| <= 1``. |
+
+### `wave_explicit` {#api-wave_explicit}
+
+```python
+wave_explicit(
+    u0,
+    v0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 100,
+    nt: int = 200,
+    bc=(0.0, 0.0),
+    check_stability: bool = True,
+    checkpoint=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Explicit central scheme for `u_tt = c^2 u_xx`.
+
+Stable under the CFL condition `c dt/dx <= 1`.
+
+### `wave_implicit` {#api-wave_implicit}
+
+```python
+wave_implicit(
+    u0,
+    v0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 100,
+    nt: int = 200,
+    bc=(0.0, 0.0),
+    theta: float = 0.25,
+    checkpoint=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Newmark-style implicit wave scheme: unconditionally stable for `theta >= 1/4`.
+
+### `advection_upwind` {#api-advection_upwind}
+
+```python
+advection_upwind(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+First-order upwind: monotone but strongly diffusive.
+
+### `lax_friedrichs` {#api-lax_friedrichs}
+
+```python
+lax_friedrichs(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Lax-Friedrichs: first order, stable, even more diffusive than upwind.
+
+### `lax_wendroff` {#api-lax_wendroff}
+
+```python
+lax_wendroff(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Lax-Wendroff: second order, but oscillates near discontinuities.
+
+### `beam_warming` {#api-beam_warming}
+
+```python
+beam_warming(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Beam-Warming: second order, one-sided (upwind-biased) stencil.
+
+### `maccormack` {#api-maccormack}
+
+```python
+maccormack(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+MacCormack predictor-corrector: second order, equivalent to Lax-Wendroff
+for linear advection but generalizing directly to nonlinear systems.
+
+### `leapfrog_advection` {#api-leapfrog_advection}
+
+```python
+leapfrog_advection(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    checkpoint=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Leapfrog: second order and non-dissipative, but needs two levels.
+
+### `tvd_scheme` {#api-tvd_scheme}
+
+```python
+tvd_scheme(
+    u0,
+    c: float,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    limiter: str = 'van_leer',
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+High-resolution TVD scheme: second-order accurate yet non-oscillatory.
+
+Blends the Lax-Wendroff flux with the upwind flux through a limiter, which
+is how Godunov's barrier is sidestepped (the scheme is nonlinear even for a
+linear equation).
+
+### `flux_limiter` {#api-flux_limiter}
+
+```python
+flux_limiter(r, kind: str = 'van_leer')
+```
+
+Flux limiter `phi(r)` blending high- and low-order fluxes.
+
+Available: minmod, superbee, van_leer, van_albada, mc, koren, ospre.
+
+Every limiter here returns 0 for `r <= 0`.  A negative `r` means the
+solution has a local extremum in the stencil, and any nonzero `phi` there
+reintroduces the high-order flux that creates new extrema -- so this clamp
+is what makes the scheme TVD, not a cosmetic guard.  The result also lies
+in Sweby's region `0 <= phi(r) <= min(2r, 2)`.
+
+### `godunov_burgers` {#api-godunov_burgers}
+
+```python
+godunov_burgers(
+    u0,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Godunov's method for the inviscid Burgers equation `u_t + (u^2/2)_x = 0`.
+
+Solves the Riemann problem exactly at every interface, so shocks are
+captured at the right speed without spurious oscillation.
+
+### `lax_friedrichs_burgers` {#api-lax_friedrichs_burgers}
+
+```python
+lax_friedrichs_burgers(
+    u0,
+    x_span,
+    t_span,
+    nx: int = 200,
+    nt: int = 400,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Lax-Friedrichs for Burgers: robust and monotone, but smears shocks.
+
+### `cfl_number` {#api-cfl_number}
+
+```python
+cfl_number(c: float, dt: float, dx: float) -> float
+```
+
+Courant number `C = c dt / dx`; explicit schemes need `|C| <= 1`.
 
 ## `multigrid`
 
@@ -134,16 +1048,123 @@ Multigrid: the optimal-complexity solvers for elliptic problems.
 
 Relaxation kills high-frequency error fast but stalls on smooth error; coarser grids see that smooth error as oscillatory. Cycling between grids therefore removes every frequency at the same rate, giving ``O(N)`` overall work.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `restrict` | `(r)` | Full-weighting restriction to the next coarser grid. |
-| `prolong` | `(e)` | Bilinear interpolation to the next finer grid. |
-| `smooth` | `(u, f, h: float, iterations: int = 2, omega: float = 1.0, method: str = 'gauss_seidel')` | Relax ``lap u = f`` in place with weighted Jacobi or red-black Gauss-Seidel. |
-| `residual` | `(u, f, h: float)` | Residual ``r = f - lap u`` on the interior (zero on the boundary). |
-| `v_cycle` | `(u, f, h: float, nu1: int = 2, nu2: int = 2, level: int = 0, max_level: int = 20, omega: float = 1.0)` | One multigrid V-cycle: smooth, restrict, recurse, prolong, smooth. |
-| `w_cycle` | `(u, f, h: float, nu1: int = 2, nu2: int = 2, level: int = 0, max_level: int = 20, omega: float = 1.0)` | W-cycle: two coarse-grid visits per level, more robust than a V-cycle. |
-| `full_multigrid` | `(f, h: float, nu1: int = 2, nu2: int = 2, cycles: int = 1)` | Full multigrid (FMG): start on the coarsest grid and work upward. |
-| `multigrid_solve` | `(f_func, x_span, y_span, n: int = 64, tol: float = 1e-10, max_cycles: int = 50, cycle: str = 'v', nu1: int, ...)` | Solve ``lap u = f`` on a square grid by repeated multigrid cycles. |
+| [`restrict`](#api-restrict) | function | Full-weighting restriction to the next coarser grid. |
+| [`prolong`](#api-prolong) | function | Bilinear interpolation to the next finer grid. |
+| [`smooth`](#api-smooth) | function | Relax ``lap u = f`` in place with weighted Jacobi or red-black Gauss-Seidel. |
+| [`residual`](#api-residual) | function | Residual ``r = f - lap u`` on the interior (zero on the boundary). |
+| [`v_cycle`](#api-v_cycle) | function | One multigrid V-cycle: smooth, restrict, recurse, prolong, smooth. |
+| [`w_cycle`](#api-w_cycle) | function | W-cycle: two coarse-grid visits per level, more robust than a V-cycle. |
+| [`full_multigrid`](#api-full_multigrid) | function | Full multigrid (FMG): start on the coarsest grid and work upward. |
+| [`multigrid_solve`](#api-multigrid_solve) | function | Solve ``lap u = f`` on a square grid by repeated multigrid cycles. |
+
+### `restrict` {#api-restrict}
+
+```python
+restrict(r)
+```
+
+Full-weighting restriction to the next coarser grid.
+
+### `prolong` {#api-prolong}
+
+```python
+prolong(e)
+```
+
+Bilinear interpolation to the next finer grid.
+
+### `smooth` {#api-smooth}
+
+```python
+smooth(
+    u,
+    f,
+    h: float,
+    iterations: int = 2,
+    omega: float = 1.0,
+    method: str = 'gauss_seidel',
+)
+```
+
+Relax `lap u = f` in place with weighted Jacobi or red-black Gauss-Seidel.
+
+`omega = 2/3` is the optimal damping for weighted Jacobi as a smoother.
+
+### `residual` {#api-residual}
+
+```python
+residual(u, f, h: float)
+```
+
+Residual `r = f - lap u` on the interior (zero on the boundary).
+
+### `v_cycle` {#api-v_cycle}
+
+```python
+v_cycle(
+    u,
+    f,
+    h: float,
+    nu1: int = 2,
+    nu2: int = 2,
+    level: int = 0,
+    max_level: int = 20,
+    omega: float = 1.0,
+)
+```
+
+One multigrid V-cycle: smooth, restrict, recurse, prolong, smooth.
+
+### `w_cycle` {#api-w_cycle}
+
+```python
+w_cycle(
+    u,
+    f,
+    h: float,
+    nu1: int = 2,
+    nu2: int = 2,
+    level: int = 0,
+    max_level: int = 20,
+    omega: float = 1.0,
+)
+```
+
+W-cycle: two coarse-grid visits per level, more robust than a V-cycle.
+
+### `full_multigrid` {#api-full_multigrid}
+
+```python
+full_multigrid(f, h: float, nu1: int = 2, nu2: int = 2, cycles: int = 1)
+```
+
+Full multigrid (FMG): start on the coarsest grid and work upward.
+
+Delivers a solution accurate to discretization error in `O(N)` work, often
+from a single pass.
+
+### `multigrid_solve` {#api-multigrid_solve}
+
+```python
+multigrid_solve(
+    f_func,
+    x_span,
+    y_span,
+    n: int = 64,
+    tol: float = 1e-10,
+    max_cycles: int = 50,
+    cycle: str = 'v',
+    nu1: int = 2,
+    nu2: int = 2,
+    bc: float = 0.0,
+)
+```
+
+Solve `lap u = f` on a square grid by repeated multigrid cycles.
+
+`n` must be a power of two so the grid coarsens exactly.
 
 ## `parabolic`
 
@@ -153,17 +1174,229 @@ Parabolic PDEs: the heat / diffusion equation and its relatives.
 
 The explicit scheme is cheap but conditionally stable (``r <= 1/2``); the implicit and Crank-Nicolson schemes are unconditionally stable at the cost of a tridiagonal solve per step.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `heat_ftcs` | `(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 1000, bc=(0.0, 0.0), source=None, check_stabilit, ...)` | Forward-time centred-space explicit scheme for ``u_t = alpha u_xx``. |
-| `heat_btcs` | `(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 100, bc=(0.0, 0.0), source=None)` | Backward-time centred-space implicit scheme: unconditionally stable. |
-| `heat_crank_nicolson` | `(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 100, bc=(0.0, 0.0), source=None)` | Crank-Nicolson: unconditionally stable and second order in both variables. |
-| `heat_theta` | `(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 100, theta: float = 0.5, bc=(0.0, 0.0), source=N, ...)` | Theta scheme: explicit (0), Crank-Nicolson (1/2), fully implicit (1). |
-| `heat_2d_adi` | `(u0, alpha: float, x_span, y_span, t_span, nx: int = 40, ny: int = 40, nt: int = 100, bc: float = 0.0)` | Peaceman-Rachford ADI for the 2-D heat equation. |
-| `method_of_lines` | `(u0, rhs, x_span, t_span, nx: int = 50, solver='rk45', bc=(0.0, 0.0), **kwargs)` | Method of lines: discretize in space, then hand the ODE system to a solver. |
-| `diffusion_reaction` | `(u0, alpha: float, reaction, x_span, t_span, nx: int = 50, nt: int = 200, bc=(0.0, 0.0))` | Reaction-diffusion ``u_t = alpha u_xx + f(u)`` by IMEX splitting. |
-| `advection_diffusion` | `(u0, velocity: float, alpha: float, x_span, t_span, nx: int = 100, nt: int = 500, bc=(0.0, 0.0), upwind: bo, ...)` | Advection-diffusion ``u_t + v u_x = alpha u_xx``. |
-| `stability_ratio` | `(alpha: float, dt: float, dx: float) -> float` | Diffusion number ``r = alpha dt / dx^2``. |
+| [`heat_ftcs`](#api-heat_ftcs) | function | Forward-time centred-space explicit scheme for ``u_t = alpha u_xx``. |
+| [`heat_btcs`](#api-heat_btcs) | function | Backward-time centred-space implicit scheme: unconditionally stable. |
+| [`heat_crank_nicolson`](#api-heat_crank_nicolson) | function | Crank-Nicolson: unconditionally stable and second order in both variables. |
+| [`heat_theta`](#api-heat_theta) | function | Theta scheme: explicit (0), Crank-Nicolson (1/2), fully implicit (1). |
+| [`heat_2d_adi`](#api-heat_2d_adi) | function | Peaceman-Rachford ADI for the 2-D heat equation. |
+| [`method_of_lines`](#api-method_of_lines) | function | Method of lines: discretize in space, then hand the ODE system to a solver. |
+| [`diffusion_reaction`](#api-diffusion_reaction) | function | Reaction-diffusion ``u_t = alpha u_xx + f(u)`` by IMEX splitting. |
+| [`advection_diffusion`](#api-advection_diffusion) | function | Advection-diffusion ``u_t + v u_x = alpha u_xx``. |
+| [`stability_ratio`](#api-stability_ratio) | function | Diffusion number ``r = alpha dt / dx^2``. |
+
+### `heat_ftcs` {#api-heat_ftcs}
+
+```python
+heat_ftcs(
+    u0,
+    alpha: float,
+    x_span,
+    t_span,
+    nx: int = 50,
+    nt: int = 1000,
+    bc=(0.0, 0.0),
+    source=None,
+    check_stability: bool = True,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Forward-time centred-space explicit scheme for `u_t = alpha u_xx`.
+
+Conditionally stable: raises unless `r = alpha dt/dx^2 <= 1/2`.
+
+### `heat_btcs` {#api-heat_btcs}
+
+```python
+heat_btcs(
+    u0,
+    alpha: float,
+    x_span,
+    t_span,
+    nx: int = 50,
+    nt: int = 100,
+    bc=(0.0, 0.0),
+    source=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Backward-time centred-space implicit scheme: unconditionally stable.
+
+### `heat_crank_nicolson` {#api-heat_crank_nicolson}
+
+```python
+heat_crank_nicolson(
+    u0,
+    alpha: float,
+    x_span,
+    t_span,
+    nx: int = 50,
+    nt: int = 100,
+    bc=(0.0, 0.0),
+    source=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Crank-Nicolson: unconditionally stable and second order in both variables.
+
+### `heat_theta` {#api-heat_theta}
+
+```python
+heat_theta(
+    u0,
+    alpha: float,
+    x_span,
+    t_span,
+    nx: int = 50,
+    nt: int = 100,
+    theta: float = 0.5,
+    bc=(0.0, 0.0),
+    source=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Theta scheme: explicit (0), Crank-Nicolson (1/2), fully implicit (1).
+
+### `heat_2d_adi` {#api-heat_2d_adi}
+
+```python
+heat_2d_adi(
+    u0,
+    alpha: float,
+    x_span,
+    y_span,
+    t_span,
+    nx: int = 40,
+    ny: int = 40,
+    nt: int = 100,
+    bc: float = 0.0,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Peaceman-Rachford ADI for the 2-D heat equation.
+
+Splits each step into two half-steps, each a set of tridiagonal solves, so
+the cost stays `O(N)` while remaining unconditionally stable.
+
+### `method_of_lines` {#api-method_of_lines}
+
+```python
+method_of_lines(
+    u0,
+    rhs,
+    x_span,
+    t_span,
+    nx: int = 50,
+    solver='rk45',
+    bc=(0.0, 0.0),
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+    **kwargs,
+)
+```
+
+Method of lines: discretize in space, then hand the ODE system to a solver.
+
+`rhs(t, u, x, dx)` receives the full state and coordinate arrays,
+both of length `nx + 1`, including the two boundary nodes. It must
+return a derivative array of that same length. Only `rhs(...)[1:-1]`
+is integrated; the endpoint derivative entries are ignored and may be
+set to zero. Returning only the interior derivatives is incorrect.
+
+Boundary values from `bc` are inserted before every RHS evaluation.
+The returned `PDESolution` reconstructs the full state at each saved
+time. `solver="rk45"` selects Dormand-Prince; other solver names and
+additional keyword arguments are forwarded to `solve_ivp`.
+
+### `diffusion_reaction` {#api-diffusion_reaction}
+
+```python
+diffusion_reaction(
+    u0,
+    alpha: float,
+    reaction,
+    x_span,
+    t_span,
+    nx: int = 50,
+    nt: int = 200,
+    bc=(0.0, 0.0),
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Reaction-diffusion `u_t = alpha u_xx + f(u)` by IMEX splitting.
+
+Diffusion is treated implicitly (removing the stiff constraint) and the
+reaction term explicitly.
+
+### `advection_diffusion` {#api-advection_diffusion}
+
+```python
+advection_diffusion(
+    u0,
+    velocity: float,
+    alpha: float,
+    x_span,
+    t_span,
+    nx: int = 100,
+    nt: int = 500,
+    bc=(0.0, 0.0),
+    upwind: bool = True,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Advection-diffusion `u_t + v u_x = alpha u_xx`.
+
+Upwinding the advective term keeps the scheme monotone at high Peclet
+number, where central differencing oscillates.
+
+### `stability_ratio` {#api-stability_ratio}
+
+```python
+stability_ratio(alpha: float, dt: float, dx: float) -> float
+```
+
+Diffusion number `r = alpha dt / dx^2`.
+
+The explicit FTCS scheme is stable only for `r <= 1/2`.
 
 ## `spectral`
 
@@ -173,12 +1406,130 @@ Spectral methods for PDEs.
 
 Global basis functions give exponential accuracy for smooth solutions, so a handful of modes can match what a finite difference grid needs thousands of points to achieve.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `fourier_heat` | `(u0, alpha: float, L: float = 6.283185307179586, n: int = 128, t_span=(0.0, 1.0), nt: int = 100)` | Heat equation with periodic boundaries, solved exactly in Fourier space. |
-| `fourier_advection` | `(u0, c: float, L: float = 6.283185307179586, n: int = 128, t_span=(0.0, 1.0), nt: int = 100)` | Linear advection with periodic boundaries, exact in Fourier space. |
-| `chebyshev_poisson_1d` | `(f, x_span=(-1.0, 1.0), bc=(0.0, 0.0), n: int = 32)` | Solve ``u'' = f`` on an interval by Chebyshev collocation. |
-| `chebyshev_bvp` | `(p, q, r, x_span=(-1.0, 1.0), bc=(0.0, 0.0), n: int = 32)` | Chebyshev collocation for ``u'' + p(x) u' + q(x) u = r(x)``. |
-| `spectral_burgers` | `(u0, nu: float = 0.01, L: float = 6.283185307179586, n: int = 256, t_span=(0.0, 1.0), nt: int = 2000, deali, ...)` | Viscous Burgers by a Fourier pseudospectral method with ETD-RK2 in time. |
-| `kuramoto_sivashinsky` | `(u0, L: float = 100.53096491487338, n: int = 256, t_span=(0.0, 50.0), nt: int = 5000)` | Kuramoto-Sivashinsky equation ``u_t + u u_x + u_xx + u_xxxx = 0``. |
-| `pseudospectral_step` | `(u, nonlinear, k, dt: float, linear_symbol)` | One IMEX step: linear part exactly in spectral space, nonlinear explicitly. |
+| [`fourier_heat`](#api-fourier_heat) | function | Heat equation with periodic boundaries, solved exactly in Fourier space. |
+| [`fourier_advection`](#api-fourier_advection) | function | Linear advection with periodic boundaries, exact in Fourier space. |
+| [`chebyshev_poisson_1d`](#api-chebyshev_poisson_1d) | function | Solve ``u'' = f`` on an interval by Chebyshev collocation. |
+| [`chebyshev_bvp`](#api-chebyshev_bvp) | function | Chebyshev collocation for ``u'' + p(x) u' + q(x) u = r(x)``. |
+| [`spectral_burgers`](#api-spectral_burgers) | function | Viscous Burgers by a Fourier pseudospectral method with ETD-RK2 in time. |
+| [`kuramoto_sivashinsky`](#api-kuramoto_sivashinsky) | function | Kuramoto-Sivashinsky equation ``u_t + u u_x + u_xx + u_xxxx = 0``. |
+| [`pseudospectral_step`](#api-pseudospectral_step) | function | One IMEX step: linear part exactly in spectral space, nonlinear explicitly. |
+
+### `fourier_heat` {#api-fourier_heat}
+
+```python
+fourier_heat(
+    u0,
+    alpha: float,
+    L: float = 6.283185307179586,
+    n: int = 128,
+    t_span=(0.0, 1.0),
+    nt: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Heat equation with periodic boundaries, solved exactly in Fourier space.
+
+Each mode decays as `exp(-alpha k^2 t)`, so the time stepping is exact and
+unconditionally stable whatever the step size.
+
+### `fourier_advection` {#api-fourier_advection}
+
+```python
+fourier_advection(
+    u0,
+    c: float,
+    L: float = 6.283185307179586,
+    n: int = 128,
+    t_span=(0.0, 1.0),
+    nt: int = 100,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Linear advection with periodic boundaries, exact in Fourier space.
+
+Each mode is translated by `exp(-i c k t)`: no dispersion, no dissipation.
+
+### `chebyshev_poisson_1d` {#api-chebyshev_poisson_1d}
+
+```python
+chebyshev_poisson_1d(f, x_span=(-1.0, 1.0), bc=(0.0, 0.0), n: int = 32)
+```
+
+Solve `u'' = f` on an interval by Chebyshev collocation.
+
+### `chebyshev_bvp` {#api-chebyshev_bvp}
+
+```python
+chebyshev_bvp(p, q, r, x_span=(-1.0, 1.0), bc=(0.0, 0.0), n: int = 32)
+```
+
+Chebyshev collocation for `u'' + p(x) u' + q(x) u = r(x)`.
+
+### `spectral_burgers` {#api-spectral_burgers}
+
+```python
+spectral_burgers(
+    u0,
+    nu: float = 0.01,
+    L: float = 6.283185307179586,
+    n: int = 256,
+    t_span=(0.0, 1.0),
+    nt: int = 2000,
+    dealias: bool = True,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Viscous Burgers by a Fourier pseudospectral method with ETD-RK2 in time.
+
+The 2/3 dealiasing rule removes the aliasing error that the quadratic
+nonlinearity would otherwise fold back onto the resolved modes.
+
+### `kuramoto_sivashinsky` {#api-kuramoto_sivashinsky}
+
+```python
+kuramoto_sivashinsky(
+    u0,
+    L: float = 100.53096491487338,
+    n: int = 256,
+    t_span=(0.0, 50.0),
+    nt: int = 5000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Kuramoto-Sivashinsky equation `u_t + u u_x + u_xx + u_xxxx = 0`.
+
+A canonical chaotic PDE; the fourth-derivative term makes it very stiff, so
+the linear part is integrated exactly by an exponential (ETDRK2) step.
+
+### `pseudospectral_step` {#api-pseudospectral_step}
+
+```python
+pseudospectral_step(u, nonlinear, k, dt: float, linear_symbol)
+```
+
+One IMEX step: linear part exactly in spectral space, nonlinear explicitly.
+
+The nonlinear term is evaluated in physical space and transformed back,
+which is what makes the method "pseudospectral".

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import PDESolution
+from ..core.storage import (pde_solution as PDESolution, TimeGrid,
+                            Trajectory, output_control, OutputRecorder)
 from ..diff.spectral import chebyshev_diff_matrix, fourier_derivative
 
 __all__ = [
@@ -31,12 +32,14 @@ def fourier_heat(u0, alpha: float, L: float = 2 * np.pi, n: int = 128,
     unconditionally stable whatever the step size.
     """
     x = np.linspace(0.0, L, n, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     u = np.array([u0(xi) for xi in x]) if callable(u0) else np.asarray(u0, dtype=float)
     k = 2 * np.pi * np.fft.fftfreq(n, d=L / n)
     U_hat = np.fft.fft(u)
-    out = np.empty((nt + 1, n))
+    out = Trajectory(t)
     for i, ti in enumerate(t):
+        if out.recorder.stopped:
+            break
         out[i] = np.real(np.fft.ifft(U_hat * np.exp(-alpha * k**2 * (ti - t[0]))))
     return PDESolution(out, (x,), t, "fourier_heat")
 
@@ -48,12 +51,14 @@ def fourier_advection(u0, c: float, L: float = 2 * np.pi, n: int = 128,
     Each mode is translated by ``exp(-i c k t)``: no dispersion, no dissipation.
     """
     x = np.linspace(0.0, L, n, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     u = np.array([u0(xi) for xi in x]) if callable(u0) else np.asarray(u0, dtype=float)
     k = 2 * np.pi * np.fft.fftfreq(n, d=L / n)
     U_hat = np.fft.fft(u)
-    out = np.empty((nt + 1, n))
+    out = Trajectory(t)
     for i, ti in enumerate(t):
+        if out.recorder.stopped:
+            break
         out[i] = np.real(np.fft.ifft(U_hat * np.exp(-1j * c * k * (ti - t[0]))))
     return PDESolution(out, (x,), t, "fourier_advection")
 
@@ -111,7 +116,7 @@ def spectral_burgers(u0, nu: float = 0.01, L: float = 2 * np.pi, n: int = 256,
     nonlinearity would otherwise fold back onto the resolved modes.
     """
     x = np.linspace(0.0, L, n, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dt = t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else np.asarray(u0, dtype=float)
     k = 2 * np.pi * np.fft.fftfreq(n, d=L / n)
@@ -119,7 +124,7 @@ def spectral_burgers(u0, nu: float = 0.01, L: float = 2 * np.pi, n: int = 256,
     Lsym = -nu * k**2
     E = np.exp(Lsym * dt)
     E2 = np.exp(Lsym * dt / 2)
-    out = np.empty((nt + 1, n))
+    out = Trajectory(t)
     out[0] = u
 
     def nonlinear_hat(v_hat):
@@ -128,6 +133,8 @@ def spectral_burgers(u0, nu: float = 0.01, L: float = 2 * np.pi, n: int = 256,
 
     U = np.fft.fft(u)
     for i in range(nt):
+        if out.recorder.stopped:
+            break
         N1 = nonlinear_hat(U)
         a = E * U + dt * E * N1                     # predictor
         N2 = nonlinear_hat(a)
@@ -144,14 +151,14 @@ def kuramoto_sivashinsky(u0, L: float = 32 * np.pi, n: int = 256,
     the linear part is integrated exactly by an exponential (ETDRK2) step.
     """
     x = np.linspace(0.0, L, n, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dt = t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else np.asarray(u0, dtype=float)
     k = 2 * np.pi * np.fft.fftfreq(n, d=L / n)
     Lsym = k**2 - k**4                     # from -u_xx - u_xxxx
     E = np.exp(Lsym * dt)
     mask = np.abs(k) < (2.0 / 3.0) * np.max(np.abs(k))
-    out = np.empty((nt + 1, n))
+    out = Trajectory(t)
     out[0] = u
     U = np.fft.fft(u)
 
@@ -160,9 +167,18 @@ def kuramoto_sivashinsky(u0, L: float = 32 * np.pi, n: int = 256,
         return -0.5 * 1j * k * np.fft.fft(v * v) * mask
 
     for i in range(nt):
+        if out.recorder.stopped:
+            break
         N1 = nl(U)
         a = E * U + dt * E * N1
         N2 = nl(a)
         U = E * U + dt * (E * N1 + N2) / 2.0
         out[i + 1] = np.real(np.fft.ifft(U))
     return PDESolution(out, (x,), t, "kuramoto_sivashinsky")
+
+
+# Share output policy through nested method-of-lines and wrapper calls.
+for _name in __all__:
+    if "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

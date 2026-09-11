@@ -5,19 +5,21 @@
  * right-looking so their inner loops run over contiguous rows.
  */
 #include "qnp.h"
+#include "qaccel.h"
+#include <float.h>
 #include <stdlib.h>
 
 typedef unsigned char qbool;
 
 /* ---------------------------------------------------------------- gemm */
 
-#define MR 4
+#define MR 6
 #define NR 8
 #define MC 128
 #define KC 192
 #define NC 512
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if (defined(__x86_64__) || defined(_M_X64)) && (defined(__GNUC__) || defined(__clang__))
 #include <immintrin.h>
 #define QNP_HAVE_X86 1
 #endif
@@ -46,8 +48,8 @@ static void micro_kernel_ref(const double *Ap, const double *Bp, double *C, qint
 }
 
 #ifdef QNP_HAVE_X86
-/* The same tile with FMA: eight accumulators hold 4x8 doubles across the whole
- * k loop, so each step is two loads, four broadcasts and eight fused
+/* The same tile with FMA: twelve accumulators hold 6x8 doubles across the whole
+ * k loop, so each step is two loads, six broadcasts and twelve fused
  * multiply-adds. This is where the throughput of the whole package's matrix
  * products comes from. */
 __attribute__((target("avx2,fma")))
@@ -57,6 +59,8 @@ static void micro_kernel_avx2(const double *Ap, const double *Bp, double *C, qin
     __m256d c2 = _mm256_setzero_pd(), c3 = _mm256_setzero_pd();
     __m256d c4 = _mm256_setzero_pd(), c5 = _mm256_setzero_pd();
     __m256d c6 = _mm256_setzero_pd(), c7 = _mm256_setzero_pd();
+    __m256d c8 = _mm256_setzero_pd(), c9 = _mm256_setzero_pd();
+    __m256d c10 = _mm256_setzero_pd(), c11 = _mm256_setzero_pd();
     for (qintp p = 0; p < kc; p++) {
         const double *b = Bp + p * NR;
         const double *a = Ap + p * MR;
@@ -74,19 +78,25 @@ static void micro_kernel_avx2(const double *Ap, const double *Bp, double *C, qin
         av = _mm256_set1_pd(a[3]);
         c6 = _mm256_fmadd_pd(av, b0, c6);
         c7 = _mm256_fmadd_pd(av, b1, c7);
+        av = _mm256_set1_pd(a[4]);
+        c8 = _mm256_fmadd_pd(av, b0, c8);
+        c9 = _mm256_fmadd_pd(av, b1, c9);
+        av = _mm256_set1_pd(a[5]);
+        c10 = _mm256_fmadd_pd(av, b0, c10);
+        c11 = _mm256_fmadd_pd(av, b1, c11);
     }
     if (mr == MR && nr == NR) {
-        __m256d *acc[8] = {&c0, &c1, &c2, &c3, &c4, &c5, &c6, &c7};
-        for (int i = 0; i < MR; i++) {
-            double *row = C + i * ldc;
-            __m256d lo = *acc[2 * i], hi = *acc[2 * i + 1];
-            if (accumulate) {
-                lo = _mm256_add_pd(_mm256_loadu_pd(row), lo);
-                hi = _mm256_add_pd(_mm256_loadu_pd(row + 4), hi);
-            }
-            _mm256_storeu_pd(row, lo);
-            _mm256_storeu_pd(row + 4, hi);
-        }
+#define STORE_ROW(i, lo, hi) do { \
+        double *row = C + (i) * ldc; \
+        if (accumulate) { \
+            lo = _mm256_add_pd(_mm256_loadu_pd(row), lo); \
+            hi = _mm256_add_pd(_mm256_loadu_pd(row + 4), hi); \
+        } \
+        _mm256_storeu_pd(row, lo); _mm256_storeu_pd(row + 4, hi); \
+    } while (0)
+        STORE_ROW(0, c0, c1); STORE_ROW(1, c2, c3); STORE_ROW(2, c4, c5);
+        STORE_ROW(3, c6, c7); STORE_ROW(4, c8, c9); STORE_ROW(5, c10, c11);
+#undef STORE_ROW
         return;
     }
     double tile[MR][NR];
@@ -98,6 +108,10 @@ static void micro_kernel_avx2(const double *Ap, const double *Bp, double *C, qin
     _mm256_storeu_pd(&tile[2][4], c5);
     _mm256_storeu_pd(&tile[3][0], c6);
     _mm256_storeu_pd(&tile[3][4], c7);
+    _mm256_storeu_pd(&tile[4][0], c8);
+    _mm256_storeu_pd(&tile[4][4], c9);
+    _mm256_storeu_pd(&tile[5][0], c10);
+    _mm256_storeu_pd(&tile[5][4], c11);
     for (int i = 0; i < mr; i++) {
         double *row = C + i * ldc;
         if (accumulate) for (int j = 0; j < nr; j++) row[j] += tile[i][j];
@@ -106,10 +120,7 @@ static void micro_kernel_avx2(const double *Ap, const double *Bp, double *C, qin
 }
 
 static int cpu_has_fma(void) {
-    static int cached = -1;
-    if (cached < 0)
-        cached = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-    return cached;
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
 }
 #endif
 
@@ -145,6 +156,71 @@ static void pack_b(const double *B, qintp ldb, double *Bp, qintp kc, qintp nc) {
             for (int r = nr; r < NR; r++) dst[p * NR + r] = 0.0;
         }
     }
+}
+
+/* Strided accumulation used by blocked factorizations. Pack only cache-sized
+ * panels, including a transposed B directly, instead of copying full trailing
+ * matrices into a second numerical runtime. This entry is safe without GIL. */
+void qaccel_gemm(qintp m, qintp n, qintp k, double alpha,
+                  const double *A, qintp lda, const double *B, qintp ldb,
+                  double *C, qintp ldc, int trans_b) {
+    if (!m || !n || !k) return;
+    qintp kc_max = k < KC ? k : KC;
+    qintp nc_max = n < NC ? n : NC;
+    qintp mc_max = m < MC ? m : MC;
+    double *Ap = NULL, *Bp = NULL;
+    if ((double)m * n * k >= 32768.) {
+        Ap = malloc((size_t)(mc_max + MR) * kc_max * sizeof(double));
+        Bp = malloc((size_t)(nc_max + NR) * kc_max * sizeof(double));
+    }
+    if (Ap == NULL || Bp == NULL) {
+        free(Ap); free(Bp);
+        if (trans_b) {
+            for (qintp i = 0; i < m; i++)
+                for (qintp j = 0; j < n; j++) {
+                    double value = 0.;
+                    for (qintp p = 0; p < k; p++) value += A[i*lda+p]*B[j*ldb+p];
+                    C[i*ldc+j] += alpha * value;
+                }
+        } else {
+            for (qintp i = 0; i < m; i++)
+                for (qintp p = 0; p < k; p++) {
+                    double value = alpha * A[i*lda+p];
+                    for (qintp j = 0; j < n; j++) C[i*ldc+j] += value * B[p*ldb+j];
+                }
+        }
+        return;
+    }
+    for (qintp jc = 0; jc < n; jc += NC) {
+        qintp nc = n-jc < NC ? n-jc : NC;
+        for (qintp pc = 0; pc < k; pc += KC) {
+            qintp kc = k-pc < KC ? k-pc : KC;
+            if (!trans_b) pack_b(B + pc*ldb+jc, ldb, Bp, kc, nc);
+            else for (qintp j = 0; j < nc; j += NR) {
+                int nr = (int)(nc-j < NR ? nc-j : NR);
+                double *dst = Bp+j*kc;
+                for (qintp p = 0; p < kc; p++) {
+                    for (int r = 0; r < nr; r++) dst[p*NR+r] = B[(jc+j+r)*ldb+pc+p];
+                    for (int r = nr; r < NR; r++) dst[p*NR+r] = 0.;
+                }
+            }
+            for (qintp ic = 0; ic < m; ic += MC) {
+                qintp mc = m-ic < MC ? m-ic : MC;
+                pack_a(A + ic*lda+pc, lda, Ap, mc, kc);
+                qintp packed = ((mc+MR-1)/MR)*MR*kc;
+                for (qintp p = 0; p < packed; p++) Ap[p] *= alpha;
+                for (qintp jr = 0; jr < nc; jr += NR) {
+                    int nr = (int)(nc-jr < NR ? nc-jr : NR);
+                    for (qintp ir = 0; ir < mc; ir += MR) {
+                        int mr = (int)(mc-ir < MR ? mc-ir : MR);
+                        micro_kernel(Ap+ir*kc, Bp+jr*kc, C+(ic+ir)*ldc+jc+jr,
+                                     ldc, kc, mr, nr, 1);
+                    }
+                }
+            }
+        }
+    }
+    free(Ap); free(Bp);
 }
 
 /* Inner product of two contiguous vectors, summed pairwise for accuracy. */
@@ -280,69 +356,50 @@ static void gemm_i64(const int64_t *A, const int64_t *B, int64_t *C,
 }
 
 PyObject *qnp_matmul(PyObject *ao, PyObject *bo) {
-    QArray *a = qnp_from_any(ao, -1, 0);
-    if (a == NULL) {
-        if (PyErr_ExceptionMatches(PyExc_TypeError)) { PyErr_Clear(); Py_RETURN_NOTIMPLEMENTED; }
-        return NULL;
+    QArray *a=qnp_from_any(ao,-1,0), *b=qnp_from_any(bo,-1,0);
+    if(!a || !b) { Py_XDECREF(a);Py_XDECREF(b); return NULL; }
+    if(!a->nd || !b->nd) { PyErr_SetString(PyExc_ValueError,"matmul requires arrays with at least one dimension"); goto fail; }
+    int a1=a->nd==1,b1=b->nd==1, ab=a1?0:a->nd-2,bb=b1?0:b->nd-2,nb=ab>bb?ab:bb;
+    qintp m=a1?1:a->shape[a->nd-2], k=a->shape[a->nd-1], n=b1?1:b->shape[b->nd-1];
+    if(k!=b->shape[b1?0:b->nd-2]) {PyErr_SetString(PyExc_ValueError,"matmul core dimension mismatch");goto fail;}
+    qintp shape[QNP_MAXDIMS],batch=1;
+    if(nb+!a1+!b1>QNP_MAXDIMS){PyErr_SetString(PyExc_ValueError,"too many matmul dimensions");goto fail;}
+    for(int d=0;d<nb;d++) {
+        qintp ad=d<nb-ab?1:a->shape[d-(nb-ab)],bd=d<nb-bb?1:b->shape[d-(nb-bb)];
+        if(ad!=bd && ad!=1 && bd!=1){PyErr_SetString(PyExc_ValueError,"matmul batch dimensions do not broadcast");goto fail;}
+        shape[d]=ad==1?bd:ad;
+        if(shape[d] && batch>PY_SSIZE_T_MAX/shape[d]){PyErr_NoMemory();goto fail;}
+        batch*=shape[d];
     }
-    QArray *b = qnp_from_any(bo, -1, 0);
-    if (b == NULL) {
-        Py_DECREF(a);
-        if (PyErr_ExceptionMatches(PyExc_TypeError)) { PyErr_Clear(); Py_RETURN_NOTIMPLEMENTED; }
-        return NULL;
-    }
-    if (a->nd == 0 || b->nd == 0) {
-        Py_DECREF(a); Py_DECREF(b);
-        PyErr_SetString(PyExc_ValueError,
-                        "matmul: input operand does not have enough dimensions");
-        return NULL;
-    }
-    int dt = qnp_promote(a->dtype, b->dtype);
-    if (dt == QNP_BOOL) dt = QNP_INT64;
-    int a1 = (a->nd == 1), b1 = (b->nd == 1);
-    if (a->nd > 2 || b->nd > 2) {
-        Py_DECREF(a); Py_DECREF(b);
-        PyErr_SetString(PyExc_NotImplementedError,
-                        "matmul over stacks of matrices is not supported");
-        return NULL;
-    }
-    qintp m = a1 ? 1 : a->shape[0];
-    qintp ka = a1 ? a->shape[0] : a->shape[1];
-    qintp kb = b1 ? b->shape[0] : b->shape[0];
-    qintp n = b1 ? 1 : b->shape[1];
-    if (ka != kb) {
-        PyErr_Format(PyExc_ValueError,
-                     "matmul: Input operand 1 has a mismatch in its core dimension 0 "
-                     "(size %zd is different from %zd)", kb, ka);
-        Py_DECREF(a); Py_DECREF(b);
-        return NULL;
-    }
-    QArray *fa = qnp_astype(a, dt, 0), *fb = qnp_astype(b, dt, 0);
-    Py_DECREF(a); Py_DECREF(b);
-    if (fa == NULL || fb == NULL) { Py_XDECREF(fa); Py_XDECREF(fb); return NULL; }
-    QArray *ca = qnp_ascontiguous(fa), *cb = qnp_ascontiguous(fb);
-    Py_DECREF(fa); Py_DECREF(fb);
-    if (ca == NULL || cb == NULL) { Py_XDECREF(ca); Py_XDECREF(cb); return NULL; }
-    qintp shape[2];
-    int nd = 0;
-    if (!a1) shape[nd++] = m;
-    if (!b1) shape[nd++] = n;
-    QArray *out = qnp_new(nd, shape, dt);
-    if (out == NULL) { Py_DECREF(ca); Py_DECREF(cb); return NULL; }
+    int nd=nb;if(!a1)shape[nd++]=m;if(!b1)shape[nd++]=n;
+    int dt=qnp_promote(a->dtype,b->dtype);if(dt==QNP_BOOL)dt=QNP_INT64;
+    QArray *fa=qnp_astype(a,dt,0),*fb=qnp_astype(b,dt,0);
+    Py_DECREF(a);Py_DECREF(b);a=NULL;b=NULL;
+    if(!fa||!fb){Py_XDECREF(fa);Py_XDECREF(fb);return NULL;}
+    QArray *ca=qnp_ascontiguous(fa),*cb=qnp_ascontiguous(fb);Py_DECREF(fa);Py_DECREF(fb);
+    if(!ca||!cb){Py_XDECREF(ca);Py_XDECREF(cb);return NULL;}
+    QArray *out=qnp_new(nd,shape,dt);
+    if(!out){Py_DECREF(ca);Py_DECREF(cb);return NULL;}
+    qintp index[QNP_MAXDIMS]={0};int isz=QNP_ITEMSIZE(dt);
     Py_BEGIN_ALLOW_THREADS
-    if (dt == QNP_FLOAT64)
-        qnp_gemm_f64((const double *)ca->data, (const double *)cb->data,
-                     (double *)out->data, m, n, ka);
-    else if (dt == QNP_COMPLEX128)
-        gemm_c128((const qcomplex *)ca->data, (const qcomplex *)cb->data,
-                  (qcomplex *)out->data, m, n, ka);
-    else
-        gemm_i64((const int64_t *)ca->data, (const int64_t *)cb->data,
-                 (int64_t *)out->data, m, n, ka);
+    for(qintp z=0;z<batch;z++) {
+        const char *ap=ca->data,*bp=cb->data;
+        for(int d=0;d<ab;d++)if(ca->shape[d]!=1)ap+=index[d+nb-ab]*ca->strides[d];
+        for(int d=0;d<bb;d++)if(cb->shape[d]!=1)bp+=index[d+nb-bb]*cb->strides[d];
+        char *op=out->data+z*m*n*isz;
+        if(dt==QNP_FLOAT64)qnp_gemm_f64((const double *)ap,(const double *)bp,(double *)op,m,n,k);
+        else if(dt==QNP_COMPLEX128)gemm_c128((const qcomplex *)ap,(const qcomplex *)bp,(qcomplex *)op,m,n,k);
+        else if(dt==QNP_INT64)gemm_i64((const int64_t *)ap,(const int64_t *)bp,(int64_t *)op,m,n,k);
+        else for(qintp i=0;i<m;i++)for(qintp j=0;j<n;j++) {
+            qcomplex sum=qc(0,0);
+            for(qintp t=0;t<k;t++)sum=qc_add(sum,qc_mul(qnp_read_number(ap+(i*k+t)*isz,dt),qnp_read_number(bp+(t*n+j)*isz,dt)));
+            qnp_write_number(op+(i*n+j)*isz,dt,sum);
+        }
+        for(int d=nb-1;d>=0;d--){if(++index[d]<shape[d])break;index[d]=0;}
+    }
     Py_END_ALLOW_THREADS
-    Py_DECREF(ca);
-    Py_DECREF(cb);
-    return qnp_wrap_scalar_or_array(out);
+    Py_DECREF(ca);Py_DECREF(cb);return qnp_wrap_scalar_or_array(out);
+fail:Py_DECREF(a);Py_DECREF(b);return NULL;
 }
 
 /* ---------------------------------------------------------------- LU */
@@ -480,7 +537,7 @@ static QArray *require_matrix(PyObject *obj, int dtype_floor, const char *name) 
         Py_DECREF(a);
         return NULL;
     }
-    int dt = a->dtype < dtype_floor ? dtype_floor : a->dtype;
+    int dt = qnp_promote(a->dtype,dtype_floor);
     QArray *f = qnp_astype(a, dt, 0);
     Py_DECREF(a);
     if (f == NULL) return NULL;
@@ -500,6 +557,8 @@ static QArray *require_square(PyObject *obj, const char *name, int *n) {
     *n = (int)a->shape[0];
     return a;
 }
+
+#include "roadmap_linalg.h"
 
 static PyObject *py_solve(PyObject *self, PyObject *args) {
     (void)self;
@@ -540,7 +599,7 @@ static PyObject *py_solve(PyObject *self, PyObject *args) {
     Py_DECREF(b0);
     if (bf == NULL) { Py_DECREF(a); return NULL; }
     QArray *b = qnp_ascontiguous(bf);
-    if (b != bf) Py_DECREF(bf);
+    Py_DECREF(bf);
     if (b == NULL) { Py_DECREF(a); return NULL; }
     int nrhs = vector_rhs ? 1 : (int)b->shape[1];
     int *piv = (int *)malloc((size_t)(n > 0 ? n : 1) * sizeof(int));
@@ -673,9 +732,7 @@ static PyObject *py_cholesky(PyObject *self, PyObject *arg) {
     QArray *a0 = require_square(arg, "cholesky", &n);
     if (a0 == NULL) return NULL;
     if (a0->dtype == QNP_COMPLEX128) {
-        Py_DECREF(a0);
-        PyErr_SetString(PyExc_NotImplementedError, "cholesky of a complex matrix");
-        return NULL;
+        PyObject *r=complex_cholesky(a0);Py_DECREF(a0);return r;
     }
     QArray *out = qnp_astype(a0, QNP_FLOAT64, 1);
     Py_DECREF(a0);
@@ -838,9 +895,7 @@ static PyObject *eigh_common(PyObject *arg, int want_vectors) {
     QArray *a0 = require_square(arg, want_vectors ? "eigh" : "eigvalsh", &n);
     if (a0 == NULL) return NULL;
     if (a0->dtype == QNP_COMPLEX128) {
-        Py_DECREF(a0);
-        PyErr_SetString(PyExc_NotImplementedError, "eigh of a complex matrix");
-        return NULL;
+        PyObject *r=complex_eigh(a0,want_vectors);Py_DECREF(a0);return r;
     }
     QArray *z = qnp_astype(a0, QNP_FLOAT64, 1);
     Py_DECREF(a0);
@@ -1447,9 +1502,7 @@ static PyObject *py_svd(PyObject *self, PyObject *args, PyObject *kwds) {
     QArray *a = require_matrix(ao, QNP_FLOAT64, "svd");
     if (a == NULL) return NULL;
     if (a->dtype == QNP_COMPLEX128) {
-        Py_DECREF(a);
-        PyErr_SetString(PyExc_NotImplementedError, "svd of a complex matrix");
-        return NULL;
+        PyObject *r=complex_svd(a,full_matrices,compute_uv);Py_DECREF(a);return r;
     }
     int m = (int)a->shape[0], n = (int)a->shape[1];
     int k = m < n ? m : n;
@@ -1650,6 +1703,42 @@ static PyObject *py_lstsq(PyObject *self, PyObject *args, PyObject *kwds) {
 
 /* ---------------------------------------------------------------- norms */
 
+/* Rare fallback for a sum of squares outside its safe exponent range.
+ * Scaling the components, rather than an already-squared sum, preserves
+ * subnormal inputs and finite norms whose individual squares overflow. */
+static double scaled_euclidean_norm(const double *x, qintp n, qintp stride) {
+    double scale = 0.0;
+    for (qintp i = 0; i < n; i++) {
+        double v = fabs(x[i * stride]);
+        if (v > scale) scale = v;
+    }
+    if (scale == 0.0 || isinf(scale)) return scale;
+    double s = 0.0;
+    for (qintp i = 0; i < n; i++) {
+        double v = x[i * stride] / scale;
+        s += v * v;
+    }
+    return scale * sqrt(s);
+}
+
+static double scaled_euclidean_norm_c(const qcomplex *x, qintp n, qintp stride) {
+    double scale = 0.0;
+    for (qintp i = 0; i < n; i++) {
+        qcomplex z = x[i * stride];
+        double re = fabs(z.re), im = fabs(z.im);
+        if (re > scale) scale = re;
+        if (im > scale) scale = im;
+    }
+    if (scale == 0.0 || isinf(scale)) return scale;
+    double s = 0.0;
+    for (qintp i = 0; i < n; i++) {
+        qcomplex z = x[i * stride];
+        double re = z.re / scale, im = z.im / scale;
+        s += re * re + im * im;
+    }
+    return scale * sqrt(s);
+}
+
 /* Vector p-norm of `n` elements read with `stride` doubles between them. */
 static double vector_norm(const double *x, qintp n, qintp stride, double p, int is_inf,
                           int is_neginf) {
@@ -1670,12 +1759,14 @@ static double vector_norm(const double *x, qintp n, qintp stride, double p, int 
         return n ? best : 0.0;
     }
     if (p == 2.0) {
-        /* One pass, no temporaries: this is the hot path of the whole
-         * package, so it does not go through square-then-sum. */
+        /* Keep the one-pass hot path for ordinary magnitudes. The n factor
+         * also catches sums that accumulate many rounded subnormal squares.
+         * NaN takes precedence over infinity, as in the original reduction. */
         double s = 0.0;
         if (stride == 1) for (qintp i = 0; i < n; i++) s += x[i] * x[i];
         else for (qintp i = 0; i < n; i++) s += x[i * stride] * x[i * stride];
-        return sqrt(s);
+        if (isnan(s) || (isfinite(s) && s >= DBL_MIN * (double)n)) return sqrt(s);
+        return scaled_euclidean_norm(x, n, stride);
     }
     if (p == 1.0) {
         double s = 0.0;
@@ -1708,7 +1799,8 @@ static double vector_norm_c(const qcomplex *x, qintp n, qintp stride, double p,
             qcomplex z = x[i * stride];
             s += z.re * z.re + z.im * z.im;
         }
-        return sqrt(s);
+        if (isnan(s) || (isfinite(s) && s >= DBL_MIN * (2.0 * (double)n))) return sqrt(s);
+        return scaled_euclidean_norm_c(x, n, stride);
     }
     double s = 0.0;
     for (qintp i = 0; i < n; i++) s += pow(qc_abs(x[i * stride]), p);
@@ -1745,7 +1837,7 @@ static PyObject *py_norm(PyObject *self, PyObject *args, PyObject *kwds) {
                                      &ao, &ord, &axis_o, &keepdims)) return NULL;
     QArray *a0 = qnp_from_any(ao, -1, 0);
     if (a0 == NULL) return NULL;
-    int dt = a0->dtype < QNP_FLOAT64 ? QNP_FLOAT64 : a0->dtype;
+    int dt = qnp_promote(a0->dtype,QNP_FLOAT64);
     QArray *af = qnp_astype(a0, dt, 0);
     Py_DECREF(a0);
     if (af == NULL) return NULL;
@@ -1830,7 +1922,8 @@ static PyObject *py_norm(PyObject *self, PyObject *args, PyObject *kwds) {
     if (out == NULL) { Py_DECREF(a); return NULL; }
     qintp len = a->shape[axis];
     qintp stride = a->strides[axis] / QNP_ITEMSIZE(dt);
-    qintp outer = qnp_size(a) / (len ? len : 1);
+    /* An empty reduction axis can still leave nonempty output dimensions. */
+    qintp outer = qnp_size(out);
     qintp idx[QNP_MAXDIMS] = {0};
     double *dst = (double *)out->data;
     for (qintp k = 0; k < outer; k++) {
@@ -1980,6 +2073,8 @@ PyMethodDef qnp_linalg_methods[] = {
      "Fused compressed-sparse-row matrix-vector product."},
     {"csr_validate", py_csr_validate, METH_VARARGS,
      "Check CSR row pointers and column indices in one pass."},
+    {"lu_factor", py_lu_factor, METH_O, "Packed LU factorization and sequential row pivots."},
+    {"lu_solve", py_lu_solve, METH_VARARGS, "Solve using a packed LU factorization."},
     {"solve", py_solve, METH_VARARGS, "Solve a linear system."},
     {"inv", py_inv, METH_O, "Matrix inverse."},
     {"det", py_det, METH_O, "Determinant."},

@@ -3,14 +3,9 @@
 # a downstream packager can build and validate the release without a checkout.
 
 include CHANGELOG.md
-include PERFORMANCE.md
-# Ship only the published measurements linked from PERFORMANCE.md, including
-# when an older egg-info/SOURCES.txt still lists local experiment output.
+# Local benchmark output is not part of a source release, including when an
+# older egg-info/SOURCES.txt still lists previous measurements.
 prune benchmarks
-include benchmarks/scalability-before.json
-include benchmarks/scalability-after.json
-include benchmarks/scalability-numpy-backend.json
-include benchmarks/scalability-c-backend.json
 include CODE_OF_CONDUCT.md
 include CONTRIBUTING.md
 include SECURITY.md
@@ -23,33 +18,29 @@ recursive-include docs *.md
 recursive-include docs *.css
 recursive-include tools *.py
 
-# The C sources of the array core. These are not optional -- the package does
-# not run without them -- so an sdist that omitted them would be unbuildable.
+# The C array core and numerical accelerators are required; a source
+# distribution must contain every C implementation and shared header.
 include setup.py
 recursive-include csrc *.c
 recursive-include csrc *.h
 
-# The Rust crate for the optional compiled kernels. The wheel carries the built
-# extension; the sources ship so a downstream packager can rebuild it.
-recursive-include rust *.rs
-include rust/Cargo.toml
-include rust/Cargo.lock
+# Remove obsolete sources even from cached egg-info/SOURCES.txt manifests.
+prune rust
 
-# The figures under docs/assets/figures are deliberately not shipped: they are
-# 13 MB of SVG that `python tools/gen_figures.py` regenerates from the package
-# itself, and an sdist is not the place for them.
+# Generated figures and their manifest are omitted from the source archive.
+# `python tools/gen_figures.py` regenerates both from the included tools and
+# package sources before a complete documentation-site build.
 recursive-exclude docs/assets/figures *
 
 # A compiled backend left in the working tree by a previous build must never
 # reach the sdist: it is one platform's binary, and shipping it would hand every
-# other platform an extension it cannot load. Wheels get only the artifact
-# reported by a successful Cargo invocation in setup.py.
-recursive-exclude quadrivium *.so *.pyd *.dylib
+# other platform an extension it cannot load. Wheels get only the C extension
+# produced by the current build_ext command.
+recursive-exclude quadrivium *.so *.pyd *.dylib *.dll
 
 # Never ship build, cache, or editor droppings.
 global-exclude *.py[cod]
 global-exclude .DS_Store
 prune .github
-prune rust/target
 prune .pytest_cache
 prune **/__pycache__

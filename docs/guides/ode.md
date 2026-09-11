@@ -1,324 +1,315 @@
 # Ordinary differential equations
 
-```python
-from quadrivium.ode import dormand_prince, radau_iia, velocity_verlet
-import quadrivium as qd          # qd.solve_ivp, qd.rk4, qd.bdf, qd.shooting, ...
-```
+An initial value problem specifies a state at one time and a rule for how it
+changes: `y' = f(t, y)`, `y(t0) = y0`. Quadrivium provides adaptive solvers for
+routine simulation and individual numerical methods for studying accuracy,
+stability, conservation, and computational cost. Start with `solve_ivp`; choose
+a specialized interface when your equation has additional structure.
 
-76 routines: explicit and implicit one-step methods, multistep families,
-symplectic integrators for Hamiltonian systems, exponential integrators for
-stiff linear parts, extrapolation, event location, boundary value problems,
-index-1 DAEs and delay equations. Full signatures are in the
-[`ode` reference](../api/ode.md).
+The examples use Quadrivium's array implementation. They do not require NumPy.
+The [ODE reference](../api/ode.md) lists complete signatures and the available
+method families.
 
-## The default path
+## Solve and inspect an initial value problem
 
 ```pycon
->>> from quadrivium import numeric as np
 >>> import quadrivium as qd
->>> sol = qd.solve_ivp(lambda t, y: -2*y, (0, 1), [1.0], rtol=1e-10)
->>> abs(float(sol.y[-1, 0]) - float(np.exp(-2))) < 1e-9
-True
+>>> from quadrivium import numeric as np
+>>> rhs = lambda t, y: -2.0 * y
+>>> sol = qd.solve_ivp(rhs, (0.0, 1.0), [1.0], rtol=1e-9, atol=1e-11)
 >>> sol.success, sol.method
 (True, 'dormand_prince')
-
-```
-
-`solve_ivp` runs adaptive Dormand-Prince by default: fifth order, with an
-embedded fourth-order estimate for step control. Pass `method=` for anything
-else — `"rk4"`, `"radau"`, `"bdf"`, `"backward_euler"`, `"adams_bashforth"`,
-and the rest — with `n=` for fixed-step methods and `rtol`/`atol` for adaptive
-ones.
-
-The right-hand side takes `(t, y)` and returns an array; `y0` may be a list.
-The result is an `ODESolution` with `t` of shape `(n,)`, `y` of shape
-`(n, dim)`, and step statistics:
-
-```pycon
->>> sol.n_accepted > 0, sol.n_rejected >= 0, sol.n_rhs_evals > sol.n_steps
-(True, True, True)
-
-```
-
-### Dense output
-
-The solution is callable at any time in the interval, using cubic Hermite
-interpolation through the stored states and slopes — accurate to `O(h⁴)`,
-which matches a fourth or fifth order integrator rather than degrading it:
-
-```pycon
->>> t_query = np.linspace(0, 1, 11)
->>> y = sol(t_query)
->>> float(np.max(np.abs(y[:, 0] - np.exp(-2*t_query)))) < 1e-8
+>>> abs(float(sol.y_final[0]) - float(np.exp(-2.0))) < 1e-8
 True
 
 ```
 
-## Choosing a method
+`rhs(t, y)` receives a scalar time and a one-dimensional state vector. Return
+one derivative for each state component. A list is acceptable as `y0` or as the
+right-hand side result; an array is convenient for vector expressions. The
+ordinary solvers use real floating-point states. Represent a complex problem
+as coupled real and imaginary components when needed.
 
-The first question is whether the problem is stiff — whether the fastest
-timescale in the equation is far shorter than the time you want to integrate
-over. `detect_stiffness` and `stiffness_ratio` answer it from the Jacobian's
-eigenvalues.
+`ODESolution` stores time along its **first** axis:
 
-```mermaid
-flowchart TD
-    A["y' = f(t, y)"] --> B{"stiff?<br/>detect_stiffness"}
-    B -- no --> C{"what matters?"}
-    C -- "a good default" --> D["solve_ivp<br/>(Dormand-Prince)"]
-    C -- "many digits" --> E["gragg_bulirsch_stoer"]
-    C -- "energy over long times" --> F["velocity_verlet<br/>yoshida4, pefrl"]
-    C -- "second order y''" --> G["rk_nystrom<br/>stormer_cowell"]
-    B -- yes --> H{"how nonlinear?"}
-    H -- "mildly" --> I["rosenbrock<br/>one solve per step"]
-    H -- "fully" --> J["radau_iia, bdf<br/>tr_bdf2, esdirk"]
-    H -- "stiff linear part only" --> K["etd_rk4<br/>exponential_rosenbrock"]
-```
-
-| Problem | Method |
+| Attribute | Meaning |
 | --- | --- |
-| non-stiff, general | `solve_ivp` (Dormand-Prince), `dormand_prince`, `cash_karp`, `rkf45` |
-| non-stiff, cheap right-hand side, low accuracy | `bogacki_shampine` |
-| stiff | `radau_iia` (L-stable, order 5), `bdf`, `tr_bdf2`, `esdirk` |
-| very stiff, mildly nonlinear | `rosenbrock` (one linear solve per step, no Newton) |
-| Hamiltonian / long-time energy behaviour | `velocity_verlet`, `yoshida4`, `pefrl` |
-| second-order `y'' = f(t, y)` | `rk_nystrom`, `stormer_cowell` |
-| stiff *linear* part plus a mild nonlinearity | `etd_rk4`, `exponential_rosenbrock` |
-| smooth and you want many digits | `gragg_bulirsch_stoer` |
-| a fixed step and a specific tableau | `rk_general(f, ..., A, b, c)` |
-| cheap right-hand side, high order, dense history | `adams_bashforth`, `variable_step_adams` |
-| you need to stop at a condition | `solve_ivp_events` |
-
-### Stiffness, demonstrated
-
-An explicit method on a stiff problem does not merely slow down — it is
-unstable unless the step is smaller than the fastest timescale, however smooth
-the solution looks:
+| `t` | Stored times, shape `(samples,)` |
+| `y` | Stored states, shape `(samples, state_dimension)` |
+| `y_final` | Actual last integrated state, shape `(state_dimension,)` |
+| `success`, `message` | Completion status and explanation |
+| `n_steps` | Step attempts reported by the method |
+| `n_accepted`, `n_rejected` | Accepted and rejected step counts |
+| `n_rhs_evals` | Counted evaluations of the right-hand side |
+| `checkpoint` | Restart data, where the solver supports it |
 
 ```pycon
->>> stiff = lambda t, y: [-1000*(y[0] - np.cos(t)) - np.sin(t)]
->>> explicit = qd.rk4(stiff, (0, 1), [1.0], n=100)         # h = 0.01, needs ~0.0028
->>> bool(np.max(np.abs(explicit.y)) > 1e3)                 # blows up
+>>> sol.y.shape == (len(sol.t), 1)
 True
->>> implicit = qd.radau_iia(stiff, (0, 1), [1.0], n=100)   # same step, stable
->>> abs(float(implicit.y[-1, 0]) - float(np.cos(1.0))) < 1e-3
+>>> sol.n_accepted > 0, sol.n_rejected >= 0, sol.n_rhs_evals > 0
+(True, True, True)
+>>> oscillator = qd.solve_ivp(lambda t, y: [y[1], -y[0]],
+...                           (0.0, 1.0), [1.0, 0.0], rtol=1e-9)
+>>> oscillator.y.shape[1]
+2
+>>> np.allclose(oscillator.y_final, [np.cos(1.0), -np.sin(1.0)], atol=1e-7)
 True
 
 ```
 
-That is the whole argument for implicit methods: the cost per step is higher,
-but the step is chosen by the accuracy you want, not by the stability limit.
+The oscillator stores position in column zero and velocity in column one
+because that is the ordering chosen in `y0`. The solver attaches no physical
+meaning or units to those columns.
 
-<figure markdown="span">
-  ![An explicit method above its stability limit against an implicit one](../assets/figures/ode-stiffness.svg#only-light)
-  ![An explicit method above its stability limit against an implicit one](../assets/figures/ode-stiffness-dark.svg#only-dark)
-  <figcaption>The solution is a smooth cosine; the equation also contains a timescale a thousand times faster. RK4 at a step of 0.01 does not merely lose accuracy — it grows by forty orders of magnitude — while Radau IIA takes the same step and stays on the solution.</figcaption>
-</figure>
+## Choose an integration method
 
-### Convergence orders
+| Need | Starting choice | What to check |
+| --- | --- | --- |
+| General nonstiff simulation | `solve_ivp` / `dormand_prince` | Tolerance refinement and rejected steps |
+| Prescribed uniform steps | `rk4` | Accuracy when `n` is doubled |
+| Stiff relaxation | `bdf_adaptive`, `radau_adaptive` | Newton diagnostics and Jacobian quality |
+| Fixed-step implicit comparison | `backward_euler`, `bdf`, `radau_iia` | Step and nonlinear-solve error |
+| Separable Hamiltonian dynamics | `leapfrog`, `velocity_verlet`, `yoshida4` | Energy behavior and phase error |
+| Smooth equations at tight tolerance | `gragg_bulirsch_stoer` | Smoothness and extrapolation cost |
+| Known stiff linear term | `etd_rk4`, exponential methods | Linear/nonlinear splitting |
+| Second-order position equation | `rk_nystrom`, `stormer_cowell` | Force signature and velocity output |
+| Conditions at both endpoints | Boundary value solvers | Boundary residual and spatial refinement |
 
-Each family converges at its stated order — halving the step divides the error
-by 2ᵖ:
+The dispatcher forwards method-specific arguments. In particular,
+`method="bdf"` and `method="radau"` select adaptive stiff integration when
+`n` is absent; supplying `n` selects their fixed-step forms. Calling
+`bdf_adaptive` or `radau_adaptive` directly makes that distinction explicit.
+An argument accepted by one solver is not automatically meaningful to another.
+
+## Separate step accuracy from work
+
+For a fixed-step method, `n` is the number of intervals. A full trajectory has
+`n + 1` samples, including the initial state. Different methods use different
+numbers of right-hand side evaluations per step, so equal `n` is not equal
+computational work.
 
 ```pycon
 >>> exact = float(np.exp(-1.0))
->>> for method, order in ((qd.euler, 1), (qd.ode.heun, 2), (qd.rk4, 4)):
-...     e1 = abs(float(method(lambda t, y: -y, (0, 1), [1.0], n=40).y[-1, 0]) - exact)
-...     e2 = abs(float(method(lambda t, y: -y, (0, 1), [1.0], n=80).y[-1, 0]) - exact)
-...     print(f"{method.__name__:6s} order {order}: error ratio {e1/e2:5.0f}")
-euler  order 1: error ratio     2
-heun   order 2: error ratio     4
-rk4    order 4: error ratio    16
+>>> for method in (qd.euler, qd.ode.heun, qd.rk4):
+...     coarse = method(lambda t, y: -y, (0, 1), [1.0], n=20)
+...     fine = method(lambda t, y: -y, (0, 1), [1.0], n=40)
+...     error1 = abs(float(coarse.y_final[0]) - exact)
+...     error2 = abs(float(fine.y_final[0]) - exact)
+...     print(method.__name__, round(error1 / error2))
+euler 2
+heun 4
+rk4 16
 
 ```
 
-<figure markdown="span">
-  ![Measured convergence orders of four fixed-step methods](../assets/figures/ode-convergence-orders.svg#only-light)
-  ![Measured convergence orders of four fixed-step methods](../assets/figures/ode-convergence-orders-dark.svg#only-dark)
-  <figcaption>The slope of each line is the order of the method, measured on y′ = −y. An implementation that is subtly one order low passes a value check and fails this one, which is why the test suite measures slopes rather than values.</figcaption>
-</figure>
-
-### Stability regions
-
-Convergence order says how accurate a step is; stability says whether the step
-is allowed at all. For a stiff problem only the second question matters, and
-the answer is a region in the complex plane: the method is stable at step `h`
-when `hλ` lies inside it for every eigenvalue `λ` of the Jacobian.
+These ratios approach `2**p` for a method of order `p` when truncation error
+dominates. A plateau at very small steps can indicate floating-point error;
+poor ratios at coarse steps can mean the asymptotic regime has not been reached.
+Discontinuities, unstable steps, or inaccurate inner solves can also prevent
+the expected order from appearing.
 
 <figure markdown="span">
-  ![Regions of absolute stability, measured by taking one step](../assets/figures/ode-stability-regions.svg#only-light)
-  ![Regions of absolute stability, measured by taking one step](../assets/figures/ode-stability-regions-dark.svg#only-dark)
-  <figcaption>Each region is where one step of the method leaves |y| no larger than it found it, computed by running the method on the complex test equation written as a real 2×2 system. An explicit method's region is bounded — that bound is the step limit; the implicit methods cover the whole left half plane and, in backward Euler's case, more.</figcaption>
+  ![Decay trajectories and endpoint error against counted right-hand side evaluations](../assets/figures/ode-step-budget.svg#only-light)
+  ![Decay trajectories and endpoint error against counted right-hand side evaluations](../assets/figures/ode-step-budget-dark.svg#only-dark)
+  <figcaption>Euler, Heun, and RK4 solve the same decay equation. The work plot uses counted right-hand side evaluations so the comparison includes each method's stage cost. Use the error curves to choose a budget; one benchmark does not establish a universal ranking.</figcaption>
 </figure>
 
-## Symplectic integrators
+## Tolerances and dense output
 
-## Symplectic integrators
+Adaptive methods estimate local error and choose internal steps accordingly.
+`atol` sets the absolute scale near zero; `rtol` scales the permitted error with
+the state magnitude. A small component can require a much smaller absolute
+tolerance than a large component. Adaptive BDF and Radau accept componentwise
+`atol` and `rtol` arrays.
 
-For a Hamiltonian system, what matters over long times is not the error at
-each step but whether the energy drifts. A symplectic method keeps it bounded
-forever; a general-purpose method of much higher order does not:
+A tolerance is a controller setting, not a certified bound on the final error.
+Repeat an important solve with tighter tolerances and compare the quantity
+that matters: an endpoint, an integral, a peak, or an event time.
 
 ```pycon
->>> dHdq = lambda q: q               # harmonic oscillator, H = (p² + q²)/2
->>> dHdp = lambda p: p
->>> sym = qd.ode.leapfrog(dHdq, dHdp, (0, 200), [1.0], [0.0], n=20000)
->>> q, p = sym.y[:, 0], sym.y[:, 1]     # position and momentum in the columns
->>> energy = 0.5 * (p**2 + q**2)
->>> float(np.max(np.abs(energy - 0.5))) < 1e-4      # bounded, not growing
-True
-
-Over 200 time units — some thirty oscillations — the energy stays within
-`1.2e-5` of its initial value and does not trend. `energy_drift` reports the
-relative figure directly:
-
->>> qd.ode.energy_drift(sym, lambda y: 0.5 * (y[1]**2 + y[0]**2)) < 1e-4
+>>> query = np.linspace(0.0, 1.0, 11)
+>>> evaluated = sol(query)
+>>> evaluated.shape, sol(0.5).shape
+((11, 1), (1,))
+>>> float(np.max(np.abs(evaluated[:, 0] - np.exp(-2 * query)))) < 1e-7
 True
 
 ```
 
-`velocity_verlet` and `stormer_verlet` take a force and are the natural
-interface for molecular dynamics; `ruth3`, `forest_ruth`, `yoshida4`, and
-`pefrl` are higher-order compositions. `energy_drift` measures the drift for
-any solution.
+Calling a solution interpolates between recorded states. Where recorded slopes
+are available, the generic result uses cubic Hermite interpolation; otherwise
+it falls back to linear interpolation. Some solvers supply a dedicated
+interpolant. Interpolation error is additional to integration error: cubic
+interpolation does not preserve arbitrary high solver order. Querying more
+points does not make the trajectory more accurate. Restrict queries to the
+integrated interval; extrapolation is not an accuracy guarantee.
 
-<figure markdown="span">
-  ![Energy error over 200 time units, symplectic against general purpose](../assets/figures/ode-symplectic-energy.svg#only-light)
-  ![Energy error over 200 time units, symplectic against general purpose](../assets/figures/ode-symplectic-energy-dark.svg#only-dark)
-  <figcaption>A symplectic integrator's energy error oscillates within a band and stays there; RK4's grows steadily despite being fourth order, and forward Euler's grows without bound. Over a long integration the bound matters more than the order.</figcaption>
-</figure>
+## Stiff problems and Jacobians
 
-## Events
-
-`solve_ivp_events` locates the roots of `g(t, y)` on the dense output, so the
-event time is as accurate as the solution itself, not as accurate as the step
-size. `terminal=True` stops the integration there:
+A stiff equation can have a smooth visible solution and fast perturbations
+that force explicit methods to use tiny steps. For example,
+`y' = -1000*(y - cos(t)) - sin(t)` has the solution `cos(t)` from `y(0)=1`,
+but deviations from that solution decay on a timescale of `0.001`.
 
 ```pycon
->>> throw = lambda t, y: [y[1], -9.81]               # height and velocity
->>> hits_ground = lambda t, y: y[0]
->>> sol, t_events, y_events = qd.solve_ivp_events(
-...     throw, (0, 10), [5.0, 10.0], events=hits_ground, terminal=True, rtol=1e-10)
->>> landing = (10 + np.sqrt(100 + 2 * 9.81 * 5)) / 9.81
->>> abs(float(t_events[0][0]) - float(landing)) < 1e-8
+>>> from quadrivium.ode import radau_adaptive
+>>> stiff_rhs = lambda t, y: -1000 * (y - np.cos(t)) - np.sin(t)
+>>> stiff_sol = radau_adaptive(stiff_rhs, (0, 1), [1.0],
+...                            jac=np.array([[-1000.0]]), rtol=1e-7,
+...                            atol=1e-9, final_only=True)
+>>> stiff_sol.success
 True
->>> abs(float(sol.t[-1]) - float(landing)) < 1e-8    # integration stopped there
+>>> abs(float(stiff_sol.y_final[0]) - float(np.cos(1.0))) < 1e-5
 True
-
-```
-
-<figure markdown="span">
-  ![Event location on the dense output rather than on the step grid](../assets/figures/ode-events.svg#only-light)
-  ![Event location on the dense output rather than on the step grid](../assets/figures/ode-events-dark.svg#only-dark)
-  <figcaption>The integrator took five steps over the whole flight, none of them near the landing. The event time still comes out right to 1e-13, because the root is found on the interpolant rather than on the stored states.</figcaption>
-</figure>
-
-`direction=` on `find_events` filters to upward or downward crossings only,
-which is how you catch "the ball landing" without also catching the launch.
-
-## Boundary value problems
-
-A BVP fixes conditions at both ends, so it cannot be marched. Three families
-solve it:
-
-| Approach | Function | Note |
-| --- | --- | --- |
-| shooting | `shooting`, `multiple_shooting`, `linear_shooting` | reduces to a root-find on the missing initial slope |
-| finite differences | `finite_difference_bvp`, `nonlinear_fd_bvp` | one linear (or Newton) solve on the whole grid |
-| weighted residuals | `collocation_bvp`, `galerkin_bvp` | spectral accuracy on smooth problems |
-
-```pycon
->>> # y'' = 6x with y(0) = 0, y(1) = 1: exact solution y = x³
->>> bvp = qd.ode.finite_difference_bvp(lambda x: 0.0, lambda x: 0.0,
-...                                    lambda x: 6*x, (0, 1), 0.0, 1.0, n=100)
->>> float(np.max(np.abs(bvp.y[:, 0] - bvp.t**3))) < 1e-13
-True
-
-```
-
-<figure markdown="span">
-  ![A boundary value problem by finite differences, and its order](../assets/figures/ode-bvp-solution.svg#only-light)
-  ![A boundary value problem by finite differences, and its order](../assets/figures/ode-bvp-solution-dark.svg#only-dark)
-  <figcaption>Conditions at both ends make this a linear system over the whole grid rather than a march in time. The measured order is 2, which is what the central difference in the interior promises.</figcaption>
-</figure>
-
-`multiple_shooting` splits the interval into segments and matches them
-simultaneously, which is what makes shooting work on a problem where a single
-trajectory would overflow before reaching the far end.
-
-`sturm_liouville` solves the eigenvalue problem `-(p y')' + q y = λ w y`,
-returning the eigenvalues and eigenfunctions — the discrete spectrum that
-separation of variables produces.
-
-<figure markdown="span">
-  ![Sturm-Liouville eigenfunctions and the error in their eigenvalues](../assets/figures/ode-bvp-eigenfunctions.svg#only-light)
-  ![Sturm-Liouville eigenfunctions and the error in their eigenvalues](../assets/figures/ode-bvp-eigenfunctions-dark.svg#only-dark)
-  <figcaption>Separation of variables produces an eigenvalue problem, and discretizing it produces a matrix one. The low modes are resolved to five digits on 200 points; the high ones, which oscillate on the scale of the grid, are not — the usual bargain in a discrete spectrum.</figcaption>
-</figure>
-
-## Beyond ODEs
-
-**Differential-algebraic equations.** `dae_index1_bdf` integrates
-`y' = f(t, y, z)`, `0 = g(t, y, z)` — a differential part coupled to a
-constraint. `mass_matrix_ode` handles `M y' = f(t, y)` with `M` singular,
-which is the same problem in another form.
-
-**Delay equations.** `dde_method_of_steps` integrates `y'(t) = f(t, y(t),
-y(t−τ))` by stepping one delay interval at a time, using the previous
-interval's dense output as history.
-
-```pycon
->>> hist = lambda t: np.array([1.0])
->>> sol = qd.dde_method_of_steps(lambda t, y, yd: -yd[0], hist, [1.0], (0, 4), n=400)
->>> sol.y.shape[1], bool(np.all(np.isfinite(sol.y)))
+>>> stiff_sol.n_jac_evals, stiff_sol.n_linear_solves > 0
 (1, True)
 
 ```
 
-**Extrapolation.** `gragg_bulirsch_stoer` combines modified midpoint steps at
-several substep counts and extrapolates, choosing its own order as it goes. On
-a smooth problem it reaches accuracies a fixed-order method would need
-enormously many steps for:
+The Jacobian is the derivative of the right-hand side with respect to the
+state. A constant dense array avoids repeated Jacobian evaluations. Adaptive
+stiff solvers also accept callable Jacobians, sparse matrices,
+`LinearOperator` objects, and `BandedJacobian` storage. Structured inputs take
+an iterative linear-solve path; they do not become dense matrices simply
+because the time integrator is implicit.
+
+Inspect `n_jac_evals`, `n_factorizations`, `n_linear_solves`, and
+`n_newton_failures` when diagnosing cost. Rejections can arise from local
+error or failed nonlinear iterations. Check signs and scaling in an analytic
+Jacobian before interpreting repeated failures as evidence that the equation
+itself is difficult. `detect_stiffness` and `stiffness_ratio` provide local
+Jacobian-based indicators; they do not certify behavior over an entire run.
+
+## Retain only the output you need
+
+The integration grid and the requested output grid serve different purposes.
+Use output controls to avoid keeping an unnecessary trajectory:
 
 ```pycon
->>> gbs = qd.gragg_bulirsch_stoer(lambda t, y: -y, (0, 1), [1.0], rtol=1e-12)
->>> abs(float(gbs.y[-1, 0]) - exact) < 1e-11
+>>> selected = qd.solve_ivp(rhs, (0, 1), [1.0], save_at=[0.2, 0.6])
+>>> selected.t.tolist()
+[0.2, 0.6]
+>>> selected.checkpoint.t
+1.0
+>>> abs(float(selected.y_final[0]) - float(np.exp(-2))) < 1e-6
+True
+>>> compact = qd.rk4(rhs, (0, 1), [1.0], n=100, final_only=True)
+>>> compact.y.shape
+(1, 1)
+
+```
+
+`save_every=k` retains every kth accepted state and the endpoint.
+`save_at` requests ordered times inside the integration interval.
+`final_only=True` retains a single state. Output selection occurs during
+integration, so discarded states do not accumulate in a hidden full history.
+These policies have validation rules; for example, `final_only` and `save_at`
+cannot be combined.
+
+A `callback(t, y)` receives an independent state copy. Returning `True` stops
+the integration at that state; inspect the status and checkpoint time to
+distinguish such a stop from reaching `t_span[1]`. The callback also sees the
+initial state. Sparse retention reduces what is available for later dense
+interpolation. See [scientific workflows](workflows.md) for restart examples.
+
+## Detect events
+
+An event is a scalar function whose zero identifies a condition of interest.
+The following ball reaches the ground when its height changes sign:
+
+```pycon
+>>> throw = lambda t, y: [y[1], -9.81]
+>>> ground = lambda t, y: y[0]
+>>> flight, times, states = qd.solve_ivp_events(
+...     throw, (0, 10), [5.0, 10.0], events=ground, terminal=True, rtol=1e-9)
+>>> landing = float((10 + np.sqrt(100 + 2 * 9.81 * 5)) / 9.81)
+>>> abs(float(times[0][0]) - landing) < 1e-7
+True
+>>> abs(float(states[0][0, 0])) < 1e-7
 True
 
 ```
 
-`richardson_ode` applies the same idea to any fixed-step method of known
-order.
+The event interface returns the solution and lists of event-time and
+event-state arrays. Root refinement uses the solution interpolant. Therefore,
+a small root-search tolerance cannot correct an inaccurate integrated path.
+`find_events` searches an existing solution and accepts `direction=1`, `-1`,
+or `0` for increasing, decreasing, or either crossing.
 
-<figure markdown="span">
-  ![How an adaptive integrator spends its steps](../assets/figures/ode-adaptive-steps.svg#only-light)
-  ![How an adaptive integrator spends its steps](../assets/figures/ode-adaptive-steps-dark.svg#only-dark)
-  <figcaption>Van der Pol at μ = 12 alternates slow stretches with fast switches. The step size, which is `np.diff(sol.t)`, falls by two orders of magnitude at each switch and recovers between them: that is what the error estimate buys.</figcaption>
-</figure>
+Sign-change detection can miss tangential roots or several crossings inside
+one step. Keep enough temporal resolution for the event timescale, and avoid
+thinning an existing trajectory before searching it for events.
 
-## Pitfalls
+## Geometric and second-order integration
 
-- **`rtol` and `atol` control the local error per step, not the global error.**
-  Errors accumulate; over a long integration the final error can be much
-  larger than the tolerance. Halve the tolerance and compare.
-- **A fixed-step explicit method on a stiff problem produces garbage, not a
-  slow answer.** Check `detect_stiffness` when a solution blows up.
-- **A symplectic method must be run at a fixed step.** Adapting the step
-  destroys the property that keeps the energy bounded.
-- **Multistep methods need starting values.** They are bootstrapped with a
-  one-step method internally, and the starting error sets a floor on the whole
-  integration.
-- **Dense output between widely spaced steps is only as good as the
-  interpolant.** For a solution with structure between steps, ask for smaller
-  steps rather than more query points.
-- **Event location finds sign changes.** An event that touches zero without
-  crossing is missed.
+For a separable Hamiltonian, `leapfrog(dHdq, dHdp, t_span, q0, p0, n=...)`
+stores position followed by momentum. Fixed-step symplectic methods often
+have bounded, oscillatory energy error over useful long intervals. They do
+not conserve the exact energy in every problem or eliminate phase error.
 
-## See also
+```pycon
+>>> from quadrivium.ode import leapfrog, energy_drift
+>>> sym = leapfrog(lambda q: q, lambda p: p, (0, 20), [1.0], [0.0], n=2000)
+>>> sym.y.shape
+(2001, 2)
+>>> energy_drift(sym, lambda y: 0.5 * (y[0]**2 + y[1]**2)) < 1e-4
+True
 
-- [`ode` API reference](../api/ode.md) — every signature.
-- [PDE guide](pde.md) — method of lines, where a PDE becomes a large ODE system.
-- [Root finding guide](rootfind.md) — the nonlinear solves inside every
-  implicit step.
-- [Stochastic guide](stochastic.md) — SDE integrators, the same idea with noise.
-- `examples/03_differential_equations.py` — a runnable tour.
+```
+
+`velocity_verlet` takes a force law and stores position and velocity in the
+state. `rk_nystrom` and `stormer_cowell` instead expose a separate `velocity`
+trajectory. Check the individual signature: their acceleration callbacks have
+different arguments. Arbitrarily adapting a symplectic method's step generally
+changes its geometric properties.
+
+## Boundary values, constraints, and delays
+
+A boundary value problem prescribes conditions at both ends of an interval.
+For `y'' = p(x)y' + q(x)y + r(x)`, the finite-difference solver uses a whole-grid
+linear system:
+
+```pycon
+>>> bvp = qd.ode.finite_difference_bvp(lambda x: 0.0, lambda x: 0.0,
+...     lambda x: 6*x, (0, 1), 0.0, 1.0, n=40)
+>>> float(np.max(np.abs(bvp.y[:, 0] - bvp.t**3))) < 1e-12
+True
+
+```
+
+Here the cubic is reproduced particularly accurately by the discrete equation;
+that does not make finite differences exact for general smooth functions.
+`shooting` adjusts missing initial data with a root solve; `multiple_shooting`
+introduces intermediate states to improve conditioning. `collocation_bvp` and
+`galerkin_bvp` use alternative whole-interval approximations. Check boundary
+residuals and refine the grid or basis independently of nonlinear tolerances.
+
+`dae_index1_bdf` couples differential states with algebraic constraints;
+`mass_matrix_ode` handles a mass-matrix formulation. These interfaces target
+their documented equation forms and are not general high-index DAE solvers.
+`dde_method_of_steps` requires a history function before the initial time and
+a list of delays. Its callback receives the delayed states separately from the
+current state. Discontinuities inherited from the history can reduce order.
+
+## Differentiate a trajectory
+
+`solve_ivp_sensitivities` integrates variational equations for
+`f(t, y, parameters)`. Parameter sensitivities have shape
+`(stored_times, state_dimension, parameter_count)`; `sensitivity_final` keeps
+the actual endpoint derivative even when the endpoint is not stored.
+`initial=True` additionally computes derivatives with respect to initial
+state components. Supply `initial_sensitivity` when `y0` depends on parameters.
+
+`adjoint_sensitivity` computes the gradient of a terminal scalar objective
+using stored checkpoints and replayed trajectory segments. Replay requires a
+deterministic model. Both approaches differentiate the continuous equations;
+they do not differentiate adaptive accept/reject decisions. Validate gradients
+against perturbation experiments before using them in a calibration problem.
+
+## Continue with related tools
+
+- [Scientific workflows](workflows.md): storage policies, restart, calibration, and sensitivities.
+- [PDEs](pde.md): spatial discretization that produces a large ODE system.
+- [Stochastic methods](stochastic.md): stochastic integration and its different callback order.
+- [Root finding](rootfind.md): nonlinear equations behind implicit and boundary value methods.
+- [ODE API](../api/ode.md): individual method signatures and assumptions.

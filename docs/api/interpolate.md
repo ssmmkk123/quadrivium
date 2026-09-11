@@ -7,18 +7,20 @@ Polynomial, spline, rational, and multivariate interpolation.
 
 For worked examples and guidance on choosing between these routines, see the [interpolation guide](../guides/interpolate.md).
 
-**60 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**65 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.interpolate import lagrange
-import quadrivium as qd            # qd.lagrange, if re-exported
+from quadrivium import interpolate
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
 - [`multivariate`](#multivariate) &mdash; interpolation in two or more dimensions (12)
 - [`polynomial`](#polynomial) &mdash; polynomial interpolation (15)
 - [`rational`](#rational) &mdash; rational and trigonometric interpolation (7)
+- [`scattered`](#scattered) &mdash; automatic planar triangulation and memory-bounded local rbf interpolation (5)
 - [`spline`](#spline) &mdash; piecewise polynomial interpolation: splines in their several flavours (26)
 
 ## `multivariate`
@@ -27,20 +29,146 @@ import quadrivium as qd            # qd.lagrange, if re-exported
 
 Interpolation in two or more dimensions.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `bilinear` | `(x, y, Z)` | Bilinear interpolation on a rectangular grid; ``Z`` has shape ``(len(x), len(y))``. |
-| `bicubic` | `(x, y, Z)` | Bicubic interpolation by tensor-product cubic splines. |
-| `nearest_neighbor` | `(points, values)` | Nearest-neighbour interpolation for scattered data. |
-| `regular_grid_interpolator` | `(grids, V, method: str = 'linear')` | N-dimensional interpolation on a regular grid (linear or nearest). |
-| `tensor_product_spline` | `(x, y, Z, spline=natural_cubic_spline)` | Tensor-product spline: interpolate along rows, then across the results. |
-| `shepard` | `(points, values, power: float = 2.0, tol: float = 1e-12)` | Shepard's method: global inverse-distance weighting. |
-| `inverse_distance_weighting` | `(points, values, power: float = 2.0, k=None, tol: float = 1e-12)` | Inverse distance weighting; ``k`` restricts to the ``k`` nearest points. |
-| `rbf_interpolation` | `(points, values, kernel: str = 'multiquadric', epsilon: float = 1.0, smooth: float = 0.0)` | Radial basis function interpolation for scattered data in any dimension. |
-| `kriging` | `(points, values, sill: float = 1.0, range_: float = 1.0, nugget: float = 0.0, model: str = 'spherical')` | Ordinary kriging with a spherical, exponential or gaussian variogram. |
-| `barycentric_triangle` | `(p, a, b, c)` | Barycentric coordinates of ``p`` with respect to triangle ``(a, b, c)``. |
-| `triangular_interpolation` | `(vertices, values)` | Linear interpolation over a single triangle from its vertex values. |
-| `trilinear` | `(x, y, z, V)` | Trilinear interpolation on a 3-D rectangular grid. |
+| [`bilinear`](#api-bilinear) | function | Bilinear interpolation on a rectangular grid; ``Z`` has shape ``(len(x), len(y))``. |
+| [`bicubic`](#api-bicubic) | function | Bicubic interpolation by tensor-product cubic splines. |
+| [`nearest_neighbor`](#api-nearest_neighbor) | function | Nearest-neighbour interpolation for scattered data. |
+| [`regular_grid_interpolator`](#api-regular_grid_interpolator) | function | N-dimensional interpolation on a regular grid (linear or nearest). |
+| [`tensor_product_spline`](#api-tensor_product_spline) | function | Tensor-product spline: interpolate along rows, then across the results. |
+| [`shepard`](#api-shepard) | function | Shepard's method: global inverse-distance weighting. |
+| [`inverse_distance_weighting`](#api-inverse_distance_weighting) | function | Inverse distance weighting; ``k`` restricts to the ``k`` nearest points. |
+| [`rbf_interpolation`](#api-rbf_interpolation) | function | Radial basis function interpolation for scattered data in any dimension. |
+| [`kriging`](#api-kriging) | function | Ordinary kriging with a spherical, exponential or gaussian variogram. |
+| [`barycentric_triangle`](#api-barycentric_triangle) | function | Barycentric coordinates of ``p`` with respect to triangle ``(a, b, c)``. |
+| [`triangular_interpolation`](#api-triangular_interpolation) | function | Linear interpolation over a single triangle from its vertex values. |
+| [`trilinear`](#api-trilinear) | function | Trilinear interpolation on a 3-D rectangular grid. |
+
+### `bilinear` {#api-bilinear}
+
+```python
+bilinear(x, y, Z)
+```
+
+Bilinear interpolation on a rectangular grid; `Z` has shape `(len(x), len(y))`.
+
+### `bicubic` {#api-bicubic}
+
+```python
+bicubic(x, y, Z)
+```
+
+Bicubic interpolation by tensor-product cubic splines.
+
+### `nearest_neighbor` {#api-nearest_neighbor}
+
+```python
+nearest_neighbor(points, values)
+```
+
+Nearest-neighbour interpolation for scattered data.
+
+### `regular_grid_interpolator` {#api-regular_grid_interpolator}
+
+```python
+regular_grid_interpolator(grids, V, method: str = 'linear')
+```
+
+N-dimensional interpolation on a regular grid (linear or nearest).
+
+### `tensor_product_spline` {#api-tensor_product_spline}
+
+```python
+tensor_product_spline(x, y, Z, spline=natural_cubic_spline)
+```
+
+Tensor-product spline: interpolate along rows, then across the results.
+
+### `shepard` {#api-shepard}
+
+```python
+shepard(points, values, power: float = 2.0, tol: float = 1e-12)
+```
+
+Shepard's method: global inverse-distance weighting.
+
+### `inverse_distance_weighting` {#api-inverse_distance_weighting}
+
+```python
+inverse_distance_weighting(
+    points,
+    values,
+    power: float = 2.0,
+    k=None,
+    tol: float = 1e-12,
+)
+```
+
+Inverse distance weighting; `k` restricts to the `k` nearest points.
+
+### `rbf_interpolation` {#api-rbf_interpolation}
+
+```python
+rbf_interpolation(
+    points,
+    values,
+    kernel: str = 'multiquadric',
+    epsilon: float = 1.0,
+    smooth: float = 0.0,
+    neighbors=None,
+    degree=None,
+)
+```
+
+Radial basis function interpolation for scattered data in any dimension.
+
+Available kernels: multiquadric, inverse_multiquadric, gaussian, linear,
+cubic, quintic, thin_plate.
+
+### `kriging` {#api-kriging}
+
+```python
+kriging(
+    points,
+    values,
+    sill: float = 1.0,
+    range_: float = 1.0,
+    nugget: float = 0.0,
+    model: str = 'spherical',
+)
+```
+
+Ordinary kriging with a spherical, exponential or gaussian variogram.
+
+Returns a callable giving `(estimate, variance)`.
+
+### `barycentric_triangle` {#api-barycentric_triangle}
+
+```python
+barycentric_triangle(p, a, b, c)
+```
+
+Barycentric coordinates of `p` with respect to triangle `(a, b, c)`.
+
+### `triangular_interpolation` {#api-triangular_interpolation}
+
+```python
+triangular_interpolation(vertices, values)
+```
+
+Linear interpolation over a single triangle from its vertex values.
+
+### `trilinear` {#api-trilinear}
+
+```python
+trilinear(x, y, z, V)
+```
+
+Trilinear interpolation on a 3-D rectangular grid.
+
+The returned callable takes separate coordinates `f(xi, yi, zi)`, matching
+`bilinear`.  Use `regular_grid_interpolator` directly if you
+would rather pass points as tuples.
 
 ## `polynomial`
 
@@ -50,23 +178,166 @@ Polynomial interpolation.
 
 All constructors return callables that evaluate the interpolant, so they can be passed straight to the quadrature and ODE routines.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `lagrange` | `(x, y)` | Lagrange form of the interpolating polynomial. |
-| `lagrange_coefficients` | `(x, y)` | Monomial coefficients (highest degree first) of the Lagrange interpolant. |
-| `newton_divided_differences` | `(x, y)` | Newton's divided difference form; O(n) per evaluation after setup. |
-| `divided_difference_table` | `(x, y)` | Full divided difference table; the top row holds the Newton coefficients. |
-| `newton_forward` | `(x, y)` | Newton's forward difference formula for equally spaced nodes. |
-| `newton_backward` | `(x, y)` | Newton's backward difference formula for equally spaced nodes. |
-| `neville` | `(x, y, t)` | Neville's tableau: evaluate the interpolant at ``t`` without coefficients. |
-| `barycentric` | `(x, y, weights=None)` | Second-form barycentric interpolation: O(n) per point and stable. |
-| `barycentric_weights` | `(x)` | Barycentric weights ``w_j = 1 / prod_{k != j}(x_j - x_k)``. |
-| `hermite` | `(x, y, dy)` | Hermite interpolation matching values and first derivatives. |
-| `chebyshev_nodes` | `(n: int, a: float = -1.0, b: float = 1.0, kind: int = 1)` | Chebyshev nodes on ``[a, b]``. |
-| `chebyshev_interpolation` | `(f, n: int, a: float = -1.0, b: float = 1.0, kind: int = 2)` | Interpolate ``f`` at Chebyshev nodes -- near-optimal, no Runge phenomenon. |
-| `vandermonde_interpolation` | `(x, y)` | Solve the Vandermonde system for the monomial coefficients. |
-| `runge_demo_error` | `(n: int, nodes: str = 'equispaced')` | Max error interpolating the Runge function ``1/(1+25x^2)`` on ``[-1,1]``. |
-| `interpolation_error_bound` | `(x, max_derivative: float, t=None)` | Bound ``\|f(t) - p(t)\| <= max\|f^(n)\| / n! * prod\|t - x_i\|``. |
+| [`lagrange`](#api-lagrange) | function | Lagrange form of the interpolating polynomial. |
+| [`lagrange_coefficients`](#api-lagrange_coefficients) | function | Monomial coefficients (highest degree first) of the Lagrange interpolant. |
+| [`newton_divided_differences`](#api-newton_divided_differences) | function | Newton's divided difference form; O(n) per evaluation after setup. |
+| [`divided_difference_table`](#api-divided_difference_table) | function | Full divided difference table; the top row holds the Newton coefficients. |
+| [`newton_forward`](#api-newton_forward) | function | Newton's forward difference formula for equally spaced nodes. |
+| [`newton_backward`](#api-newton_backward) | function | Newton's backward difference formula for equally spaced nodes. |
+| [`neville`](#api-neville) | function | Neville's tableau: evaluate the interpolant at ``t`` without coefficients. |
+| [`barycentric`](#api-barycentric) | function | Second-form barycentric interpolation: O(n) per point and stable. |
+| [`barycentric_weights`](#api-barycentric_weights) | function | Barycentric weights ``w_j = 1 / prod_{k != j}(x_j - x_k)``. |
+| [`hermite`](#api-hermite) | function | Hermite interpolation matching values and first derivatives. |
+| [`chebyshev_nodes`](#api-chebyshev_nodes) | function | Chebyshev nodes on ``[a, b]``. |
+| [`chebyshev_interpolation`](#api-chebyshev_interpolation) | function | Interpolate ``f`` at Chebyshev nodes -- near-optimal, no Runge phenomenon. |
+| [`vandermonde_interpolation`](#api-vandermonde_interpolation) | function | Solve the Vandermonde system for the monomial coefficients. |
+| [`runge_demo_error`](#api-runge_demo_error) | function | Max error interpolating the Runge function ``1/(1+25x^2)`` on ``[-1,1]``. |
+| [`interpolation_error_bound`](#api-interpolation_error_bound) | function | Bound ``\|f(t) - p(t)\| <= max\|f^(n)\| / n! * prod\|t - x_i\|``. |
+
+### `lagrange` {#api-lagrange}
+
+```python
+lagrange(x, y)
+```
+
+Lagrange form of the interpolating polynomial.
+
+O(n^2) per evaluation; use `barycentric` for repeated evaluation.
+
+### `lagrange_coefficients` {#api-lagrange_coefficients}
+
+```python
+lagrange_coefficients(x, y)
+```
+
+Monomial coefficients (highest degree first) of the Lagrange interpolant.
+
+### `newton_divided_differences` {#api-newton_divided_differences}
+
+```python
+newton_divided_differences(x, y)
+```
+
+Newton's divided difference form; O(n) per evaluation after setup.
+
+### `divided_difference_table` {#api-divided_difference_table}
+
+```python
+divided_difference_table(x, y)
+```
+
+Full divided difference table; the top row holds the Newton coefficients.
+
+### `newton_forward` {#api-newton_forward}
+
+```python
+newton_forward(x, y)
+```
+
+Newton's forward difference formula for equally spaced nodes.
+
+### `newton_backward` {#api-newton_backward}
+
+```python
+newton_backward(x, y)
+```
+
+Newton's backward difference formula for equally spaced nodes.
+
+### `neville` {#api-neville}
+
+```python
+neville(x, y, t)
+```
+
+Neville's tableau: evaluate the interpolant at `t` without coefficients.
+
+Returns `(value, table)`; the table's diagonal shows convergence in degree.
+
+### `barycentric` {#api-barycentric}
+
+```python
+barycentric(x, y, weights=None)
+```
+
+Second-form barycentric interpolation: O(n) per point and stable.
+
+### `barycentric_weights` {#api-barycentric_weights}
+
+```python
+barycentric_weights(x)
+```
+
+Barycentric weights `w_j = 1 / prod_{k != j}(x_j - x_k)`.
+
+The differences are divided by the interval's logarithmic capacity before
+the product is taken. Barycentric interpolation is invariant under a common
+factor on the weights, so this changes no result -- but the raw product
+runs like `capacity^n`, which reaches 1e117 for 400 Chebyshev nodes on
+`[-1, 1]` and overflows outright on `[0, 1]`, where every weight comes
+back `inf` and every interpolated value `nan`. Scaling makes the same
+problem behave the same way under any affine change of variable.
+
+### `hermite` {#api-hermite}
+
+```python
+hermite(x, y, dy)
+```
+
+Hermite interpolation matching values and first derivatives.
+
+Produces the degree `2n-1` osculating polynomial.
+
+### `chebyshev_nodes` {#api-chebyshev_nodes}
+
+```python
+chebyshev_nodes(n: int, a: float = -1.0, b: float = 1.0, kind: int = 1)
+```
+
+Chebyshev nodes on `[a, b]`.
+
+`kind=1` gives the roots of `T_n` (open); `kind=2` the extrema
+(Chebyshev-Lobatto, including both endpoints).
+
+### `chebyshev_interpolation` {#api-chebyshev_interpolation}
+
+```python
+chebyshev_interpolation(f, n: int, a: float = -1.0, b: float = 1.0, kind: int = 2)
+```
+
+Interpolate `f` at Chebyshev nodes -- near-optimal, no Runge phenomenon.
+
+### `vandermonde_interpolation` {#api-vandermonde_interpolation}
+
+```python
+vandermonde_interpolation(x, y)
+```
+
+Solve the Vandermonde system for the monomial coefficients.
+
+Included for completeness: the matrix is notoriously ill-conditioned, so
+prefer Newton or barycentric forms in practice.
+
+### `runge_demo_error` {#api-runge_demo_error}
+
+```python
+runge_demo_error(n: int, nodes: str = 'equispaced')
+```
+
+Max error interpolating the Runge function `1/(1+25x^2)` on `[-1,1]`.
+
+Illustrates why equispaced nodes diverge as `n` grows while Chebyshev
+nodes converge.
+
+### `interpolation_error_bound` {#api-interpolation_error_bound}
+
+```python
+interpolation_error_bound(x, max_derivative: float, t=None)
+```
+
+Bound `|f(t) - p(t)| <= max|f^(n)| / n! * prod|t - x_i|`.
 
 ## `rational`
 
@@ -76,15 +347,186 @@ Rational and trigonometric interpolation.
 
 Rational forms handle poles and asymptotes that polynomials cannot represent; trigonometric interpolation is the natural choice for periodic data.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `thiele` | `(x, y)` | Thiele's continued fraction interpolation via inverse differences. |
-| `rational_interpolation` | `(x, y, num_degree=None)` | Linearized rational interpolation ``P(t)/Q(t)`` solved as a linear system. |
-| `bulirsch_stoer_rational` | `(x, y, t)` | Bulirsch-Stoer rational extrapolation to ``t`` (the classic BS tableau). |
-| `floater_hormann` | `(x, y, d: int = 3)` | Floater-Hormann barycentric rational interpolation. |
-| `trigonometric_interpolation` | `(x, y, period=None)` | Trigonometric interpolation of periodic data on equispaced nodes. |
-| `fourier_interpolation` | `(y, factor: int = 2)` | Band-limited resampling: zero-pad the spectrum to refine a periodic signal. |
-| `continued_fraction_eval` | `(a, x_nodes, t)` | Evaluate a Thiele continued fraction with coefficients ``a``. |
+| [`thiele`](#api-thiele) | function | Thiele's continued fraction interpolation via inverse differences. |
+| [`rational_interpolation`](#api-rational_interpolation) | function | Linearized rational interpolation ``P(t)/Q(t)`` solved as a linear system. |
+| [`bulirsch_stoer_rational`](#api-bulirsch_stoer_rational) | function | Bulirsch-Stoer rational extrapolation to ``t`` (the classic BS tableau). |
+| [`floater_hormann`](#api-floater_hormann) | function | Floater-Hormann barycentric rational interpolation. |
+| [`trigonometric_interpolation`](#api-trigonometric_interpolation) | function | Trigonometric interpolation of periodic data on equispaced nodes. |
+| [`fourier_interpolation`](#api-fourier_interpolation) | function | Band-limited resampling: zero-pad the spectrum to refine a periodic signal. |
+| [`continued_fraction_eval`](#api-continued_fraction_eval) | function | Evaluate a Thiele continued fraction with coefficients ``a``. |
+
+### `thiele` {#api-thiele}
+
+```python
+thiele(x, y)
+```
+
+Thiele's continued fraction interpolation via inverse differences.
+
+Builds the table of inverse differences `rho_k` and evaluates the
+resulting continued fraction, whose partial denominators are
+`a_k - a_{k-2}`.
+
+### `rational_interpolation` {#api-rational_interpolation}
+
+```python
+rational_interpolation(x, y, num_degree=None)
+```
+
+Linearized rational interpolation `P(t)/Q(t)` solved as a linear system.
+
+Enforces `Q(x_i) y_i = P(x_i)` with `Q` monic in its top coefficient.
+
+### `bulirsch_stoer_rational` {#api-bulirsch_stoer_rational}
+
+```python
+bulirsch_stoer_rational(x, y, t)
+```
+
+Bulirsch-Stoer rational extrapolation to `t` (the classic BS tableau).
+
+### `floater_hormann` {#api-floater_hormann}
+
+```python
+floater_hormann(x, y, d: int = 3)
+```
+
+Floater-Hormann barycentric rational interpolation.
+
+Has no poles on the real line for any blending degree `d`, and is far more
+robust than polynomial interpolation on equispaced nodes.
+
+### `trigonometric_interpolation` {#api-trigonometric_interpolation}
+
+```python
+trigonometric_interpolation(x, y, period=None)
+```
+
+Trigonometric interpolation of periodic data on equispaced nodes.
+
+### `fourier_interpolation` {#api-fourier_interpolation}
+
+```python
+fourier_interpolation(y, factor: int = 2)
+```
+
+Band-limited resampling: zero-pad the spectrum to refine a periodic signal.
+
+### `continued_fraction_eval` {#api-continued_fraction_eval}
+
+```python
+continued_fraction_eval(a, x_nodes, t)
+```
+
+Evaluate a Thiele continued fraction with coefficients `a`.
+
+## `scattered`
+
+<small>`quadrivium.interpolate.scattered`</small>
+
+Automatic planar triangulation and memory-bounded local RBF interpolation.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`KDTree`](#api-KDTree) | class | Balanced median-split k-d tree with exact Euclidean nearest-neighbor queries. |
+| [`Delaunay`](#api-Delaunay) | class | Incremental 2-D Delaunay triangulation with bounding-box point location. |
+| [`LinearNDInterpolator`](#api-LinearNDInterpolator) | class | Piecewise-linear scattered 2-D interpolation with explicit hull behavior. |
+| [`RBFInterpolator`](#api-RBFInterpolator) | class | Local radial basis interpolation with polynomial reproduction and bounded cache. |
+| [`scattered_interpolator`](#api-scattered_interpolator) | function | Construct a ``LinearNDInterpolator`` from scattered planar samples. |
+
+### `KDTree` {#api-KDTree}
+
+```python
+KDTree(points)
+```
+
+Balanced median-split k-d tree with exact Euclidean nearest-neighbor queries.
+
+#### `KDTree.query` {#api-KDTree.query}
+
+```python
+KDTree.query(self, points, k=1)
+```
+
+### `Delaunay` {#api-Delaunay}
+
+```python
+Delaunay(points)
+```
+
+Incremental 2-D Delaunay triangulation with bounding-box point location.
+
+Duplicate/collinear point sets are rejected. Coordinates are normalized
+before geometric predicates. Near-degenerate configurations still use
+floating-point predicates; this is not an exact computational geometry API.
+Construction uses O(n²) work in the worst case and O(n) mesh storage.
+
+#### `Delaunay.find_simplex` {#api-Delaunay.find_simplex}
+
+```python
+Delaunay.find_simplex(self, points, tol=1e-12)
+```
+
+### `LinearNDInterpolator` {#api-LinearNDInterpolator}
+
+```python
+LinearNDInterpolator(points, values, *, outside='fill', fill_value=nan)
+```
+
+Piecewise-linear scattered 2-D interpolation with explicit hull behavior.
+
+`outside` selects `'fill'` (default NaN), `'nearest'`, or `'raise'`.
+Reuse an existing Delaunay triangulation by supplying it as `points`.
+Values may have trailing component dimensions.
+
+#### `LinearNDInterpolator.__call__` {#api-LinearNDInterpolator.__call__}
+
+```python
+LinearNDInterpolator.__call__(self, points)
+```
+
+Call self as a function.
+
+### `RBFInterpolator` {#api-RBFInterpolator}
+
+```python
+RBFInterpolator(
+    points,
+    values,
+    *,
+    kernel='thin_plate',
+    epsilon=1.0,
+    smooth=0.0,
+    neighbors=None,
+    degree=None,
+    cache_size=64,
+)
+```
+
+Local radial basis interpolation with polynomial reproduction and bounded cache.
+
+`neighbors` bounds each solve to k samples (O(k²) matrix storage), and a
+k-d tree selects them without a dense all-pairs distance matrix. Cache size
+bounds retained coefficient vectors. Use `neighbors=None` for global RBF.
+Neighbor changes can introduce derivative discontinuities between patches.
+
+#### `RBFInterpolator.__call__` {#api-RBFInterpolator.__call__}
+
+```python
+RBFInterpolator.__call__(self, points)
+```
+
+Call self as a function.
+
+### `scattered_interpolator` {#api-scattered_interpolator}
+
+```python
+scattered_interpolator(points, values, **kwargs)
+```
+
+Construct a `LinearNDInterpolator` from scattered planar samples.
 
 ## `spline`
 
@@ -94,31 +536,319 @@ Piecewise polynomial interpolation: splines in their several flavours.
 
 Each constructor returns a ``PiecewisePolynomial`` supporting evaluation, differentiation, integration and root finding on the spline itself.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`PiecewisePolynomial` | `(x, coeffs, extrapolate: bool = True)` | Piecewise polynomial on knots ``x`` with per-interval coefficients. |
-| `linear_spline` | `(x, y)` | Piecewise linear interpolation (the C^0 spline). |
-| `quadratic_spline` | `(x, y, slope0: float = 0.0)` | C^1 quadratic spline; ``slope0`` sets the derivative at the left end. |
-| `cubic_spline` | `(x, y, bc: str = 'not-a-knot', **kwargs)` | Cubic spline with a selectable boundary condition. |
-| `natural_cubic_spline` | `(x, y)` | Natural cubic spline: zero second derivative at both ends. |
-| `clamped_cubic_spline` | `(x, y, dy0: float, dyn: float)` | Clamped cubic spline: prescribed first derivatives at the ends. |
-| `not_a_knot_spline` | `(x, y)` | Not-a-knot cubic spline: third derivative continuous at the second and second-to-last knots. This is the default in most software. |
-| `periodic_cubic_spline` | `(x, y, tol: float = 1e-10)` | Periodic cubic spline; requires ``y[0] == y[-1]``. |
-| `hermite_spline` | `(x, y, dy)` | Cubic Hermite spline from prescribed values and slopes. |
-| `pchip` | `(x, y)` | PCHIP: shape-preserving cubic Hermite, monotone where the data is. |
-| `akima_spline` | `(x, y)` | Akima spline: local, and far less prone to overshoot than a cubic spline. |
-| `bspline_basis` | `(i: int, k: int, knots, t)` | Cox-de Boor recursion for the ``i``-th B-spline basis of degree ``k``. |
-| `bspline` | `(control_points, knots, degree: int)` | B-spline curve from control points and a knot vector. |
-| `bspline_interpolation` | `(x, y, degree: int = 3)` | Interpolating B-spline: solves for control points hitting every datum. |
-| `catmull_rom` | `(x, y)` | Catmull-Rom spline: centred-difference slopes. |
-| `cardinal_spline` | `(x, y, tension: float = 0.0)` | Cardinal spline; ``tension=0`` reproduces Catmull-Rom, ``1`` gives linear. |
-| `smoothing_spline` | `(x, y, lam: float = 1.0, weights=None)` | Cubic smoothing spline: balances fidelity against roughness ``lam``. |
-| `tension_spline` | `(x, y, tension: float = 1.0)` | Spline under tension: interpolates between a cubic spline and a polyline. |
-| `de_casteljau` | `(control_points, t)` | Evaluate a Bezier curve by de Casteljau's algorithm. |
-| `bezier` | `(control_points)` | Bezier curve through its control points; returns an evaluator on ``[0, 1]``. |
-| `bezier_derivative` | `(control_points, order: int = 1)` | Control points of the derivative curve. |
-| `bezier_subdivide` | `(control_points, t: float = 0.5)` | Split a Bezier curve at ``t`` into two Bezier curves. |
-| `rational_bezier` | `(control_points, weights)` | Rational Bezier curve; unit weights reduce to the polynomial case. |
-| `nurbs` | `(control_points, weights, knots, degree: int)` | Non-uniform rational B-spline curve. |
-| `open_uniform_knots` | `(n_control: int, degree: int)` | Clamped (open uniform) knot vector: the curve meets its end control points. |
-| `nurbs_circle` | `(radius: float = 1.0, center=(0.0, 0.0))` | Exact unit circle as a quadratic NURBS (nine control points). |
+| [`PiecewisePolynomial`](#api-PiecewisePolynomial) | class | Piecewise polynomial on knots ``x`` with per-interval coefficients. |
+| [`linear_spline`](#api-linear_spline) | function | Piecewise linear interpolation (the C^0 spline). |
+| [`quadratic_spline`](#api-quadratic_spline) | function | C^1 quadratic spline; ``slope0`` sets the derivative at the left end. |
+| [`cubic_spline`](#api-cubic_spline) | function | Cubic spline with a selectable boundary condition. |
+| [`natural_cubic_spline`](#api-natural_cubic_spline) | function | Natural cubic spline: zero second derivative at both ends. |
+| [`clamped_cubic_spline`](#api-clamped_cubic_spline) | function | Clamped cubic spline: prescribed first derivatives at the ends. |
+| [`not_a_knot_spline`](#api-not_a_knot_spline) | function | Not-a-knot cubic spline: third derivative continuous at the second and second-to-last knots. This is the default in most software. |
+| [`periodic_cubic_spline`](#api-periodic_cubic_spline) | function | Periodic cubic spline; requires ``y[0] == y[-1]``. |
+| [`hermite_spline`](#api-hermite_spline) | function | Cubic Hermite spline from prescribed values and slopes. |
+| [`pchip`](#api-pchip) | function | PCHIP: shape-preserving cubic Hermite, monotone where the data is. |
+| [`akima_spline`](#api-akima_spline) | function | Akima spline: local, and far less prone to overshoot than a cubic spline. |
+| [`bspline_basis`](#api-bspline_basis) | function | Cox-de Boor recursion for the ``i``-th B-spline basis of degree ``k``. |
+| [`bspline`](#api-bspline) | function | B-spline curve from control points and a knot vector. |
+| [`bspline_interpolation`](#api-bspline_interpolation) | function | Interpolating B-spline: solves for control points hitting every datum. |
+| [`catmull_rom`](#api-catmull_rom) | function | Catmull-Rom spline: centred-difference slopes. |
+| [`cardinal_spline`](#api-cardinal_spline) | function | Cardinal spline; ``tension=0`` reproduces Catmull-Rom, ``1`` gives linear. |
+| [`smoothing_spline`](#api-smoothing_spline) | function | Cubic smoothing spline: balances fidelity against roughness ``lam``. |
+| [`tension_spline`](#api-tension_spline) | function | Spline under tension: interpolates between a cubic spline and a polyline. |
+| [`de_casteljau`](#api-de_casteljau) | function | Evaluate a Bezier curve by de Casteljau's algorithm. |
+| [`bezier`](#api-bezier) | function | Bezier curve through its control points; returns an evaluator on ``[0, 1]``. |
+| [`bezier_derivative`](#api-bezier_derivative) | function | Control points of the derivative curve. |
+| [`bezier_subdivide`](#api-bezier_subdivide) | function | Split a Bezier curve at ``t`` into two Bezier curves. |
+| [`rational_bezier`](#api-rational_bezier) | function | Rational Bezier curve; unit weights reduce to the polynomial case. |
+| [`nurbs`](#api-nurbs) | function | Non-uniform rational B-spline curve. |
+| [`open_uniform_knots`](#api-open_uniform_knots) | function | Clamped (open uniform) knot vector: the curve meets its end control points. |
+| [`nurbs_circle`](#api-nurbs_circle) | function | Exact unit circle as a quadratic NURBS (nine control points). |
+
+### `PiecewisePolynomial` {#api-PiecewisePolynomial}
+
+```python
+PiecewisePolynomial(x, coeffs, extrapolate: bool = True)
+```
+
+Piecewise polynomial on knots `x` with per-interval coefficients.
+
+`coeffs[i]` lists the coefficients of interval `i` in increasing powers
+of the local variable `(t - x[i])`.
+
+#### `PiecewisePolynomial.coeffs` {#api-PiecewisePolynomial.coeffs}
+
+Read-only property.
+
+Coefficients per interval, split out of the table when first asked.
+
+#### `PiecewisePolynomial.__call__` {#api-PiecewisePolynomial.__call__}
+
+```python
+PiecewisePolynomial.__call__(self, t)
+```
+
+Call self as a function.
+
+#### `PiecewisePolynomial.derivative` {#api-PiecewisePolynomial.derivative}
+
+```python
+PiecewisePolynomial.derivative(self, order: int = 1)
+```
+
+Return the derivative spline (one polynomial degree lower).
+
+#### `PiecewisePolynomial.antiderivative` {#api-PiecewisePolynomial.antiderivative}
+
+```python
+PiecewisePolynomial.antiderivative(self)
+```
+
+Return an antiderivative spline, continuous and zero at `x[0]`.
+
+#### `PiecewisePolynomial.integrate` {#api-PiecewisePolynomial.integrate}
+
+```python
+PiecewisePolynomial.integrate(self, a=None, b=None) -> float
+```
+
+Exact integral of the spline over `[a, b]`.
+
+#### `PiecewisePolynomial.roots` {#api-PiecewisePolynomial.roots}
+
+```python
+PiecewisePolynomial.roots(self)
+```
+
+Real roots of the spline inside its knot intervals.
+
+### `linear_spline` {#api-linear_spline}
+
+```python
+linear_spline(x, y)
+```
+
+Piecewise linear interpolation (the C^0 spline).
+
+### `quadratic_spline` {#api-quadratic_spline}
+
+```python
+quadratic_spline(x, y, slope0: float = 0.0)
+```
+
+C^1 quadratic spline; `slope0` sets the derivative at the left end.
+
+### `cubic_spline` {#api-cubic_spline}
+
+```python
+cubic_spline(x, y, bc: str = 'not-a-knot', **kwargs)
+```
+
+Cubic spline with a selectable boundary condition.
+
+### `natural_cubic_spline` {#api-natural_cubic_spline}
+
+```python
+natural_cubic_spline(x, y)
+```
+
+Natural cubic spline: zero second derivative at both ends.
+
+### `clamped_cubic_spline` {#api-clamped_cubic_spline}
+
+```python
+clamped_cubic_spline(x, y, dy0: float, dyn: float)
+```
+
+Clamped cubic spline: prescribed first derivatives at the ends.
+
+### `not_a_knot_spline` {#api-not_a_knot_spline}
+
+```python
+not_a_knot_spline(x, y)
+```
+
+Not-a-knot cubic spline: third derivative continuous at the second and
+second-to-last knots. This is the default in most software.
+
+### `periodic_cubic_spline` {#api-periodic_cubic_spline}
+
+```python
+periodic_cubic_spline(x, y, tol: float = 1e-10)
+```
+
+Periodic cubic spline; requires `y[0] == y[-1]`.
+
+### `hermite_spline` {#api-hermite_spline}
+
+```python
+hermite_spline(x, y, dy)
+```
+
+Cubic Hermite spline from prescribed values and slopes.
+
+### `pchip` {#api-pchip}
+
+```python
+pchip(x, y)
+```
+
+PCHIP: shape-preserving cubic Hermite, monotone where the data is.
+
+### `akima_spline` {#api-akima_spline}
+
+```python
+akima_spline(x, y)
+```
+
+Akima spline: local, and far less prone to overshoot than a cubic spline.
+
+### `bspline_basis` {#api-bspline_basis}
+
+```python
+bspline_basis(i: int, k: int, knots, t)
+```
+
+Cox-de Boor recursion for the `i`-th B-spline basis of degree `k`.
+
+### `bspline` {#api-bspline}
+
+```python
+bspline(control_points, knots, degree: int)
+```
+
+B-spline curve from control points and a knot vector.
+
+### `bspline_interpolation` {#api-bspline_interpolation}
+
+```python
+bspline_interpolation(x, y, degree: int = 3)
+```
+
+Interpolating B-spline: solves for control points hitting every datum.
+
+### `catmull_rom` {#api-catmull_rom}
+
+```python
+catmull_rom(x, y)
+```
+
+Catmull-Rom spline: centred-difference slopes.
+
+### `cardinal_spline` {#api-cardinal_spline}
+
+```python
+cardinal_spline(x, y, tension: float = 0.0)
+```
+
+Cardinal spline; `tension=0` reproduces Catmull-Rom, `1` gives linear.
+
+### `smoothing_spline` {#api-smoothing_spline}
+
+```python
+smoothing_spline(x, y, lam: float = 1.0, weights=None)
+```
+
+Cubic smoothing spline: balances fidelity against roughness `lam`.
+
+Minimizes `sum w_i (y_i - f(x_i))^2 + lam * integral f''^2`.
+
+### `tension_spline` {#api-tension_spline}
+
+```python
+tension_spline(x, y, tension: float = 1.0)
+```
+
+Spline under tension: interpolates between a cubic spline and a polyline.
+
+### `de_casteljau` {#api-de_casteljau}
+
+```python
+de_casteljau(control_points, t)
+```
+
+Evaluate a Bezier curve by de Casteljau's algorithm.
+
+Repeated linear interpolation between control points.  Slower than
+expanding the Bernstein polynomials but numerically stable, because every
+intermediate value is a convex combination of the previous ones and so
+stays inside the control polygon -- the Bernstein form loses that with
+cancellation at high degree.
+
+### `bezier` {#api-bezier}
+
+```python
+bezier(control_points)
+```
+
+Bezier curve through its control points; returns an evaluator on `[0, 1]`.
+
+### `bezier_derivative` {#api-bezier_derivative}
+
+```python
+bezier_derivative(control_points, order: int = 1)
+```
+
+Control points of the derivative curve.
+
+The derivative of a degree-`n` Bezier curve is a degree-`n-1` Bezier
+curve on the scaled differences `n (P_{i+1} - P_i)` -- so derivatives are
+exact and need no differencing.
+
+### `bezier_subdivide` {#api-bezier_subdivide}
+
+```python
+bezier_subdivide(control_points, t: float = 0.5)
+```
+
+Split a Bezier curve at `t` into two Bezier curves.
+
+The de Casteljau triangle's two outer edges are exactly the control points
+of the halves, which is why subdivision is free once the point is
+evaluated.  Returns `(left, right)`.
+
+### `rational_bezier` {#api-rational_bezier}
+
+```python
+rational_bezier(control_points, weights)
+```
+
+Rational Bezier curve; unit weights reduce to the polynomial case.
+
+Rational curves represent conic sections exactly -- a circular arc is not
+a polynomial curve at any degree, which is the whole reason CAD uses
+rational forms.
+
+### `nurbs` {#api-nurbs}
+
+```python
+nurbs(control_points, weights, knots, degree: int)
+```
+
+Non-uniform rational B-spline curve.
+
+Evaluated in homogeneous coordinates -- the control points are lifted by
+their weights, a plain B-spline is evaluated there, and the result is
+projected back by dividing through.  Doing the division at the end rather
+than blending rational basis functions directly is what keeps the
+evaluation as stable as the polynomial B-spline it is built on.
+
+### `open_uniform_knots` {#api-open_uniform_knots}
+
+```python
+open_uniform_knots(n_control: int, degree: int)
+```
+
+Clamped (open uniform) knot vector: the curve meets its end control points.
+
+### `nurbs_circle` {#api-nurbs_circle}
+
+```python
+nurbs_circle(radius: float = 1.0, center=(0.0, 0.0))
+```
+
+Exact unit circle as a quadratic NURBS (nine control points).
+
+A demonstration that rational splines capture conics exactly: the weights
+`1/sqrt(2)` at the corner control points are what bend the quadratic
+segments onto true circular arcs.  No polynomial spline can do this.

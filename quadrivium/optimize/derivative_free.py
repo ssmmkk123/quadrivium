@@ -6,6 +6,8 @@ is noisy or discontinuous.
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -60,11 +62,11 @@ def nelder_mead(f, x0, tol: float = 1e-12, max_iter: int = 5000, step: float = 0
         simplex = np.vstack([x0] + [x0 + step * (abs(x0[i]) + 1.0) * np.eye(n)[i]
                                     for i in range(n)])
     fs = np.array([fc(p) for p in simplex])
-    history = []
+    history = History()
     for k in range(1, max_iter + 1):
         order = np.argsort(fs)
         simplex, fs = simplex[order], fs[order]
-        history.append(simplex[0].copy())
+        history.append(simplex[0])
         if np.max(np.abs(simplex[1:] - simplex[0])) < tol and (fs[-1] - fs[0]) < tol:
             return OptimizeResult(simplex[0], float(fs[0]), None, None, k, True,
                                   fc.calls, 0, "nelder_mead", history, "converged")
@@ -111,7 +113,7 @@ def powell(f, x0, tol: float = 1e-10, max_iter: int = 400, line_tol: float = 1e-
     n = x.size
     directions = np.eye(n)
     fx = fc(x)
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         x_start = x.copy()
         f_start = fx
@@ -125,7 +127,7 @@ def powell(f, x0, tol: float = 1e-10, max_iter: int = 400, line_tol: float = 1e-
                 biggest_drop, i_big = drop, i
             x = x + res.x * d
             fx = res.fun
-        history.append(x.copy())
+        history.append(x)
         if 2.0 * (f_start - fx) <= tol * (abs(f_start) + abs(fx) + 1e-30):
             return OptimizeResult(x, float(fx), None, None, k, True, fc.calls, 0,
                                   "powell", history, "converged")
@@ -154,7 +156,7 @@ def hooke_jeeves(f, x0, step: float = 0.5, tol: float = 1e-12, max_iter: int = 1
     n = x.size
     fx = fc(x)
     h = step
-    history = [x.copy()]
+    history = History([x])
 
     def explore(base, fbase, h):
         y = base.copy()
@@ -178,7 +180,7 @@ def hooke_jeeves(f, x0, step: float = 0.5, tol: float = 1e-12, max_iter: int = 1
             while True:                              # pattern move
                 x_new = 2 * y - x
                 x, fx = y, fy
-                history.append(x.copy())
+                history.append(x)
                 y2, fy2 = explore(x_new, fc(x_new), h)
                 if fy2 >= fx:
                     break
@@ -201,7 +203,7 @@ def compass_search(f, x0, step: float = 0.5, tol: float = 1e-12,
     n = x.size
     fx = fc(x)
     h = step
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if h < tol:
             return OptimizeResult(x, float(fx), None, None, k, True, fc.calls, 0,
@@ -220,7 +222,7 @@ def compass_search(f, x0, step: float = 0.5, tol: float = 1e-12,
                 break
         if improved:
             h = min(h * expand, step)
-            history.append(x.copy())
+            history.append(x)
         else:
             h *= shrink
     return OptimizeResult(x, float(fx), None, None, max_iter, False, fc.calls, 0,
@@ -247,7 +249,7 @@ def coordinate_descent(f, x0, tol: float = 1e-10, max_iter: int = 1000,
     fc = CountedFunction(lambda v: float(f(v)))
     x = as_vector(x0).copy()
     n = x.size
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         x_old = x.copy()
         for i in range(n):
@@ -259,7 +261,7 @@ def coordinate_descent(f, x0, tol: float = 1e-10, max_iter: int = 1000,
             res = line_minimize_1d(g, tol=1e-13, start=x[i],
                                    initial_step=min(bracket, 1.0))
             x[i] = res.x
-        history.append(x.copy())
+        history.append(x)
         if np.max(np.abs(x - x_old)) < tol:
             return OptimizeResult(x, float(fc(x)), None, None, k, True, fc.calls, 0,
                                   "coordinate_descent", history, "converged")
@@ -270,3 +272,8 @@ def coordinate_descent(f, x0, tol: float = 1e-10, max_iter: int = 1000,
 def cyclic_coordinate(f, x0, **kwargs):
     """Alias of :func:`coordinate_descent`."""
     return coordinate_descent(f, x0, **kwargs)
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['nelder_mead', 'powell', 'hooke_jeeves', 'compass_search', 'coordinate_descent']:
+    globals()[_name] = monitor(globals()[_name])

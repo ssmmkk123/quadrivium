@@ -103,7 +103,7 @@ Ah = np.array([[1 / (i + j + 1) for j in range(6)] for i in range(6)])
 print(f"  Hager condition estimate:      {condition_estimate(Ah):.4g}   "
       f"true {np.linalg.cond(Ah, 1):.4g}   (no inverse formed)")
 
-banner("5. Randomized SVD attains the Eckart-Young optimum")
+banner("5. Compare randomized SVD with the optimal rank-truncation error")
 U, _, V = np.linalg.svd(rng.standard_normal((300, 200)), full_matrices=False)
 s = np.exp(-np.arange(200) / 12.0)
 A = U @ np.diag(s) @ V
@@ -113,7 +113,7 @@ for k in (5, 15, 30):
     print(f"  k = {k:3d}   ||A - A_k||_2 = {err:.4e}   optimal {s[k]:.4e}   "
           f"ratio {err / s[k]:.4f}")
 
-banner("6. Extrapolation: same accuracy for a fraction of the work")
+banner("6. Extrapolation: compare achieved accuracy and evaluation work")
 f = lambda t, y: -y + np.sin(t)
 ex = lambda t: (np.sin(t) - np.cos(t) + np.exp(-t)) / 2
 gbs = gragg_bulirsch_stoer(f, (0, 10), [0.0], rtol=1e-12, atol=1e-14)
@@ -123,7 +123,7 @@ print(f"  Gragg-Bulirsch-Stoer  err {abs(gbs.y[-1][0] - ex(10.0)):.2e}   "
 print(f"  Dormand-Prince 5(4)   err {abs(dp.y[-1][0] - ex(10.0)):.2e}   "
       f"{dp.n_rhs_evals:5d} f-evals   ({dp.n_rhs_evals / gbs.n_rhs_evals:.1f}x more)")
 
-banner("7. Event location is as accurate as the integrator")
+banner("7. Check event location against an analytic impact time")
 g = 9.81
 rhs = lambda t, y: np.array([y[1], -g])
 sol, te, ye = solve_ivp_events(rhs, (0, 3), [10.0, 0.0],

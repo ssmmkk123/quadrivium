@@ -104,15 +104,18 @@ def welford_mean_var(x):
 def describe(x):
     """Summary statistics of a sample."""
     x = as_vector(x)
+    # All three quantiles share a single sorted copy of the sample.
+    q1, q2, q3 = np.quantile(x, [0.25, 0.5, 0.75])
+    sample_variance = variance(x)
     return {
         "n": int(x.size),
         "mean": mean(x),
-        "std": float(np.std(x, ddof=1)) if x.size > 1 else 0.0,
-        "variance": variance(x),
+        "std": float(np.sqrt(sample_variance)) if x.size > 1 else 0.0,
+        "variance": sample_variance,
         "min": float(x.min()),
-        "q1": float(np.quantile(x, 0.25)),
-        "median": median(x),
-        "q3": float(np.quantile(x, 0.75)),
+        "q1": float(q1),
+        "median": float(q2),
+        "q3": float(q3),
         "max": float(x.max()),
         "skewness": skewness(x),
         "kurtosis": kurtosis(x),

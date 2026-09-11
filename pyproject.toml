@@ -24,8 +24,8 @@ keywords = [
     "monte-carlo",
     "special-functions",
 ]
-# No runtime dependencies: the array core the package computes with is
-# compiled from the C sources under `csrc/` at install time.
+# No runtime dependencies: the array core and numerical accelerators are
+# compiled together from the C sources under `csrc/` at install time.
 dependencies = []
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -73,11 +73,6 @@ dev = [
 
 [tool.setuptools.dynamic]
 version = { attr = "quadrivium.__version__" }
-
-[tool.setuptools.package-data]
-# setup.py filters cached binaries here and explicitly installs only the
-# artifacts the current build produced.
-quadrivium = ["*.so", "*.pyd", "*.dylib"]
 
 [tool.setuptools.packages.find]
 include = ["quadrivium*"]

@@ -1,125 +1,136 @@
-"""The optional Rust build must never package a stale native extension.
-
-The array core in `csrc/` is a different matter: it is required, so every
-distribution is a binary one and there is no configuration in which its absence
-is acceptable. What is tested here is the part that may legitimately be missing.
-"""
+"""C-only builds include their sources and reject cached native binaries."""
 
 import importlib.util
-import json
 import os
 from pathlib import Path
-import subprocess
-import sysconfig
 import tempfile
 import unittest
 from unittest.mock import patch
 
 
 @unittest.skipUnless(importlib.util.find_spec("setuptools"), "setuptools is a build dependency")
-class TestOptionalNativeBuild(unittest.TestCase):
+class TestNativeBuild(unittest.TestCase):
     def setUp(self):
+        self.project = Path(__file__).resolve().parents[1]
+        setup_file = self.project / "setup.py"
+        if not setup_file.is_file():
+            self.skipTest("setup.py is unavailable in a wheel-only installation")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        spec = importlib.util.spec_from_file_location(
-            "quadrivium_test_setup", Path(__file__).resolve().parents[1] / "setup.py")
-        if not spec.origin or not Path(spec.origin).exists():
-            self.skipTest("setup.py is unavailable in a wheel-only installation")
+        spec = importlib.util.spec_from_file_location("quadrivium_test_setup", setup_file)
         self.module = importlib.util.module_from_spec(spec)
-        with patch("setuptools.setup"), patch.dict(os.environ, {"QUADRIVIUM_REQUIRE_RUST": "0"}):
+        with patch("setuptools.setup") as setup, patch("subprocess.run") as subprocess:
             spec.loader.exec_module(self.module)
+        subprocess.assert_not_called()
+        self.setup_options = setup.call_args.kwargs
         self.module.HERE = self.root
-        self.module.CRATE = self.root / "rust"
-        self.module.CRATE.mkdir()
-        self.module.WILL_BUILD_RUST = True
-        self.module.REQUIRE_RUST = False
         self.distribution = self.module.ExtensionAwareDistribution({"name": "build-test"})
         self.command = self.module.build_py(self.distribution)
         self.command.build_lib = str(self.root / "build")
         self.command.editable_mode = False
-        suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
-        self.source = self.root / "quadrivium" / ("_quadrivium_rs" + suffix)
-        self.staged = self.root / "build" / "quadrivium" / self.source.name
-        for path in (self.source, self.staged):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"stale backend")
 
-    def test_disabled_build_cleans_stage_and_preserves_checkout(self):
-        self.module.WILL_BUILD_RUST = False
-        with patch.object(self.module.subprocess, "run") as cargo:
-            self.command._build_rust()
-        cargo.assert_not_called()
-        self.assertFalse(self.staged.exists())
-        self.assertEqual(self.source.read_bytes(), b"stale backend")
-        self.assertFalse(self.distribution._rust_build_succeeded)
+    def make_file(self, relative, content=b"fixture"):
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
 
-    def test_failed_optional_build_does_not_reuse_binary(self):
-        with patch.object(self.module.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "cargo")):
-            self.command._build_rust()
-        self.assertFalse(self.staged.exists())
-        self.assertFalse(self.distribution._rust_build_succeeded)
-        self.assertTrue(self.source.exists())
-
-    def test_required_build_propagates_failure(self):
-        self.module.REQUIRE_RUST = True
-        with patch.object(self.module.subprocess, "run", side_effect=OSError("compiler missing")):
-            with self.assertRaises(SystemExit):
-                self.command._build_rust()
-        self.assertFalse(self.staged.exists())
-
-    def test_success_uses_reported_custom_target_and_leaves_source_unchanged(self):
-        artifact = self.root / "custom-target" / "cross-target" / "release" / "lib_quadrivium_rs.so"
-        artifact.parent.mkdir(parents=True)
-        artifact.write_bytes(b"fresh backend")
-        message = json.dumps({"reason": "compiler-artifact", "target": {
-            "name": "_quadrivium_rs", "crate_types": ["cdylib", "rlib"]},
-            "filenames": [str(artifact)]})
-        result = subprocess.CompletedProcess("cargo", 0, stdout=message)
-        with patch.object(self.module.subprocess, "run", return_value=result) as cargo:
-            self.command._build_rust()
-        self.assertIn("--locked", cargo.call_args.args[0])
-        self.assertIn("--message-format=json-render-diagnostics", cargo.call_args.args[0])
-        self.assertEqual(self.staged.read_bytes(), b"fresh backend")
-        self.assertEqual(self.source.read_bytes(), b"stale backend")
-        self.assertTrue(self.distribution._rust_build_succeeded)
-
-    def test_success_without_artifact_leaves_the_accelerator_out(self):
-        result = subprocess.CompletedProcess("cargo", 0, stdout='{"reason":"build-finished"}\n')
-        with patch.object(self.module.subprocess, "run", return_value=result):
-            self.command._build_rust()
-        self.assertFalse(self.staged.exists())
-        self.assertFalse(self.distribution._rust_build_succeeded)
-
-    def test_the_distribution_is_always_binary(self):
-        # The array core is compiled and not optional, so there is no
-        # configuration in which a pure-Python wheel would be correct.
-        self.module.WILL_BUILD_RUST = False
-        with patch.object(self.module.subprocess, "run"):
-            self.command._build_rust()
+    def test_one_required_interpreter_specific_c_extension(self):
         self.assertTrue(self.distribution.has_ext_modules())
-
-    def test_the_core_extension_lists_every_c_source(self):
-        root = Path(__file__).resolve().parents[1]
-        sources = sorted(p.name for p in (root / "csrc").glob("*.c"))
-        self.assertTrue(sources, "the array core has no C sources")
-        with patch.object(self.module, "HERE", root), patch.object(
-                self.module, "CSRC", root / "csrc"):
-            extension = self.module.core_extension()
-        self.assertEqual(sorted(Path(s).name for s in extension.sources), sources)
+        extensions = self.setup_options["ext_modules"]
+        self.assertEqual(len(extensions), 1)
+        extension = extensions[0]
         self.assertEqual(extension.name, "quadrivium._qnp")
+        self.assertFalse(extension.optional)
+        self.assertFalse(extension.py_limited_api)
 
-    def test_editable_no_rust_removes_stale_source_backend(self):
-        self.module.WILL_BUILD_RUST = False
-        self.command.editable_mode = True
-        self.command._build_rust()
-        self.assertFalse(self.source.exists())
-        self.assertFalse(self.staged.exists())
+    def test_extension_lists_every_c_source_and_header(self):
+        sources = sorted(str(p.relative_to(self.project))
+                         for p in (self.project / "csrc").glob("*.c"))
+        headers = sorted(str(p.relative_to(self.project))
+                         for p in (self.project / "csrc").glob("*.h"))
+        self.assertTrue(sources, "the array core has no C sources")
+        self.assertTrue(headers, "the array core has no C headers")
+        with patch.object(self.module, "HERE", self.project), patch.object(
+                self.module, "CSRC", self.project / "csrc"):
+            extension = self.module.core_extension()
+        self.assertEqual(extension.sources, sources)
+        self.assertEqual(extension.depends, headers)
+        self.assertIn("csrc/accel_ode.c", extension.sources)
+        self.assertIn("csrc/qaccel.h", extension.depends)
 
-    def test_source_package_data_never_contains_cached_extensions(self):
-        files = [str(self.source), "_quadrivium_rs.pyd", "lib_quadrivium_rs.dylib", "data.txt"]
+    def test_missing_required_sources_fails_the_build(self):
+        with patch.object(self.module, "CSRC", self.root / "missing"):
+            with self.assertRaisesRegex(SystemExit, "cannot be built"):
+                self.module.core_extension()
+
+    def test_cached_binaries_are_removed_from_build_directory_only(self):
+        staged, source = [], []
+        for suffix in (".so", ".pyd", ".dylib", ".dll"):
+            staged.append(self.make_file("build/quadrivium/_obsolete" + suffix))
+            source.append(self.make_file("quadrivium/_obsolete" + suffix))
+        staged.append(self.make_file("build/quadrivium/nested/_obsolete.so"))
+        python_file = self.make_file("build/quadrivium/__init__.py", b"# Python")
+        with patch.object(self.module._build_py, "run") as parent:
+            self.command.run()
+        parent.assert_called_once_with()
+        self.assertTrue(all(not path.exists() for path in staged))
+        self.assertTrue(all(path.read_bytes() == b"fixture" for path in source))
+        self.assertEqual(python_file.read_bytes(), b"# Python")
+
+    def test_build_directory_pointing_at_checkout_preserves_source(self):
+        source = self.make_file("quadrivium/_qnp.so")
+        self.command.build_lib = str(self.root)
+        with patch.object(self.module._build_py, "run"):
+            self.command.run()
+        self.assertEqual(source.read_bytes(), b"fixture")
+
+    def test_staged_package_symlink_cannot_delete_checkout_binaries(self):
+        source = self.make_file("quadrivium/_qnp.so")
+        staged = self.root / "build" / "quadrivium"
+        staged.parent.mkdir()
+        try:
+            staged.symlink_to(self.root / "quadrivium", target_is_directory=True)
+        except (NotImplementedError, OSError):
+            self.skipTest("directory symlinks are unavailable")
+        with patch.object(self.module._build_py, "run"):
+            self.command.run()
+        self.assertEqual(source.read_bytes(), b"fixture")
+
+    def test_package_data_never_contains_cached_extensions(self):
+        files = ["quadrivium/_obsolete.so", "_qnp.pyd", "nested/lib.dylib", "lib.dll", "data.txt"]
         with patch.object(self.module._build_py, "find_data_files", return_value=files):
             self.assertEqual(self.command.find_data_files("quadrivium", "."), ["data.txt"])
+
+    def test_sdist_manifest_ships_c_and_prunes_cached_obsolete_files(self):
+        from setuptools.command.egg_info import FileList
+
+        manifest = (self.project / "MANIFEST.in").read_text()
+        fixtures = ["setup.py", "csrc/core.c", "csrc/nested/kernel.c", "csrc/qnp.h",
+                    "csrc/nested/kernel.h", "tests/test_sample.py", "rust/Cargo.toml",
+                    "rust/Cargo.lock", "rust/src/lib.rs", "quadrivium/_obsolete.so",
+                    "quadrivium/_qnp.pyd", "quadrivium/lib.dylib", "quadrivium/lib.dll"]
+        for path in fixtures:
+            self.make_file(path)
+        files = FileList()
+        # A previous SOURCES.txt may list files that new include directives
+        # no longer mention; the manifest must explicitly prune those entries.
+        files.files = fixtures.copy()
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            with patch("setuptools.command.egg_info.log.warn"):
+                for line in manifest.splitlines():
+                    line = line.split("#", 1)[0].strip()
+                    if line:
+                        files.process_template_line(line)
+        finally:
+            os.chdir(previous)
+        self.assertTrue(set(fixtures[:6]).issubset(files.files))
+        self.assertFalse(any(Path(path).parts[0] == "rust" for path in files.files))
+        self.assertFalse(any(Path(path).suffix in self.module.NATIVE_SUFFIXES
+                             for path in files.files))
 
 
 if __name__ == "__main__":

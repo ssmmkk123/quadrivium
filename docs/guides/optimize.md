@@ -1,349 +1,330 @@
-# Optimization
+# Optimization and fitting
 
-```python
-from quadrivium.optimize import lbfgs, curve_fit, differential_evolution
-import quadrivium as qd          # qd.minimize, qd.bfgs, qd.linprog, ...
-```
+Optimization asks for parameters that make an objective small. A useful result
+needs more than a small reported value: the parameters must obey constraints,
+the objective must represent the intended problem, and the stopping criterion
+must be appropriate for its scale. Quadrivium exposes both complete optimizers
+and components such as line searches, projections, and proximal operators.
 
-95 routines: one-dimensional searches, line searches, gradient and quasi-Newton
-methods, trust regions, derivative-free search, global optimizers, constrained
-methods, proximal splitting, and linear programming. Full signatures are in the
-[`optimize` reference](../api/optimize.md).
+Use the [optimization reference](../api/optimize.md) for full signatures.
+This guide explains which problem structure each interface uses, how to read
+its result, and how to check an answer independently.
 
-## The default path
+## Start with a smooth scalar objective
 
 ```pycon
->>> from quadrivium import numeric as np
 >>> import quadrivium as qd
->>> rosen = lambda v: (1 - v[0])**2 + 100*(v[1] - v[0]**2)**2
->>> res = qd.minimize(rosen, [-1.2, 1.0], method="bfgs")
->>> res.converged, [round(float(v), 6) for v in res.x], round(res.fun, 12)
-(True, [1.0, 1.0], 0.0)
-
-```
-
-`minimize` dispatches on `method=`, passing the rest through. Gradient-based:
-`bfgs`, `lbfgs`, `dfp`, `sr1`, `newton`, `modified_newton`, `cg_fr`, `cg_pr`,
-`cg_hs`, `gradient_descent`, `momentum`, `nesterov`, `adam`, `adagrad`,
-`rmsprop`, `barzilai_borwein`, `trust_region`. Derivative-free: `nelder_mead`,
-`powell`, `hooke_jeeves`, `compass_search`, `coordinate_descent`. Global
-(these take `bounds` in place of `x0`): `differential_evolution`,
-`particle_swarm`, `simulated_annealing`, `genetic_algorithm`, `basin_hopping`,
-`cma_es`, `dual_annealing_lite`.
-
-Supplying an exact gradient always helps, and the result records how much:
-
-```pycon
->>> grad = lambda v: np.array([-2*(1 - v[0]) - 400*v[0]*(v[1] - v[0]**2),
-...                            200*(v[1] - v[0]**2)])
->>> fd = qd.minimize(rosen, [-1.2, 1.0], method="bfgs")
->>> exact = qd.minimize(rosen, [-1.2, 1.0], method="bfgs", grad_f=grad)
->>> exact.function_calls < fd.function_calls / 3
+>>> from quadrivium import numeric as np
+>>> objective = lambda x: (x[0] - 2.0)**2 + 4.0 * (x[1] + 1.0)**2
+>>> gradient = lambda x: np.array([2 * (x[0] - 2), 8 * (x[1] + 1)])
+>>> result = qd.minimize(objective, [0.0, 0.0], grad_f=gradient)
+>>> result.converged, np.allclose(result.x, [2.0, -1.0], atol=1e-7)
+(True, True)
+>>> float(result.fun) < 1e-12
 True
 
 ```
 
-## Choosing a method
+`f(x)` receives a one-dimensional parameter vector and returns a scalar.
+`grad_f(x)` returns a vector of the same length. The default dispatcher method
+is BFGS. If a gradient is omitted, methods that require it generally estimate
+it with finite differences, which costs extra objective evaluations and can
+be unreliable for a noisy or discontinuous objective.
 
-| Situation | Method |
+Most iterative minimizers return `OptimizeResult`:
+
+| Attribute | Interpretation |
 | --- | --- |
-| smooth, few variables, gradient available | `bfgs` |
-| smooth, many variables (memory matters) | `lbfgs`, `newton_cg` |
-| smooth with simple bounds | `lbfgsb` |
-| Hessian available and cheap | `newton_method`, `trust_region` |
-| Hessian available but indefinite | `modified_newton`, `trust_region` with Steihaug-CG |
-| nonsmooth or noisy objective | `nelder_mead`, `powell`, `compass_search` |
-| sum of squares (data fitting) | `levenberg_marquardt`, `gauss_newton`, `curve_fit` |
-| many local minima | `differential_evolution`, `cma_es`, `basin_hopping` |
-| stochastic objective, huge dimension | `adam`, `rmsprop`, `momentum` |
-| equality or inequality constraints | `sqp`, `augmented_lagrangian`, `penalty_method` |
-| constraint is a simple set to project onto | `projected_gradient` |
-| objective is smooth + a nonsmooth penalty | `fista`, `admm`, `lasso` |
-| linear objective and constraints | `linprog`, `simplex`, `interior_point_lp` |
-| assignment or matching | `assignment_problem` |
-| one variable, bracketed | `brent_minimize`, `golden_section` |
+| `x` | Returned parameter vector, or scalar for one-dimensional search |
+| `fun` | Objective value at the returned parameters |
+| `converged`, `message` | Whether a method's stopping test passed and why it stopped |
+| `iterations` | Outer iterations reported by the method |
+| `function_calls`, `gradient_calls` | Evaluation counters where recorded |
+| `jac`, `hess` | Derivative or curvature information where supplied |
+| `history` | Recorded iterates or method-specific progress values |
 
-```mermaid
-flowchart TD
-    A["minimize f(x)"] --> B{"how many local minima?"}
-    B -- "many" --> C["differential_evolution<br/>cma_es, basin_hopping"]
-    B -- "one, or the nearest will do" --> D{"is f smooth?"}
-    D -- "no, or noisy" --> E["nelder_mead, powell<br/>compass_search"]
-    D -- yes --> F{"gradient available?"}
-    F -- "no" --> G["finite differences<br/>are used for you"]
-    F -- "yes" --> H{"what shape is the problem?"}
-    H -- "sum of squares" --> I["levenberg_marquardt<br/>gauss_newton, curve_fit"]
-    H -- "smooth + nonsmooth penalty" --> J["fista, admm, lasso"]
-    H -- "constraints" --> K["sqp, augmented_lagrangian<br/>projected_gradient"]
-    H -- "plain and smooth" --> L{"how many variables?"}
-    L -- "few" --> M["bfgs, trust_region"]
-    L -- "many" --> N["lbfgs, newton_cg"]
+There is no universal `success` field for these results: use `converged`.
+A true flag means the method's stopping criterion was met. It is not proof of
+a global optimum or evidence that the underlying model is correct.
+
+## Let the problem structure choose the method
+
+| Structure | Starting method | Why |
+| --- | --- | --- |
+| One scalar parameter in an interval | `brent_minimize`, `golden_section` | Bracket reduction needs no gradient |
+| Smooth objective, moderate dimension | `bfgs` | Learns curvature from successive gradients |
+| Many smooth parameters | `lbfgs` | Stores a limited number of curvature pairs |
+| Simple parameter bounds | `lbfgsb` | Projects onto a box and handles active variables |
+| Hessian-vector products available | `newton_cg` | Avoids forming a dense Hessian |
+| Nonconvex quadratic models | `trust_region`, `modified_newton` | Controls steps when curvature is indefinite |
+| Residual vector from data | `least_squares`, `curve_fit` | Uses least-squares structure and robust losses |
+| Objective values only | `nelder_mead`, `powell`, `compass_search` | No derivative callback required |
+| Multiple attraction basins | `differential_evolution`, `basin_hopping`, `cma_es` | Broader search with a finite evaluation budget |
+| Nonlinear equalities/inequalities | `sqp`, `augmented_lagrangian` | Models constraints explicitly |
+| Smooth loss plus a simple nonsmooth penalty | `proximal_gradient`, `fista`, `admm` | Uses a proximal operator for the penalty |
+| Linear objective and linear constraints | `linprog` | Exploits the linear program directly |
+
+Call specialized functions directly when their arguments convey the structure
+more clearly. `minimize` is a dispatcher with a defined method table; it does
+not accept every exported optimizer name. In particular, call `lbfgsb`,
+`newton_cg`, `least_squares`, and `dual_annealing_lite` directly.
+For population methods dispatched through `minimize`, its `x0` position is
+used as a bounds sequence; direct calls avoid that overloaded meaning.
+
+## Scale variables and verify derivatives
+
+Suppose one parameter is naturally around `1e-6` and another around `1e3`.
+A unit step has very different meaning in the two directions. Define scaled
+variables `x = center + scale*z`, optimize over `z`, and transform derivatives
+by the chain rule. For `g(z)=f(center+scale*z)`, the gradient is
+`scale*grad_f(x)` for a diagonal scale vector.
+
+A simple derivative check compares a directional finite difference with the
+analytic directional derivative:
+
+```pycon
+>>> point = np.array([0.3, -0.2])
+>>> direction = np.array([0.4, -0.7])
+>>> h = 1e-5
+>>> difference = (objective(point + h*direction) - objective(point - h*direction)) / (2*h)
+>>> abs(float(difference - gradient(point) @ direction)) < 1e-8
+True
+
 ```
 
+Try several points and step sizes. Agreement for one direction at one point
+can miss an indexing or sign error. Finite differences themselves lose accuracy
+at excessively small steps, and stochastic objectives need a controlled random
+stream or a different validation strategy.
+
 <figure markdown="span">
-  ![The path three optimizers take across the Rosenbrock valley](../assets/figures/optimize-rosenbrock-paths.svg#only-light)
-  ![The path three optimizers take across the Rosenbrock valley](../assets/figures/optimize-rosenbrock-paths-dark.svg#only-dark)
-  <figcaption>The `history` field of each result, from the same starting point. BFGS builds curvature information and cuts across; Nelder-Mead crawls the floor of the valley with a simplex; gradient descent follows the steepest direction, which in a narrow valley is mostly across it.</figcaption>
+  ![Gradient descent and BFGS on an anisotropic quadratic, with objective histories](../assets/figures/optimize-scaling-paths.svg#only-light)
+  ![Gradient descent and BFGS on an anisotropic quadratic, with objective histories](../assets/figures/optimize-scaling-paths-dark.svg#only-dark)
+  <figcaption>A narrow quadratic valley gives very different curvature along its axes. Paths explain the direction of progress, while objective histories quantify it. The comparison illustrates the role of curvature and scaling; iteration counts alone do not account for differing evaluation cost.</figcaption>
 </figure>
 
-## One dimension
+## Bracket a one-dimensional minimum
 
 ```pycon
 >>> from quadrivium.optimize import brent_minimize, golden_section
->>> r = brent_minimize(lambda x: (x - 2)**2 + 1, 0, 5)
->>> round(float(r.x), 7), round(float(r.fun), 12)
+>>> one = brent_minimize(lambda x: (x - 2.0)**2 + 1.0, 0.0, 5.0)
+>>> round(float(one.x), 6), round(float(one.fun), 6)
 (2.0, 1.0)
 
 ```
 
-`golden_section` and `fibonacci_search` reduce the bracket by a fixed factor
-each step and need no derivative or smoothness — they only need unimodality.
-`parabolic_interpolation` converges much faster on a smooth function but can
-fail; `brent_minimize` combines the two, which is why it is the default.
-`bracket_minimum` finds an initial bracket.
+Golden-section and Fibonacci searches repeatedly shrink an interval containing
+a minimum under a unimodality assumption. Brent's method also attempts
+parabolic interpolation when it is useful. A minimum bracket is not a
+sign-change bracket for a root: minimizing `f` and solving `f=0` are different
+problems. If the interval contains several local minima, interval reduction
+does not guarantee that the lowest one will be selected.
 
-## Line searches
+`bracket_minimum` searches for a bracket from initial points.
+`line_minimize_1d` performs outward bracketing and scalar minimization for a
+function of a step length. Boundaries that are physically meaningful should be
+represented deliberately; do not rely on a search happening to stay inside a
+domain where the objective is defined.
 
-Every gradient method must decide how far to move along a direction. The line
-searches are exposed separately, so a method can be assembled from parts:
+## Curvature, line searches, and memory
 
-| Function | Condition enforced |
-| --- | --- |
-| `backtracking`, `armijo` | sufficient decrease |
-| `goldstein` | sufficient decrease, two-sided |
-| `wolfe` | decrease and curvature |
-| `strong_wolfe` | decrease and \|curvature\|, with interpolating zoom |
-| `exact_line_search` | exact minimum along the ray |
+BFGS updates an inverse-Hessian approximation using parameter and gradient
+differences. Its dense curvature storage grows quadratically with parameter
+count. L-BFGS stores only the most recent `m` pairs, reducing curvature storage
+to approximately `O(m*n)`.
 
-The strong Wolfe conditions are what `bfgs` and `lbfgs` use, because the
-curvature condition is what keeps the quasi-Newton update positive definite.
+A line search chooses the distance along a proposed descent direction.
+`backtracking` enforces sufficient decrease; `strong_wolfe` also tests
+curvature. These safeguards improve the reliability of quasi-Newton updates,
+but their assumptions still require meaningful objective and gradient values.
+`exact_line_search` solves a bounded scalar subproblem numerically; “exact”
+in its name does not mean an analytic or zero-error answer.
 
-<figure markdown="span">
-  ![What the Armijo and Wolfe conditions accept along a search direction](../assets/figures/optimize-line-search.svg#only-light)
-  ![What the Armijo and Wolfe conditions accept along a search direction](../assets/figures/optimize-line-search-dark.svg#only-dark)
-  <figcaption>φ(α) is the objective along one search direction. Sufficient decrease alone accepts almost every short step, including steps far too small to make progress; the curvature condition cuts the interval down to steps that actually flatten the slope.</figcaption>
-</figure>
+`newton_method` uses a Hessian, while `newton_cg` can use
+`hess_vec(x, v)` products. Trust-region methods compare actual improvement
+with the improvement predicted by a local model. A poor ratio leads to a
+smaller region. The dogleg subproblem suits positive-definite models;
+Steihaug conjugate gradients can stop on negative curvature or the boundary.
 
-## Quasi-Newton methods
+For deterministic smooth objectives, adaptive learning-rate rules such as
+Adam are alternatives, not automatic replacements for curvature methods.
+Their learning-rate choices and stopping behavior still need validation.
+A function name does not add minibatching or a stochastic training pipeline.
 
-BFGS builds an approximate inverse Hessian from successive gradients. It
-converges superlinearly without ever forming or factorizing a Hessian:
+## Bounds and general constraints
 
-```pycon
->>> from quadrivium.optimize import bfgs, lbfgs, sr1, dfp
->>> for method in (bfgs, dfp, sr1, lbfgs):
-...     r = method(rosen, [-1.2, 1.0], grad, tol=1e-10)
-...     print(f"{method.__name__:6s} converged={r.converged}  f < 1e-18: {r.fun < 1e-18}")
-bfgs   converged=True  f < 1e-18: True
-dfp    converged=True  f < 1e-18: True
-sr1    converged=True  f < 1e-18: True
-lbfgs  converged=True  f < 1e-18: True
-
-```
-
-`lbfgs` keeps only the last `m` update pairs, so its memory is `O(mn)` rather
-than `O(n²)` — the difference between feasible and impossible in high
-dimensions. `newton_cg` (truncated Newton) goes further: it never forms the
-Hessian at all, solving each Newton system approximately with CG and
-terminating on a forcing sequence.
-
-<figure markdown="span">
-  ![How fast the objective falls, by method](../assets/figures/optimize-convergence.svg#only-light)
-  ![How fast the objective falls, by method](../assets/figures/optimize-convergence-dark.svg#only-dark)
-  <figcaption>The same objective and the same start. A superlinear method's last few iterations cover more ground than all the ones before it; steepest descent is still at 1e-2 after five thousand iterations, which is what linear convergence costs in practice.</figcaption>
-</figure>
+Bound interfaces differ. `lbfgsb` takes one `(lower, upper)` pair per
+parameter; `None` can mark an unbounded side. Robust `least_squares` instead
+takes `(lower_vector, upper_vector)`, with scalar values broadcast if desired.
 
 ```pycon
->>> from quadrivium.optimize import newton_cg
->>> quad = lambda v: float(v @ (np.arange(1, 51) * v))       # 50 variables
->>> qgrad = lambda v: 2 * np.arange(1, 51) * v
->>> r = newton_cg(quad, np.ones(50), qgrad, tol=1e-10)
->>> r.converged, float(np.max(np.abs(r.x))) < 1e-6
-(True, True)
-
-```
-
-## Trust regions
-
-A line search picks a direction then a distance; a trust region picks a radius
-then the best step inside it. That is the more robust order when the model may
-be a poor fit — a nonconvex region, an indefinite Hessian:
-
-```pycon
->>> tr = qd.trust_region(rosen, [-1.2, 1.0], grad, tol=1e-10)
->>> tr.converged, [round(float(v), 6) for v in tr.x]
-(True, [1.0, 1.0])
-
-```
-
-The subproblem solver is selectable: `cauchy_point` (steepest descent to the
-boundary — cheap, and genuinely only linearly convergent), `dogleg` (needs a
-positive definite model), `steihaug_cg` (handles indefiniteness and scales to
-large problems).
-
-## Least squares and curve fitting
-
-For a sum of squared residuals, the Gauss-Newton approximation to the Hessian
-costs nothing extra. Levenberg-Marquardt interpolates between Gauss-Newton and
-gradient descent, which is what makes it reliable far from the solution:
-
-```pycon
->>> from quadrivium.optimize import curve_fit
->>> t = np.linspace(0, 4, 40)
->>> y = 2.5 * np.exp(-1.3 * t) + 0.5
->>> model = lambda x, a, b, c: a * np.exp(-b * x) + c      # model(x, *params)
->>> fit = curve_fit(model, t, y, [1.0, 1.0, 0.0])
->>> [round(float(v), 6) for v in fit.x]
-[2.5, 1.3, 0.5]
-
-```
-
-## Derivative-free methods
-
-When the objective is noisy, discontinuous, or a simulation you cannot
-differentiate, these use only function values:
-
-```pycon
->>> from quadrivium.optimize import nelder_mead, powell
->>> nm_res = nelder_mead(rosen, [-1.2, 1.0], tol=1e-12)
->>> nm_res.converged, round(float(nm_res.fun), 10)
-(True, 0.0)
-
-```
-
-<figure markdown="span">
-  ![A nonlinear least squares fit and its residuals](../assets/figures/optimize-curve-fit.svg#only-light)
-  ![A nonlinear least squares fit and its residuals](../assets/figures/optimize-curve-fit-dark.svg#only-dark)
-  <figcaption>`curve_fit` wraps Levenberg-Marquardt, which interpolates between Gauss-Newton near the solution and gradient descent far from it. The residual panel is the check that matters: structure left in it means the model is wrong, not the optimizer.</figcaption>
-</figure>
-
-`nelder_mead` reflects and contracts a simplex; `powell` does successive line
-searches along conjugate directions; `hooke_jeeves` and `compass_search` are
-pattern searches with convergence guarantees on smooth functions.
-
-## Global optimization
-
-A local method finds the nearest minimum. When there are many, the search must
-be global — and no global method can promise the true optimum in finite time,
-so what you choose is a sampling strategy:
-
-```pycon
->>> rastrigin = lambda v: 20 + sum(x**2 - 10*np.cos(2*np.pi*x) for x in v)
->>> de = qd.differential_evolution(rastrigin, [(-5.12, 5.12)] * 2, rng=0, tol=1e-10)
->>> float(de.fun) < 1e-8
+>>> from quadrivium.optimize import lbfgsb
+>>> bounded = lbfgsb(lambda x: (x[0] - 3)**2, [0.0],
+...                   grad_f=lambda x: 2 * (x - 3), bounds=[(0.0, 1.0)])
+>>> np.allclose(bounded.x, [1.0], atol=1e-8)
 True
 
 ```
 
-`cma_es` adapts a full covariance matrix and is the strongest general choice
-on ill-conditioned nonconvex problems; `particle_swarm` and
-`genetic_algorithm` are population methods; `simulated_annealing` and
-`basin_hopping` accept worse points to escape local minima;
-`dual_annealing_lite` alternates annealing with local refinement. All take
-`rng=` for reproducibility.
+A constrained optimum can have a nonzero raw gradient because the improving
+direction points outside the feasible set. Check projected gradients or KKT
+conditions in that case.
 
-<figure markdown="span">
-  ![A landscape full of local minima, and what each kind of method finds](../assets/figures/optimize-global-landscape.svg#only-light)
-  ![A landscape full of local minima, and what each kind of method finds](../assets/figures/optimize-global-landscape-dark.svg#only-dark)
-  <figcaption>Rastrigin's function has a minimum in every unit cell. A local method converges — correctly, and to the wrong answer; a global method samples the whole box first and refines afterwards.</figcaption>
-</figure>
-
-## Constrained optimization
+Nonlinear equality callbacks use `eq(x)=0`; inequality callbacks use
+`ineq(x)<=0`. Return vectors to express several constraints.
 
 ```pycon
 >>> from quadrivium.optimize import sqp
->>> # minimize x² + y² subject to x + y = 1  →  (0.5, 0.5)
->>> con = sqp(lambda v: v[0]**2 + v[1]**2, [2.0, -1.0],
-...           eq=lambda v: np.array([v[0] + v[1] - 1.0]), tol=1e-12)
->>> [round(float(v), 8) for v in con.x]
-[0.5, 0.5]
-
-```
-
-| Method | Approach |
-| --- | --- |
-| `penalty_method` | add a growing penalty for violation; simple, ill-conditioned at the end |
-| `barrier_method` | stay strictly feasible, push the barrier down |
-| `augmented_lagrangian` | penalty plus multiplier estimates; avoids the ill-conditioning |
-| `sqp` | solve a quadratic model with linearized constraints each step |
-| `projected_gradient` | step, then project back onto the feasible set |
-| `active_set_qp`, `solve_qp` | quadratic objective, linear constraints |
-
-`project_box`, `project_simplex`, and `project_ball` are the projections;
-`kkt_residual` measures how close a point is to satisfying the KKT conditions,
-which is the honest way to check a constrained answer.
-
-## Proximal and sparse methods
-
-For `f(x) + g(x)` with `f` smooth and `g` nonsmooth but simple, proximal
-gradient methods take a gradient step on `f` and a proximal step on `g`.
-FISTA's momentum improves the rate from `O(1/k)` to `O(1/k²)`:
-
-```pycon
->>> from quadrivium.optimize import lasso
->>> rng = np.random.default_rng(0)
->>> A = rng.standard_normal((60, 30))
->>> x_true = np.zeros(30); x_true[[3, 11, 25]] = [2.0, -3.0, 1.5]
->>> b = A @ x_true
->>> x_hat = lasso(A, b, lam=0.05)
->>> int(np.sum(np.abs(x_hat.x) > 1e-6)) <= 8      # sparse, as asked
+>>> constrained = sqp(lambda x: float(x @ x), [2.0, -1.0],
+...     eq=lambda x: np.array([x[0] + x[1] - 1.0]), tol=1e-10)
+>>> np.allclose(constrained.x, [0.5, 0.5], atol=1e-7)
+True
+>>> abs(float(np.sum(constrained.x)) - 1.0) < 1e-8
 True
 
 ```
 
-<figure markdown="span">
-  ![L1 against L2 on an underdetermined system](../assets/figures/optimize-sparse-recovery.svg#only-light)
-  ![L1 against L2 on an underdetermined system](../assets/figures/optimize-sparse-recovery-dark.svg#only-dark)
-  <figcaption>Thirty measurements of sixty unknowns: without a prior there are infinitely many solutions. The L1 penalty picks the sparse one and recovers the signal to 0.02; the L2 penalty picks the minimum-energy one, which spreads the answer over all sixty coefficients.</figcaption>
-</figure>
+Penalty methods discourage violation with a growing penalty; very large
+penalties can worsen conditioning. Barrier methods require a strictly feasible
+interior start. Augmented Lagrangian methods also estimate multipliers.
+`projected_gradient` is useful when a projection is inexpensive;
+`project_box`, `project_simplex`, and `project_ball` supply common projections.
+Check feasibility separately from the objective and stationarity.
 
-`ista`, `fista`, `proximal_gradient`, `admm`, `admm_lasso`, and
-`douglas_rachford` are the general splitting methods; `soft_threshold`,
-`prox_l1`, `prox_l2`, `prox_box`, and `prox_nonneg` are the proximal
-operators; `ridge` and `elastic_net` complete the regularized regression set.
+## Fit a residual vector
 
-## Linear programming
+`least_squares` accepts `fun(parameters)` returning a one-dimensional residual
+vector of constant length. For `m` observations and `n` parameters, its Jacobian
+has shape `(m, n)`. With the default linear loss the objective is
+`0.5*sum(residual**2)`.
 
 ```pycon
->>> # maximize 3x + 2y subject to x + y ≤ 4, x + 3y ≤ 6, x, y ≥ 0
->>> res = qd.linprog([-3.0, -2.0], A_ub=[[1.0, 1.0], [1.0, 3.0]], b_ub=[4.0, 6.0])
->>> [round(float(v), 8) for v in res.x], round(float(res.fun), 8)
-([4.0, 0.0], -12.0)
+>>> from quadrivium.optimize import least_squares
+>>> times = np.linspace(0, 2, 21)
+>>> observed = 2.5 * times + 0.4
+>>> residual = lambda p: p[0] * times + p[1] - observed
+>>> fit = least_squares(residual, [1.0, 0.0], bounds=([0.0, -1.0], [4.0, 1.0]))
+>>> fit.converged, np.allclose(fit.x, [2.5, 0.4], atol=1e-6)
+(True, True)
+>>> fit.residuals.shape, fit.active_mask.tolist()
+((21,), [0, 0])
 
 ```
 
-<figure markdown="span">
-  ![A linear program, its feasible region, and where the optimum has to be](../assets/figures/optimize-linprog.svg#only-light)
-  ![A linear program, its feasible region, and where the optimum has to be](../assets/figures/optimize-linprog-dark.svg#only-dark)
-  <figcaption>The constraints bound a polygon and the objective is a family of parallel lines. The last line to touch the polygon touches it at a vertex — which is why the simplex method only ever visits vertices.</figcaption>
-</figure>
+Besides standard result fields, this solver provides `residuals`,
+`optimality`, `active_mask`, and `jacobian`. `active_mask` uses `-1` for a
+lower bound, `1` for an upper bound, and `0` for a free coordinate.
+`jac` in the generic result is the objective gradient; `jacobian` is the
+residual Jacobian as an operator. These are different mathematical objects.
 
-`simplex` is the two-phase method with Bland's rule available for degenerate
-pivots; `big_m_simplex` and `two_phase_simplex` handle the initial feasible
-basis differently; `interior_point_lp` is a primal-dual path-following method,
-which is the one that scales. `assignment_problem` solves the rectangular
-assignment problem by the Hungarian algorithm in `O(n³)`.
+Use `ftol`, `xtol`, and `gtol` for changes in cost, changes in parameters, and
+projected gradient. `max_nfev` limits residual evaluations, including numerical
+Jacobian work. A tiny parameter update can reflect poor scaling rather than a
+well-determined fit, so inspect residuals and parameter sensitivity as well.
 
-## Pitfalls
+### Robust losses and sparse Jacobians
 
-- **`converged=True` means a stationary point, not a global minimum.** For a
-  nonconvex objective, restart from several points or use a global method.
-- **A finite-difference gradient limits your accuracy to about `√ε`.** Asking
-  for `tol=1e-12` without an exact gradient will usually stall.
-- **Scaling matters more than the method.** Variables differing by orders of
-  magnitude will defeat any of these; rescale so a unit step means something
-  comparable in each direction.
-- **Nelder-Mead can converge to a non-stationary point.** It has no
-  convergence theory in more than one dimension; verify with a gradient check.
-- **Global methods have no stopping criterion worth trusting.** `max_iter` is
-  the real budget; `tol` only detects that the population has collapsed.
-- **Penalty methods become ill-conditioned as the penalty grows.** Use
-  `augmented_lagrangian` when the constraints must be satisfied tightly.
+Available losses are `linear`, `huber`, `soft_l1`, and `cauchy`.
+`f_scale` sets the residual scale at which robust downweighting becomes
+important. If observations have known standard deviations, standardize the
+residuals first so the scale has an interpretable meaning.
 
-## See also
+```pycon
+>>> contaminated = np.array([1.0, 1.0, 1.0, 1.0, 20.0])
+>>> linear = least_squares(lambda p: p[0] - contaminated, [0.0])
+>>> robust = least_squares(lambda p: p[0] - contaminated, [0.0],
+...                        loss="soft_l1", f_scale=0.2)
+>>> abs(float(robust.x[0]) - 1.0) < abs(float(linear.x[0]) - 1.0)
+True
 
-- [`optimize` API reference](../api/optimize.md) — every signature.
-- [Differentiation guide](diff.md) — exact gradients and Hessians by AD.
-- [Root finding guide](rootfind.md) — stationarity is `∇f(x) = 0`.
-- [Linear algebra guide](linalg.md) — the least squares family.
-- `examples/04_optimization.py` — a runnable tour.
+```
+
+Robust loss changes the objective; it does not identify which measurements
+are erroneous. Compare fitted residuals and the scientific meaning of the
+outlying observations before accepting that change.
+
+`jac` can be `"2-point"`, `"3-point"`, or a callable returning a dense matrix,
+sparse matrix, or `LinearOperator` with both forward and adjoint products.
+The solver applies normal-equation products without assembling a dense normal
+matrix. `jac_sparsity` groups finite-difference columns that do not affect the
+same residual rows. Its structural zeros must be correct: an omitted nonzero
+can produce a wrong derivative. `x_scale="jac"` estimates parameter scales
+from Jacobian column norms; explicit positive scales are also accepted.
+
+## Fit a named model
+
+`curve_fit` wraps residual construction around `model(xdata, *parameters)`.
+Its `jac` callback follows the package convention **`jac(parameters)`**, not
+`jac(xdata, *parameters)`.
+
+```pycon
+>>> from quadrivium.optimize import curve_fit
+>>> model = lambda t, amplitude, rate: amplitude * np.exp(-rate * t)
+>>> values = model(times, 2.0, 0.7)
+>>> curve = curve_fit(model, times, values, [1.0, 1.0])
+>>> np.allclose(curve.x, [2.0, 0.7], atol=1e-6)
+True
+
+```
+
+Positive `sigma` values weight residuals by their reciprocal. For ordinary
+linear loss, the wrapper estimates `covariance` and `std_errors` from the
+local Jacobian unless `compute_covariance=False`. `absolute_sigma=True`
+treats supplied standard deviations as absolute rather than rescaling by the
+residual variance. Singular curvature can leave covariance unavailable.
+
+For robust losses, the current implementation returns `covariance=None`
+and `std_errors=None`. Even an available local covariance is an approximation
+whose usefulness depends on identifiability, model adequacy, and noise
+assumptions. Bounds, parameter degeneracy, and strong nonlinearity can make a
+symmetric local uncertainty summary misleading.
+
+## Global search, regularization, and linear programs
+
+Population methods such as `differential_evolution` take a finite bounds box
+and `rng=` for reproducibility. Repeat with independent seeds and compare
+objective values and feasibility. Population stagnation is a useful stopping
+signal, not a certificate that the global minimum has been found.
+`basin_hopping` combines perturbations with local minimization; `cma_es`
+adapts covariance and can have substantial quadratic storage cost.
+
+For `f(x)+g(x)`, proximal methods handle a smooth term with a gradient and a
+simple nonsmooth term with a proximal map. `lasso` minimizes
+`0.5*||A*x-b||**2 + lam*||x||_1`; `ridge` uses an L2 penalty and returns a
+coefficient vector directly. L1 encourages exact zero coefficients, whereas
+L2 shrinks coefficients continuously. Standardize columns before comparing
+penalties across variables with different units.
+
+```pycon
+>>> from quadrivium.optimize import soft_threshold
+>>> soft_threshold(np.array([-2.0, -0.2, 0.0, 1.5]), 0.5).tolist()
+[-1.5, -0.0, 0.0, 1.0]
+>>> lp = qd.linprog([-3.0, -2.0], A_ub=[[1.0, 1.0], [1.0, 3.0]],
+...                 b_ub=[4.0, 6.0])
+>>> np.allclose(lp.x, [4.0, 0.0]), round(float(lp.fun), 6)
+(True, -12.0)
+
+```
+
+The LP interface minimizes `c @ x` with nonnegative variables. Negate `c` to
+express maximization, as above. Unrestricted-sign variables need an explicit
+reformulation. `A_ub*x <= b_ub` and `A_eq*x = b_eq` encode linear constraints;
+`assignment_problem` handles the specialized matching problem.
+
+## Histories and independent checks
+
+Use `store_history=False` when only the result matters, or `history_stride=k`
+when a coarser iteration trace is sufficient. `callback(x)` receives a private
+copy; returning `True` or raising `StopIteration` stops the optimizer. History
+contents and evaluation counters vary across method families, so inspect the
+chosen method before plotting a generic result.
+
+Before using fitted parameters, recompute the objective, check constraints,
+validate derivatives, and perturb the starting point. Compare models at a
+common evaluation budget when expensive simulation calls dominate. For a
+simulation-based objective, tighten the simulator tolerances to confirm that
+the optimizer is not fitting numerical error.
+
+See [differentiation](diff.md) for gradients, [linear algebra](linalg.md) for
+least-squares systems, and [scientific workflows](workflows.md) for parameter
+recovery through an ODE solve.

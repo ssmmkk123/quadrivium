@@ -1,353 +1,277 @@
 # Getting started
 
-This page covers the conventions shared by all 836 routines: how they are
-called, what they return, how tolerances work, and how failure is reported.
-Once these are clear, the [guides](guides/linalg.md) and the
-[API reference](api/index.md) are enough for the rest.
+This tour introduces the conventions you need to use Quadrivium reliably:
+imports, arrays, callbacks, result records, tolerances, failure handling, and
+validation. Each calculation is small enough to check against an independent
+answer. Install the package first using the [installation guide](installation.md).
 
-## The import surface
-
-Every routine lives in one of thirteen subpackages, and the ones reached for
-most often are re-exported at the top level.
-
-These pages import the package as `qd`. The natural abbreviation of
-*Quadrivium* is `quad`, but `quad` is also the name of the library's
-general-purpose integrator, and `quad.quad(f, a, b)` reads like a mistake —
-`qd.quad(f, a, b)` does not. Any alias works; the package does not care.
+## Imports and arrays
 
 ```pycon
+>>> import math
 >>> import quadrivium as qd
+>>> from quadrivium import numeric as np
 >>> qd.brent is qd.rootfind.brent
 True
->>> from quadrivium.linalg import householder_qr      # always available
->>> from quadrivium.ode import dormand_prince
+>>> values = np.array([1.0, 2.0, 3.0])
+>>> isinstance(values, np.ndarray), values.shape
+(True, (3,))
 
 ```
 
-There are 146 names at the top level; the other 690 are one import deeper.
-When two subpackages have a routine for the same idea, the names differ
-(`qd.integrate.gauss_legendre` returns an integral, `qd.approx.gauss_legendre_nodes`
-returns nodes and weights), so nothing is shadowed.
+`np` is an alias for `quadrivium.numeric`, the package's own C-backed array
+module. It is not NumPy. Familiar names such as `array`, `linspace`, `sin`, and
+`linalg.norm` cover many common operations, but compatibility has boundaries.
+The [array guide](guides/numeric.md) describes dtypes, broadcasting, views,
+buffers, batching, and file support.
 
-## A five-minute tour
+Top-level `qd` contains frequently used methods. Import specialized methods
+from their subpackage; the [API index](api/index.md) lists exports. The array
+engine's `np.linalg` primitives and the algorithms in `qd.linalg` have different
+interfaces and return contracts.
 
-```pycon
->>> from quadrivium import numeric as np
->>> import quadrivium as qd
+## Find a root
 
-```
-
-Find a root, with a bracket, guaranteed:
-
-```pycon
->>> r = qd.brent(lambda x: x**3 - 2*x - 5, 1, 3)
->>> round(r.root, 12), r.converged
-(2.094551481542, True)
-
-```
-
-Integrate over an infinite interval:
+Suppose you need the positive solution of `x² = 2`. Define the residual
+`f(x) = x² - 2` and choose a bracket whose endpoint values have opposite signs.
+For a continuous function, that sign change establishes that a root exists
+inside the interval. It does not establish uniqueness.
 
 ```pycon
->>> q = qd.quad(lambda x: np.exp(-x*x), -np.inf, np.inf)
->>> round(float(q), 12) == round(float(np.sqrt(np.pi)), 12)
+>>> f = lambda x: x*x - 2
+>>> root = qd.brent(f, 0, 2, tol=1e-12)
+>>> round(root.root, 10), root.converged
+(1.4142135624, True)
+>>> abs(f(root.root)) < 1e-10
+True
+>>> root.function_calls > 0
 True
 
 ```
 
-Solve an initial value problem to a requested accuracy:
+The residual check answers a different question from the stopping flag: it
+measures how well the computed point satisfies the equation. A small residual
+can still coexist with a large root error when the function is very flat.
+See [root finding](guides/rootfind.md) for derivative methods and systems.
+
+## Integrate a function
+
+For a smooth scalar integral on a finite interval, `quad` is a convenient
+starting point. The return value includes the estimate and diagnostic fields.
 
 ```pycon
->>> sol = qd.solve_ivp(lambda t, y: -2*y, (0, 1), [1.0], rtol=1e-10)
->>> abs(float(sol.y[-1, 0]) - float(np.exp(-2))) < 1e-9
-True
->>> abs(float(sol(0.5)[0]) - float(np.exp(-1))) < 1e-8     # dense output
-True
-
-```
-
-Minimize a nonconvex function without supplying a gradient:
-
-```pycon
->>> rosen = lambda x: (1 - x[0])**2 + 100*(x[1] - x[0]**2)**2
->>> opt = qd.minimize(rosen, [-1.2, 1.0], method="bfgs")
->>> opt.converged, [round(float(v), 6) for v in opt.x]
-(True, [1.0, 1.0])
-
-```
-
-Factorize a matrix and check the factorization is exact:
-
-```pycon
->>> A = np.array([[4.0, 3.0], [6.0, 3.0]])
->>> P, L, U = qd.plu_decomposition(A)
->>> float(np.max(np.abs(P @ A - L @ U))) < 1e-15
+>>> integral = qd.quad(lambda x: x*x, 0, 1)
+>>> round(float(integral.value), 10), integral.converged
+(0.3333333333, True)
+>>> abs(float(integral) - 1/3) < 1e-12
 True
 
 ```
 
-Transform a signal:
+`float(integral)` is shorthand for a scalar result's value. An error estimate
+is method-dependent and is not a certified bound. Sampled-data rules may
+return a plain scalar instead. Vector quadrature has its own norm and result
+contract. Choose a rule based on smoothness, singularities, oscillation, and
+whether you can evaluate the function: see [integration](guides/integrate.md).
+
+## Integrate a dynamical system
+
+An initial-value problem specifies a derivative, a time interval, and an initial
+state. The callback receives a scalar time and a one-dimensional state array;
+it must return a derivative with the corresponding dimension.
 
 ```pycon
->>> x = np.array([1.0, 2.0, 3.0, 4.0])
->>> X = qd.fft(x)
->>> float(np.max(np.abs(qd.ifft(X) - x))) < 1e-14
+>>> rhs = lambda t, y: -2*y
+>>> solution = qd.solve_ivp(rhs, (0, 1), [1.0], rtol=1e-9, atol=1e-11)
+>>> solution.success
+True
+>>> solution.y.shape == (len(solution.t), 1)
+True
+>>> abs(float(solution.y_final[0]) - math.exp(-2)) < 1e-8
+True
+>>> query = np.linspace(0, 1, 5)
+>>> sampled = solution(query)
+>>> sampled.shape
+(5, 1)
+>>> float(np.max(np.abs(sampled[:, 0] - np.exp(-2*query)))) < 1e-7
 True
 
 ```
 
-## Calling conventions
+Time runs along the first axis of `solution.y`; components run along the
+second. Calling the solution interpolates its output. Interpolation accuracy
+depends on the method and recorded data, and can differ from endpoint accuracy.
+Query within the computed interval. With sparse output or `final_only=True`,
+you have deliberately retained less information for later interpolation.
 
-**Arrays in, arrays out.** Anything array-shaped may be a list, a tuple, or a
-NumPy array; it is converted with `np.asarray(..., dtype=float)` internally.
-Results come back as NumPy arrays.
+<figure markdown="span">
+  ![Adaptive exponential decay trajectory and interpolation error against an analytic reference](assets/figures/start-decay-validation.svg#only-light)
+  ![Adaptive exponential decay trajectory and interpolation error against an analytic reference](assets/figures/start-decay-validation-dark.svg#only-dark)
+  <figcaption>This separate experiment solves y′ = −y, y(0) = 1 over [0, 4], with rtol = 10⁻⁶ and atol = 10⁻⁹. The left panel compares the adaptive trajectory with exp(−t); the right checks interpolation error at 301 points. The tolerance scale is a local control scale, not a guaranteed bound on the displayed global error.</figcaption>
+</figure>
 
-```pycon
->>> qd.solve([[2.0, 1.0], [1.0, 3.0]], [3.0, 5.0]).round(12).tolist()
-[0.8, 1.4]
-
-```
-
-**Functions are plain callables.** A scalar problem takes `f(x) -> float`; a
-vector problem takes `f(x) -> array`; an ODE right-hand side takes `f(t, y)`.
-Nothing needs to be vectorized unless a routine's docstring says so.
-
-**Intervals are tuples.** `t_span=(0, 10)` for an ODE, `(a, b)` as two
-positional arguments for quadrature and bracketing methods.
-
-**Derivatives are optional.** Where a method can use a Jacobian, gradient, or
-Hessian, the argument (`grad_f`, `jac`, `hess_f`) defaults to `None` and a
-finite-difference approximation is used instead. Supplying the exact
-derivative is faster and more accurate; not supplying one always works.
+For a long integration, choose output before solving:
 
 ```pycon
->>> f = lambda x: x[0]**2 + 3*x[1]**2
->>> a = qd.minimize(f, [1.0, 1.0], method="bfgs")                       # FD gradient
->>> b = qd.minimize(f, [1.0, 1.0], grad_f=lambda x: np.array([2*x[0], 6*x[1]]))
->>> a.converged and b.converged and b.function_calls < a.function_calls
+>>> final = qd.solve_ivp(rhs, (0, 1), [1.0], final_only=True)
+>>> final.y.shape
+(1, 1)
+>>> abs(float(final.y_final[0]) - math.exp(-2)) < 1e-7
 True
 
 ```
 
-**Dispatchers take a `method` string.** `qd.solve_ivp`, `qd.minimize`,
-`qd.quad`, `qd.linprog`, `qd.polynomial_roots` and friends select an
-implementation by name and pass the remaining keywords through; every
-underlying routine is also importable and callable directly.
+[ODEs](guides/ode.md) explains fixed-step, adaptive, and stiff methods.
+[Scientific workflows](guides/workflows.md) covers output controls,
+checkpoints, and sensitivities.
+
+## Solve a linear system
+
+Write the model as `A @ x = b`. Solve it directly rather than explicitly
+forming an inverse; then recompute the residual with the original inputs.
 
 ```pycon
->>> qd.solve_ivp(lambda t, y: -y, (0, 1), [1.0], method="rk4", n=50).method
-'rk4'
->>> qd.solve_ivp(lambda t, y: -y, (0, 1), [1.0], method="radau", n=50).method
-'radau_iia3'
+>>> A = np.array([[4.0, 1.0], [1.0, 3.0]])
+>>> b = np.array([1.0, 2.0])
+>>> x = qd.solve(A, b)
+>>> residual = float(np.linalg.norm(A @ x - b))
+>>> residual < 1e-12
+True
 
 ```
+
+A small residual shows that `x` solves a nearby linear system. It does not
+establish that the solution is insensitive to measurement error. Conditioning,
+rank, scaling, and matrix structure determine which solver is appropriate.
+For repeated right-hand sides, use a [reusable factor](guides/linalg.md).
+
+## Minimize a cost
+
+Define a scalar objective of a one-dimensional parameter vector. Supplying an
+analytic gradient avoids finite-difference evaluation costs and step-size error.
+
+```pycon
+>>> objective = lambda x: (x[0] - 2)**2 + 3*(x[1] + 1)**2
+>>> gradient = lambda x: np.array([2*(x[0] - 2), 6*(x[1] + 1)])
+>>> fit = qd.minimize(objective, [0.0, 0.0], method="bfgs", grad_f=gradient)
+>>> fit.converged, round(float(fit.fun), 10)
+(True, 0.0)
+>>> float(np.linalg.norm(gradient(fit.x))) < 1e-6
+True
+
+```
+
+This objective is a convex quadratic with a known minimizer. On a nonconvex
+problem, convergence from one initial guess does not prove global optimality.
+An objective-stagnation stopping condition also differs from a gradient-norm
+condition. Check the returned message, scale your parameters, and verify the
+constraints: see [optimization](guides/optimize.md).
 
 ## Result records
 
-Results are dataclasses, not tuples: the answer comes with the evidence for
-it. Seven records cover the library.
+Some routines return values directly. Many solvers return dataclasses whose
+fields describe the answer and the work performed. The records are mutable;
+array fields are not inherently read-only snapshots for downstream code.
 
-| Record | Answer | Also carries |
+| Record | Main output | Evidence to inspect |
 | --- | --- | --- |
-| `RootResult` | `root` (also as `x`) | `f_root`, `iterations`, `converged`, `function_calls`, `method`, `history`, `message` |
-| `IterationResult` | `x` | `iterations`, `converged`, `residuals`, `residual` (the last one), `method`, `message` |
-| `QuadratureResult` | `value` | `error_estimate`, `function_calls`, `subintervals`, `converged`, `method` |
-| `ODESolution` | `t`, `y`, `y_final` | `n_steps`, `n_accepted`, `n_rejected`, `n_rhs_evals`, `success`, `message`, `dydt`; callable for dense output |
-| `OptimizeResult` | `x`, `fun` | `jac`, `hess`, `iterations`, `converged`, `function_calls`, `gradient_calls`, `method`, `history`, `message` |
-| `EigenResult` | `eigenvalues`, `eigenvectors` | `iterations`, `converged`, `method`; unpacks as a pair |
-| `PDESolution` | `u`, `grids`, `t` | `method`, `iterations`, `converged`, `residuals` |
+| `RootResult` | `root`, alias `x` | `f_root`, `converged`, `iterations`, `function_calls`, `message` |
+| `IterationResult` | `x` | `converged`, `residuals`, `iterations`, `message` |
+| `QuadratureResult` | `value` | `error_estimate`, `converged`, `function_calls`, `subintervals` |
+| `ODESolution` | `t`, `y`, `y_final` | `success`, `message`, `n_steps`, accepted/rejected steps, RHS calls |
+| `OptimizeResult` | `x`, `fun` | `converged`, `jac`, work counters, `message` |
+| `EigenResult` | `eigenvalues`, `eigenvectors` | `converged`, `iterations`; verify `A @ v - λ*v` |
+| `PDESolution` | `u`, `grids`, sometimes `t` | Method-specific layout, `converged`, `residuals` |
 
-Two of them behave like the value they carry, so they drop into arithmetic
-without ceremony:
+Fields not populated by a method can retain defaults. Histories may be disabled
+or downsampled; their length is not a universal iteration counter. In an ODE
+result, `y_final` refers to the final computed state even when `save_at` omits
+the integration endpoint. Read the [core guide](guides/core.md) for details.
 
-```pycon
->>> round(float(qd.quad(lambda x: x**2, 0, 1)), 12)      # QuadratureResult -> float
-0.333333333333
->>> values, vectors = qd.jacobi_eigen([[2.0, 1.0], [1.0, 2.0]])   # EigenResult unpacks
->>> sorted(round(float(v), 12) for v in values)
-[1.0, 3.0]
+## Tolerances and budgets
 
-```
+Tolerances only make sense together with a scale and a stopping rule.
 
-The extra fields are the point of the records. Cost, convergence, and the
-path taken are all inspectable:
+| Control | Typical meaning | What it does not imply |
+| --- | --- | --- |
+| Root or iterative `tol` | A method-specific residual, step, or bracket test | Uniform relative error in the answer |
+| ODE `rtol`, `atol` | Scale local error by relative and absolute state magnitudes | A strict bound on global or interpolated error |
+| Fixed-step `n` | Discretize the interval into a requested number of steps | Automatic accuracy or stability control |
+| Optimizer `ftol` | Small relative change in objective, where supported | A small gradient or a global optimum |
+| `max_iter`, `max_steps` | Bound algorithmic work | A guarantee of convergence within that budget |
 
-```pycon
->>> r = qd.bisection(lambda x: x**2 - 2, 0, 2, tol=1e-10)
->>> r.converged, r.iterations, r.function_calls
-(True, 35, 37)
->>> len(r.history) == r.iterations            # every iterate is kept
-True
+Near zero, an absolute tolerance matters because relative error is ill-defined.
+For components with different physical scales, rescaling or supported
+component-wise tolerances can prevent one variable from dominating the test.
+Making a tolerance tiny can increase cost without improving meaningful digits.
 
->>> q = qd.adaptive_gauss_kronrod(lambda x: 1/(1 + 25*x**2), -1, 1, tol=1e-12)
->>> q.converged and q.error_estimate < 1e-12
-True
-
->>> sol = qd.solve_ivp(lambda t, y: -50*y, (0, 1), [1.0], rtol=1e-8)
->>> sol.n_accepted > 0 and sol.n_rejected >= 0 and sol.success
-True
-
-```
-
-## Tolerances and iteration limits
-
-Iterative routines take `tol` and `max_iter`, with defaults chosen per method
-(`1e-12` for bracketing root finders, `1e-10` for optimizers, `1e-14` for
-polynomial roots). Adaptive ODE solvers take `rtol` and `atol` instead, and
-fixed-step ones take a step count `n`.
-
-```pycon
->>> loose = qd.newton(lambda x: x**2 - 2, 1.0, lambda x: 2*x, tol=1e-6)
->>> tight = qd.newton(lambda x: x**2 - 2, 1.0, lambda x: 2*x, tol=1e-15)
->>> loose.iterations <= tight.iterations
-True
-
-```
-
-Asking for more than the arithmetic can deliver is not an error: the method
-stops when it stops improving and says so in `message`. A tolerance below
-about `1e-16` relative is never achievable in double precision.
-
-<figure markdown="span">
-  ![What asking for more digits costs, and what it buys](assets/figures/getting-started-tolerance.svg#only-light)
-  ![What asking for more digits costs, and what it buys](assets/figures/getting-started-tolerance-dark.svg#only-dark)
-  <figcaption>The same equation solved to every tolerance from 1e-2 to 1e-15. Bisection's cost is linear in the number of digits; a superlinear method's is almost flat. Both stop improving at the same place, because that place is a property of double precision and not of the method.</figcaption>
-</figure>
+For a method of order `p` in a smooth asymptotic regime, halving the step
+should reduce the error by roughly `2**p`. Repeat a solve on a finer grid and
+compare an actual quantity of interest. [Design and validation](design.md)
+explains what refinement can and cannot establish.
 
 ## How failure is reported
 
-**Iterative non-convergence is data, not an exception.** A method that runs
-out of iterations, stalls, or diverges returns its best answer with
-`converged=False` and a `message` explaining what happened. This keeps a
-failed solve inspectable instead of unwinding the stack.
-
-```mermaid
-flowchart TD
-    A["you call a routine"] --> B{"is the input usable?"}
-    B -- no --> C["raise<br/>QuadriviumError subclass"]
-    B -- yes --> D["run the method"]
-    D --> E{"did it get there?"}
-    E -- yes --> F["result with<br/>converged = True"]
-    E -- no --> G["result with converged = False,<br/>a message, and the best answer so far"]
-```
+A result may report failure, or a routine may raise an exception. Do not assume
+that every invalid input raises a `QuadriviumError`: numeric primitives and
+several workflow APIs also use standard Python and linear-algebra exceptions.
 
 ```pycon
->>> r = qd.newton(lambda x: x**2 + 1, 1.0, lambda x: 2*x, max_iter=20)
->>> r.converged
-False
->>> r.message
-'zero derivative encountered'
-
-```
-
-Always check `converged` before trusting a result:
-
-```pycon
->>> r = qd.rootfind.fixed_point(lambda x: 2*x, 1.0, max_iter=50)   # diverges
->>> r.converged
-False
-
-```
-
-**Malformed input raises.** Bad arguments, impossible geometry, and singular
-matrices raise exceptions from a small hierarchy rooted at `QuadriviumError`,
-so one `except` clause catches everything the library throws:
-
-```pycon
->>> from quadrivium.core import QuadriviumError, BracketError, SingularMatrixError
+>>> failed = qd.newton(lambda x: x*x + 1, 1.0, lambda x: 2*x, max_iter=20)
+>>> failed.converged, failed.message
+(False, 'zero derivative encountered')
+>>> from quadrivium.core import BracketError
 >>> try:
-...     qd.bisection(lambda x: x**2 + 1, 0, 1)     # f(0) and f(1) share a sign
-... except BracketError as exc:
-...     print(exc)
-f(a)=1 and f(b)=2 have the same sign: [0.0, 1.0] does not bracket a root
->>> issubclass(BracketError, QuadriviumError) and issubclass(SingularMatrixError, QuadriviumError)
-True
+...     qd.bisection(lambda x: x*x + 1, 0, 1)
+... except BracketError:
+...     print("Choose a valid bracket or a different problem formulation.")
+Choose a valid bracket or a different problem formulation.
 
 ```
 
-| Exception | Raised when |
-| --- | --- |
-| `QuadriviumError` | base class for everything below |
-| `ConvergenceError` | a method that cannot return a partial answer failed to converge |
-| `SingularMatrixError` | a matrix is singular, or numerically so, for the requested operation |
-| `DimensionError` | array shapes are incompatible |
-| `DomainError` | an argument lies outside the method's domain of validity |
-| `StepSizeError` | an adaptive step size underflowed the minimum allowed |
-| `BracketError` | a bracketing method was given an interval that does not bracket a root |
+Check the method's status and finite output, then validate the numerical answer.
+If a solve fails, inspect scaling, assumptions, initial guesses, step sizes,
+and limits before increasing the iteration budget. [Known limitations](limitations.md)
+distinguishes mathematical restrictions from implementation boundaries.
 
-`ConvergenceError` carries `iterations`, `residual`, and `best`, so even the
-exception path keeps the partial result.
+## Randomness and reproduction
 
-## Randomness and reproducibility
-
-Every stochastic routine takes `rng=`, passed straight to
-`np.random.default_rng`. Give it an integer seed or a `Generator` and the run
-is reproducible:
+Most stochastic numerical APIs accept `rng=` as a seed or Quadrivium generator.
+Historical generator classes have separate `seed` interfaces. Repeatedly
+passing the same integer restarts the same sequence; pass a generator to
+advance a continuing stream across calls.
 
 ```pycon
->>> a = qd.monte_carlo(lambda x: x**2, 0, 1, n=10_000, rng=0)
->>> b = qd.monte_carlo(lambda x: x**2, 0, 1, n=10_000, rng=0)
+>>> a = qd.monte_carlo(lambda x: x*x, 0, 1, n=1000, rng=42)
+>>> b = qd.monte_carlo(lambda x: x*x, 0, 1, n=1000, rng=42)
 >>> float(a) == float(b)
 True
->>> abs(float(a) - 1/3) < 4 * a.error_estimate         # within four standard errors
-True
 
 ```
 
-The historical generators in `quadrivium.stochastic` (`LCG`, `ParkMiller`,
-`XorShift`, `MersenneTwister`) are separate: they take a `seed` and reproduce
-the classic algorithms exactly, including their defects. They are there to be
-studied, not to be used as a source of randomness — use `rng=` for that.
+A repeated seed demonstrates reproducibility, not statistical independence.
+Use independent streams for replications, and interpret Monte Carlo uncertainty
+with repeated experiments or appropriate diagnostics. See [stochastic methods](guides/stochastic.md).
 
 ## Performance
 
-The library is written for legibility. The algorithm is in the source at the
-level a textbook states it, which costs performance in the places you would
-expect: Python-level loops over matrix entries or time steps. Roughly:
+The C engine handles array operations, and selected algorithms dispatch to
+native kernels. Other methods use Python orchestration. Work can be dominated
+by factorization, memory traffic, callback evaluations, or stored output,
+depending on the problem.
 
-- **Dense linear algebra** relies on NumPy's matrix products for its inner
-  work, so factorizations are competitive up to a few hundred rows and fall
-  behind LAPACK well before a thousand.
-- **Krylov and iterative solvers** spend their time in matrix-vector products
-  and are close to optimal when the operator is a NumPy array or a
-  `matvec` callable.
-- **Quadrature, root finding, and optimization** are dominated by your own
-  callback. If `f` is a NumPy expression, the library's overhead is small.
-- **ODE and PDE time stepping** loops in Python once per step, which is the
-  library's slowest pattern: expect roughly 10–100× a compiled integrator on
-  the same problem.
+Measure representative inputs, including their shapes and dtypes. Reuse factors,
+exploit sparse operators, and record only needed output. Timing a tiny callback
+says little about a simulation whose callback solves another model. The graphs
+in this documentation primarily compare numerical error and algorithmic work;
+they are not universal speed benchmarks.
 
-For a large sparse solve, a stiff production integrator, or anything in an
-inner loop that runs millions of times, reach for a compiled library. For
-everything up to moderate size — and for every case where you want to see what
-the method did — this is fast enough.
+Inspect the active backend with `qd.accel.show_config()`. The context manager
+`qd.accel.disabled()` selects Python reference methods while retaining the
+required C array engine. See [design](design.md) for the architecture.
 
-## Interoperating with the rest of the ecosystem
+## Continue by task
 
-Inputs and outputs are NumPy arrays, so nothing special is needed:
-
-```pycon
->>> from quadrivium import numeric as np
->>> t = np.linspace(0, 1, 5)
->>> sol = qd.solve_ivp(lambda t, y: -y, (0, 1), [1.0], rtol=1e-10)
->>> y = sol(t)                          # dense output on your own grid
->>> y.shape
-(5, 1)
->>> float(np.max(np.abs(y[:, 0] - np.exp(-t)))) < 1e-8
-True
-
-```
-
-The results are plain dataclasses, so `dataclasses.asdict` serializes them,
-and `matplotlib` plots `sol.t` against `sol.y` directly.
-
-## Where next
-
-- The [guides](guides/linalg.md) — one per subpackage, on choosing between
-  methods that solve the same problem.
-- The [API reference](api/index.md) — every signature, generated from the code.
-- [Design and validation](design.md) — how the library decides a method is
-  correct.
-- [Known limitations](limitations.md) — where a method is genuinely weaker
-  than its reputation.
-- The [example scripts](examples.md) — six runnable tours of the library.
+Choose a guide from the [home page](index.md), try the [example scripts](examples.md),
+or build a [scientific workflow](guides/workflows.md). Keep the
+[API reference](api/index.md) open for exact signatures and defaults.

@@ -10,7 +10,8 @@ from __future__ import annotations
 from .. import numeric as np
 
 from ..core.exceptions import DomainError
-from ..core.types import PDESolution
+from ..core.storage import (pde_solution as PDESolution, TimeGrid,
+                            Trajectory, output_control, OutputRecorder)
 from ..core.utils import as_vector
 
 __all__ = [
@@ -30,6 +31,19 @@ __all__ = [
 ]
 
 
+def _wave_history(checkpoint, current, dt, method):
+    if checkpoint.method != method:
+        raise ValueError("checkpoint method does not match the requested recurrence")
+    previous_dt = float(checkpoint.metadata.get("dt", 0))
+    recent = checkpoint.metadata.get("recent", [])
+    if len(recent)<2 or not np.isclose(dt, previous_dt, rtol=1e-12, atol=0):
+        raise ValueError("recurrence restart needs two states and the original time step")
+    previous = np.asarray(recent[-2], float)
+    if previous.shape!=current.shape:
+        raise ValueError("checkpoint/grid shape mismatch")
+    return previous.copy(), current.copy()
+
+
 def cfl_number(c: float, dt: float, dx: float) -> float:
     """Courant number ``C = c dt / dx``; explicit schemes need ``|C| <= 1``."""
     return c * dt / dx
@@ -37,13 +51,13 @@ def cfl_number(c: float, dt: float, dx: float) -> float:
 
 def _setup(u0, x_span, nx, t_span, nt):
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     u = np.array([u0(xi) for xi in x], dtype=float) if callable(u0) else as_vector(u0).copy()
     return x, t, x[1] - x[0], t[1] - t[0], u
 
 
 def wave_explicit(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200,
-                  bc=(0.0, 0.0), check_stability: bool = True):
+                  bc=(0.0, 0.0), check_stability: bool = True, checkpoint=None):
     """Explicit central scheme for ``u_tt = c^2 u_xx``.
 
     Stable under the CFL condition ``c dt/dx <= 1``.
@@ -56,16 +70,25 @@ def wave_explicit(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200
             f"{int(np.ceil(c * (t[-1] - t[0]) / dx))} time steps"
         )
     v = np.array([v0(xi) for xi in x]) if callable(v0) else as_vector(v0)
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
-    u_prev = u.copy()
-    u_cur = u.copy()
-    # first step uses the initial velocity (Taylor expansion in time)
-    u_cur[1:-1] = (u[1:-1] + dt * v[1:-1]
-                   + 0.5 * lam**2 * (u[2:] - 2 * u[1:-1] + u[:-2]))
-    u_cur[0], u_cur[-1] = bc[0], bc[1]
-    U[1] = u_cur
-    for k in range(1, nt):
+    if U.recorder.stopped:
+        return PDESolution(U, (x,), t, "wave_explicit")
+    if checkpoint is not None:
+        u_prev, u_cur = _wave_history(checkpoint, u, dt, "wave_explicit")
+        start_step = 0
+    else:
+        u_prev = u.copy()
+        u_cur = u.copy()
+        # first step uses the initial velocity (Taylor expansion in time)
+        u_cur[1:-1] = (u[1:-1] + dt * v[1:-1]
+                       + 0.5 * lam**2 * (u[2:] - 2 * u[1:-1] + u[:-2]))
+        u_cur[0], u_cur[-1] = bc[0], bc[1]
+        U[1] = u_cur
+        start_step = 1
+    for k in range(start_step, nt):
+        if U.recorder.stopped:
+            break
         u_new = np.empty_like(u_cur)
         u_new[1:-1] = (2 * u_cur[1:-1] - u_prev[1:-1]
                        + lam**2 * (u_cur[2:] - 2 * u_cur[1:-1] + u_cur[:-2]))
@@ -76,25 +99,34 @@ def wave_explicit(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200
 
 
 def wave_implicit(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200,
-                  bc=(0.0, 0.0), theta: float = 0.25):
+                  bc=(0.0, 0.0), theta: float = 0.25, checkpoint=None):
     """Newmark-style implicit wave scheme: unconditionally stable for ``theta >= 1/4``."""
     from ..linalg.direct import thomas
 
     x, t, dx, dt, u = _setup(u0, x_span, nx, t_span, nt)
     lam2 = (c * dt / dx) ** 2
     v = np.array([v0(xi) for xi in x]) if callable(v0) else as_vector(v0)
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
+    if U.recorder.stopped:
+        return PDESolution(U, (x,), t, "wave_implicit")
     m = nx - 1
     lower = np.full(m - 1, -theta * lam2)
     diag = np.full(m, 1 + 2 * theta * lam2)
     upper = np.full(m - 1, -theta * lam2)
-    u_prev = u.copy()
-    u_cur = u.copy()
-    u_cur[1:-1] = u[1:-1] + dt * v[1:-1] + 0.5 * lam2 * (u[2:] - 2 * u[1:-1] + u[:-2])
-    u_cur[0], u_cur[-1] = bc[0], bc[1]
-    U[1] = u_cur
-    for k in range(1, nt):
+    if checkpoint is not None:
+        u_prev, u_cur = _wave_history(checkpoint, u, dt, "wave_implicit")
+        start_step = 0
+    else:
+        u_prev = u.copy()
+        u_cur = u.copy()
+        u_cur[1:-1] = u[1:-1] + dt * v[1:-1] + 0.5 * lam2 * (u[2:] - 2 * u[1:-1] + u[:-2])
+        u_cur[0], u_cur[-1] = bc[0], bc[1]
+        U[1] = u_cur
+        start_step = 1
+    for k in range(start_step, nt):
+        if U.recorder.stopped:
+            break
         lap_cur = u_cur[2:] - 2 * u_cur[1:-1] + u_cur[:-2]
         lap_prev = u_prev[2:] - 2 * u_prev[1:-1] + u_prev[:-2]
         rhs = (2 * u_cur[1:-1] - u_prev[1:-1]
@@ -110,14 +142,16 @@ def wave_implicit(u0, v0, c: float, x_span, t_span, nx: int = 100, nt: int = 200
 def _periodic_advection(u0, c, x_span, t_span, nx, nt, update, name):
     """Driver for linear advection schemes with periodic boundaries."""
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dx = x[1] - x[0]
     dt = t[1] - t[0]
     nu = c * dt / dx
     u = np.array([u0(xi) for xi in x], dtype=float) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, u.size))
+    U = Trajectory(t)
     U[0] = u
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         u = update(u, nu)
         U[k + 1] = u
     return PDESolution(U, (x,), t, name)
@@ -170,19 +204,28 @@ def maccormack(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400):
     return _periodic_advection(u0, c, x_span, t_span, nx, nt, step, "maccormack")
 
 
-def leapfrog_advection(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400):
+def leapfrog_advection(u0, c: float, x_span, t_span, nx: int = 200, nt: int = 400, checkpoint=None):
     """Leapfrog: second order and non-dissipative, but needs two levels."""
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dx, dt = x[1] - x[0], t[1] - t[0]
     nu = c * dt / dx
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, u.size))
+    U = Trajectory(t)
     U[0] = u
-    u_prev = u
-    u_cur = u - nu / 2 * (np.roll(u, -1) - np.roll(u, 1))  # start with Lax-Wendroff
-    U[1] = u_cur
-    for k in range(1, nt):
+    if U.recorder.stopped:
+        return PDESolution(U, (x,), t, "leapfrog_advection")
+    if checkpoint is not None:
+        u_prev, u_cur = _wave_history(checkpoint, u, dt, "leapfrog_advection")
+        start_step = 0
+    else:
+        u_prev = u
+        u_cur = u - nu / 2 * (np.roll(u, -1) - np.roll(u, 1))  # start with Lax-Wendroff
+        U[1] = u_cur
+        start_step = 1
+    for k in range(start_step, nt):
+        if U.recorder.stopped:
+            break
         u_new = u_prev - nu * (np.roll(u_cur, -1) - np.roll(u_cur, 1))
         u_prev, u_cur = u_cur, u_new
         U[k + 1] = u_cur
@@ -255,10 +298,10 @@ def godunov_burgers(u0, x_span, t_span, nx: int = 200, nt: int = 400):
     captured at the right speed without spurious oscillation.
     """
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dx, dt = x[1] - x[0], t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, u.size))
+    U = Trajectory(t)
     U[0] = u
 
     def godunov_flux(ul, ur):
@@ -274,6 +317,8 @@ def godunov_burgers(u0, x_span, t_span, nx: int = 200, nt: int = 400):
         return out
 
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         F = godunov_flux(u, np.roll(u, -1))
         u = u - dt / dx * (F - np.roll(F, 1))
         U[k + 1] = u
@@ -283,14 +328,23 @@ def godunov_burgers(u0, x_span, t_span, nx: int = 200, nt: int = 400):
 def lax_friedrichs_burgers(u0, x_span, t_span, nx: int = 200, nt: int = 400):
     """Lax-Friedrichs for Burgers: robust and monotone, but smears shocks."""
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx, endpoint=False)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dx, dt = x[1] - x[0], t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, u.size))
+    U = Trajectory(t)
     U[0] = u
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         f = 0.5 * u * u
         u = (0.5 * (np.roll(u, -1) + np.roll(u, 1))
              - 0.5 * dt / dx * (np.roll(f, -1) - np.roll(f, 1)))
         U[k + 1] = u
     return PDESolution(U, (x,), t, "lax_friedrichs_burgers")
+
+
+# Share output policy through nested method-of-lines and wrapper calls.
+for _name in __all__:
+    if "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

@@ -5,6 +5,7 @@
  * factor, so any length transforms in O(n log n) rather than O(n^2).
  */
 #include "qnp.h"
+#include "qaccel.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -19,6 +20,7 @@ typedef struct {
     int sign;
     qcomplex *w;
     unsigned long used;
+    unsigned int users;
 } TwiddleSlot;
 
 static TwiddleSlot twiddles[TWIDDLE_SLOTS];
@@ -30,26 +32,39 @@ static const qcomplex *get_twiddles(qintp n, int sign) {
     for (int i = 0; i < TWIDDLE_SLOTS; i++) {
         if (twiddles[i].w != NULL && twiddles[i].n == n && twiddles[i].sign == sign) {
             twiddles[i].used = ++twiddle_clock;
+            twiddles[i].users++;
             return twiddles[i].w;
         }
     }
-    int victim = 0;
+    int victim = -1;
     for (int i = 0; i < TWIDDLE_SLOTS; i++) {
+        if (twiddles[i].users) continue;
         if (twiddles[i].w == NULL) { victim = i; break; }
-        if (twiddles[i].used < twiddles[victim].used) victim = i;
+        if (victim < 0 || twiddles[i].used < twiddles[victim].used) victim = i;
     }
-    qcomplex *w = (qcomplex *)PyMem_Malloc((size_t)(n ? n : 1) * sizeof(qcomplex));
+    qcomplex *w = qaccel_alloc(n, sizeof(qcomplex));
     if (w == NULL) return NULL;
     for (qintp k = 0; k < n; k++) {
         double angle = 2.0 * M_PI * (double)k / (double)n;
         w[k] = qc(cos(angle), sign * sin(angle));
     }
+    /* At most 1 MiB per slot (8 MiB total), independent of lengths visited.
+     * Active entries are pinned while another thread computes without GIL. */
+    if (victim < 0 || n > 65536) return w;
     PyMem_Free(twiddles[victim].w);
     twiddles[victim].n = n;
     twiddles[victim].sign = sign;
     twiddles[victim].w = w;
     twiddles[victim].used = ++twiddle_clock;
+    twiddles[victim].users = 1;
     return w;
+}
+
+static void release_twiddles(const qcomplex *w) {
+    for (int i = 0; i < TWIDDLE_SLOTS; i++) {
+        if (twiddles[i].w == w) { twiddles[i].users--; return; }
+    }
+    PyMem_Free((void *)w);
 }
 
 /* ---- the recursive transform ------------------------------------------ */
@@ -78,6 +93,23 @@ static void fft_core(qcomplex *out, const qcomplex *in, qintp n, qintp in_stride
         }
         return;
     }
+    if (p == 3) {
+        const double sine = 0.8660254037844386; /* sqrt(3) / 2 */
+        double sign = w[m * wn].im > 0.0 ? 1.0 : -1.0;
+        for (qintp j = 0; j < m; j++) {
+            qcomplex a0 = out[j];
+            qcomplex a1 = qc_mul(out[m + j], w[j * wn]);
+            qcomplex a2 = qc_mul(out[2 * m + j], w[2 * j * wn]);
+            qcomplex sum = qc_add(a1, a2), difference = qc_sub(a1, a2);
+            qcomplex center = qc(a0.re - 0.5 * sum.re, a0.im - 0.5 * sum.im);
+            qcomplex rotation = qc(-sign * sine * difference.im,
+                                    sign * sine * difference.re);
+            out[j] = qc_add(a0, sum);
+            out[m + j] = qc_add(center, rotation);
+            out[2 * m + j] = qc_sub(center, rotation);
+        }
+        return;
+    }
     if (p == 4) {
         /* w[n/4] is +-i, so the radix-4 butterfly needs no extra multiply. */
         int isign = (w[n / 4 * wn].im > 0.0) ? 1 : -1;
@@ -96,6 +128,36 @@ static void fft_core(qcomplex *out, const qcomplex *in, qintp n, qintp in_stride
         }
         return;
     }
+    if (p == 5) {
+        const double c1 = 0.30901699437494745, s1 = 0.9510565162951535;
+        const double c2 = -0.8090169943749475, s2 = 0.5877852522924731;
+        double sign = w[m * wn].im > 0.0 ? 1.0 : -1.0;
+        for (qintp j = 0; j < m; j++) {
+            qcomplex a0 = out[j];
+            qcomplex a1 = qc_mul(out[m + j], w[j * wn]);
+            qcomplex a2 = qc_mul(out[2 * m + j], w[2 * j * wn]);
+            qcomplex a3 = qc_mul(out[3 * m + j], w[3 * j * wn]);
+            qcomplex a4 = qc_mul(out[4 * m + j], w[4 * j * wn]);
+            qcomplex t1 = qc_add(a1, a4), t2 = qc_add(a2, a3);
+            qcomplex t3 = qc_sub(a1, a4), t4 = qc_sub(a2, a3);
+            qcomplex center1 = qc(a0.re + c1 * t1.re + c2 * t2.re,
+                                  a0.im + c1 * t1.im + c2 * t2.im);
+            qcomplex center2 = qc(a0.re + c2 * t1.re + c1 * t2.re,
+                                  a0.im + c2 * t1.im + c1 * t2.im);
+            qcomplex sine1 = qc(s1 * t3.re + s2 * t4.re,
+                                s1 * t3.im + s2 * t4.im);
+            qcomplex sine2 = qc(s2 * t3.re - s1 * t4.re,
+                                s2 * t3.im - s1 * t4.im);
+            qcomplex rotation1 = qc(-sign * sine1.im, sign * sine1.re);
+            qcomplex rotation2 = qc(-sign * sine2.im, sign * sine2.re);
+            out[j] = qc_add(qc_add(a0, t1), t2);
+            out[m + j] = qc_add(center1, rotation1);
+            out[4 * m + j] = qc_sub(center1, rotation1);
+            out[2 * m + j] = qc_add(center2, rotation2);
+            out[3 * m + j] = qc_sub(center2, rotation2);
+        }
+        return;
+    }
     for (qintp j = 0; j < m; j++) {
         for (qintp k = 0; k < p; k++)
             tmp[k] = qc_mul(out[k * m + j], w[(k * j * wn) % (n * wn)]);
@@ -108,25 +170,28 @@ static void fft_core(qcomplex *out, const qcomplex *in, qintp n, qintp in_stride
     }
 }
 
-static int largest_prime_factor(qintp n) {
+static qintp largest_prime_factor(qintp n) {
     qintp best = 1;
     while (n % 2 == 0) { best = 2; n /= 2; }
     for (qintp p = 3; p * p <= n; p += 2)
         while (n % p == 0) { best = p; n /= p; }
     if (n > 1) best = n;
-    return (int)best;
+    return best;
 }
 
 static int transform_pow2(qcomplex *data, qintp n, int sign) {
     const qcomplex *w = get_twiddles(n, sign);
     if (w == NULL) return -1;
     qcomplex *out = (qcomplex *)PyMem_Malloc((size_t)n * sizeof(qcomplex));
-    qcomplex *tmp = (qcomplex *)PyMem_Malloc((size_t)n * sizeof(qcomplex));
-    if (out == NULL || tmp == NULL) { PyMem_Free(out); PyMem_Free(tmp); return -1; }
-    fft_core(out, data, n, 1, w, 1, tmp);
+    if (out == NULL) { release_twiddles(w); return -1; }
+    Py_BEGIN_ALLOW_THREADS
+    /* Radix 2/4 butterflies need no temporary; output is a valid unused
+     * work pointer for the recursion. */
+    fft_core(out, data, n, 1, w, 1, out);
     memcpy(data, out, (size_t)n * sizeof(qcomplex));
+    Py_END_ALLOW_THREADS
+    release_twiddles(w);
     PyMem_Free(out);
-    PyMem_Free(tmp);
     return 0;
 }
 
@@ -134,7 +199,11 @@ static int transform_pow2(qcomplex *data, qintp n, int sign) {
  * power-of-two transform can do. */
 static int bluestein(const qcomplex *in, qcomplex *out, qintp n, int sign) {
     qintp m = 1;
-    while (m < 2 * n - 1) m <<= 1;
+    if (n > PY_SSIZE_T_MAX/2) return -1;
+    while (m < 2 * n - 1) {
+        if (m > PY_SSIZE_T_MAX / 2 / (qintp)sizeof(qcomplex)) return -1;
+        m <<= 1;
+    }
     qcomplex *chirp = (qcomplex *)PyMem_Malloc((size_t)n * sizeof(qcomplex));
     qcomplex *a = (qcomplex *)PyMem_Calloc((size_t)m, sizeof(qcomplex));
     qcomplex *b = (qcomplex *)PyMem_Calloc((size_t)m, sizeof(qcomplex));
@@ -142,14 +211,18 @@ static int bluestein(const qcomplex *in, qcomplex *out, qintp n, int sign) {
         PyMem_Free(chirp); PyMem_Free(a); PyMem_Free(b);
         return -1;
     }
+    /* Successive squares differ by 2*k+1. Maintain k*k modulo 2*n without
+     * ever forming the square: its product would overflow above k=2^32.
+     * Both addends stay below 2*n, and the array-size bound makes 4*n safe. */
+    uint64_t square = 0, period = 2 * (uint64_t)n;
     for (qintp k = 0; k < n; k++) {
-        /* k*k modulo 2n keeps the angle small enough to stay accurate. */
-        qintp kk = (k * k) % (2 * n);
-        double angle = M_PI * (double)kk / (double)n;
+        double angle = M_PI * (double)square / (double)n;
         chirp[k] = qc(cos(angle), sign * sin(angle));
         a[k] = qc_mul(in[k], chirp[k]);
         b[k] = qc_conj(chirp[k]);
         if (k) b[m - k] = qc_conj(chirp[k]);
+        square += 2 * (uint64_t)k + 1;
+        if (square >= period) square -= period;
     }
     int rc = transform_pow2(a, m, -1);
     if (rc == 0) rc = transform_pow2(b, m, -1);
@@ -173,8 +246,8 @@ static int bluestein(const qcomplex *in, qcomplex *out, qintp n, int sign) {
 static int transform_run(const qcomplex *in, qintp istride, qcomplex *out, qintp ostride,
                          qintp n, int sign, qcomplex *scratch, qcomplex *tmp) {
     if (n == 0) return 0;
-    for (qintp i = 0; i < n; i++) scratch[i] = in[i * istride];
     if (largest_prime_factor(n) > 37 && n > 64) {
+        for (qintp i = 0; i < n; i++) scratch[i] = in[i * istride];
         qcomplex *dst = tmp;
         if (bluestein(scratch, dst, n, sign) < 0) return -1;
         for (qintp i = 0; i < n; i++) out[i * ostride] = dst[i];
@@ -182,10 +255,13 @@ static int transform_run(const qcomplex *in, qintp istride, qcomplex *out, qintp
     }
     const qcomplex *w = get_twiddles(n, sign);
     if (w == NULL) return -1;
-    qcomplex *dst = tmp;
-    qcomplex *work = tmp + n;
-    fft_core(dst, scratch, n, 1, w, 1, work);
-    for (qintp i = 0; i < n; i++) out[i * ostride] = dst[i];
+    qcomplex *dst = ostride == 1 ? out : tmp;
+    Py_BEGIN_ALLOW_THREADS
+    fft_core(dst, in, n, istride, w, 1, scratch);
+    if (ostride != 1)
+        for (qintp i = 0; i < n; i++) out[i * ostride] = dst[i];
+    Py_END_ALLOW_THREADS
+    release_twiddles(w);
     return 0;
 }
 
@@ -254,33 +330,58 @@ static PyObject *fft_entry(PyObject *args, PyObject *kwds, int sign, const char 
     }
     QArray *out = qnp_new(a->nd, shape, QNP_COMPLEX128);
     if (out == NULL) { Py_DECREF(a); return NULL; }
-    qcomplex *scratch = (qcomplex *)PyMem_Malloc((size_t)(len ? len : 1) * sizeof(qcomplex));
-    qcomplex *tmp = (qcomplex *)PyMem_Malloc((size_t)(len ? 2 * len : 1) * sizeof(qcomplex));
+    /* Transform runs release the GIL. A caller may assign a.shape between
+     * rows, which replaces its shape/stride allocation while retaining data.
+     * Keep the original traversal metadata in private stack storage. */
+    int input_nd = a->nd;
+    qintp input_shape[QNP_MAXDIMS], input_strides[QNP_MAXDIMS];
+    for (int d = 0; d < input_nd; ++d) {
+        input_shape[d] = a->shape[d];
+        input_strides[d] = a->strides[d];
+    }
+    if (a->nd == 1 && (len & (len - 1)) == 0) {
+        const qcomplex *w = get_twiddles(len, sign);
+        if (w == NULL) { Py_DECREF(a); Py_DECREF(out); return NULL; }
+        qcomplex *dst = (qcomplex *)out->data;
+        qintp stride = a->strides[0] / (qintp)sizeof(qcomplex);
+        Py_BEGIN_ALLOW_THREADS
+        fft_core(dst, (const qcomplex *)a->data, len, stride, w, 1, dst);
+        if (sign > 0) {
+            double inv = 1. / (double)len;
+            for (qintp i=0;i<len;i++) { dst[i].re *= inv; dst[i].im *= inv; }
+        }
+        Py_END_ALLOW_THREADS
+        release_twiddles(w);
+        Py_DECREF(a);
+        return (PyObject *)out;
+    }
+    qcomplex *scratch = qaccel_alloc(len, sizeof(qcomplex));
+    qcomplex *tmp = qaccel_alloc(len, sizeof(qcomplex));
     if (scratch == NULL || tmp == NULL) {
         PyMem_Free(scratch); PyMem_Free(tmp); Py_DECREF(a); Py_DECREF(out);
         return PyErr_NoMemory();
     }
-    qintp outer = qnp_size(a) / (len ? len : 1);
+    qintp outer = qnp_size(out) / len;
     qintp idx[QNP_MAXDIMS] = {0};
-    qintp istride = a->strides[axis] / (qintp)sizeof(qcomplex);
+    qintp istride = input_strides[axis] / (qintp)sizeof(qcomplex);
     qintp ostride = out->strides[axis] / (qintp)sizeof(qcomplex);
     int rc = 0;
     for (qintp k = 0; k < outer && rc == 0; k++) {
         const char *src = a->data;
         char *dst = out->data;
-        for (int d = 0, w = 0; d < a->nd; d++) {
+        for (int d = 0, w = 0; d < input_nd; d++) {
             if (d == axis) continue;
-            src += idx[w] * a->strides[d];
+            src += idx[w] * input_strides[d];
             dst += idx[w] * out->strides[d];
             w++;
         }
         rc = transform_run((const qcomplex *)src, istride, (qcomplex *)dst, ostride,
                            len, sign, scratch, tmp);
-        for (int d = a->nd - 2; d >= 0; d--) {
+        for (int d = input_nd - 2; d >= 0; d--) {
             qintp dim = 0;
-            for (int e = 0, w = 0; e < a->nd; e++) {
+            for (int e = 0, w = 0; e < input_nd; e++) {
                 if (e == axis) continue;
-                if (w == d) { dim = a->shape[e]; break; }
+                if (w == d) { dim = input_shape[e]; break; }
                 w++;
             }
             if (++idx[d] < dim) break;
@@ -302,6 +403,34 @@ static PyObject *fft_entry(PyObject *args, PyObject *kwds, int sign, const char 
         for (qintp i = 0; i < total; i++) { p[i].re *= inv; p[i].im *= inv; }
     }
     return (PyObject *)out;
+}
+
+static PyObject *accel_fft_entry(PyObject *args, PyObject *kwds, int sign) {
+    PyObject *obj;
+    static char *names[] = {"a",NULL};
+    if (!PyArg_ParseTupleAndKeywords(args,kwds,"O",names,&obj)) return NULL;
+    QArray *a = qnp_from_any(obj,QNP_COMPLEX128,1);
+    if (a == NULL) return NULL;
+    if (a->nd != 1) {
+        Py_DECREF(a);
+        PyErr_SetString(PyExc_ValueError,"expected a 1-dimensional array");
+        return NULL;
+    }
+    if (a->shape[0] == 0) {
+        QArray *out = qnp_new(1,a->shape,QNP_COMPLEX128);
+        Py_DECREF(a);
+        return (PyObject *)out;
+    }
+    Py_DECREF(a);
+    return fft_entry(args,kwds,sign,sign < 0 ? "fft" : "ifft");
+}
+
+PyObject *qaccel_fft(PyObject *self, PyObject *args, PyObject *kwds) {
+    (void)self; return accel_fft_entry(args,kwds,-1);
+}
+
+PyObject *qaccel_ifft(PyObject *self, PyObject *args, PyObject *kwds) {
+    (void)self; return accel_fft_entry(args,kwds,1);
 }
 
 static PyObject *py_fft(PyObject *self, PyObject *args, PyObject *kwds) {

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import PDESolution
+from ..core.storage import (pde_solution as PDESolution, TimeGrid,
+                            Trajectory, output_control, OutputRecorder)
 from ..core.utils import as_vector
 
 __all__ = [
@@ -71,10 +72,10 @@ def fvm_1d_conservation(u0, flux, wave_speed, x_span, t_span, nx: int = 200,
     x_edges = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
     x = 0.5 * (x_edges[:-1] + x_edges[1:])          # cell centres
     dx = x_edges[1] - x_edges[0]
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dt = t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx))
+    U = Trajectory(t)
     U[0] = u
 
     def extend(v):
@@ -85,6 +86,8 @@ def fvm_1d_conservation(u0, flux, wave_speed, x_span, t_span, nx: int = 200,
         return right, left
 
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         right, _ = extend(u)
         if numerical_flux == "rusanov":
             F = rusanov_flux(u, right, flux, wave_speed)
@@ -131,10 +134,10 @@ def fvm_muscl(u0, flux, wave_speed, x_span, t_span, nx: int = 200, nt: int = 400
     x_edges = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
     x = 0.5 * (x_edges[:-1] + x_edges[1:])
     dx = x_edges[1] - x_edges[0]
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dt = t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx))
+    U = Trajectory(t)
     U[0] = u
 
     def L(v):
@@ -143,6 +146,8 @@ def fvm_muscl(u0, flux, wave_speed, x_span, t_span, nx: int = 200, nt: int = 400
         return -(F - np.roll(F, 1)) / dx
 
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         u1 = u + dt * L(u)                   # SSP-RK2 (Heun): both stages convex
         u = 0.5 * (u + u1 + dt * L(u1))
         U[k + 1] = u
@@ -159,12 +164,14 @@ def fvm_diffusion(u0, alpha: float, x_span, t_span, nx: int = 100, nt: int = 500
     x_edges = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
     x = 0.5 * (x_edges[:-1] + x_edges[1:])
     dx = x_edges[1] - x_edges[0]
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dt = t[1] - t[0]
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx))
+    U = Trajectory(t)
     U[0] = u
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         ghost_l = 2 * bc[0] - u[0]           # Dirichlet through a ghost cell
         ghost_r = 2 * bc[1] - u[-1]
         ext = np.concatenate([[ghost_l], u, [ghost_r]])
@@ -172,3 +179,10 @@ def fvm_diffusion(u0, alpha: float, x_span, t_span, nx: int = 100, nt: int = 500
         u = u - dt / dx * (flux[1:] - flux[:-1])
         U[k + 1] = u
     return PDESolution(U, (x,), t, "fvm_diffusion")
+
+
+# Share output policy through nested method-of-lines and wrapper calls.
+for _name in __all__:
+    if "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

@@ -1,10 +1,13 @@
 """Global optimization: stochastic and population-based search.
 
-Local methods find the nearest minimum; these explore the whole domain, trading
-guarantees for the ability to escape local optima.
+Local methods can converge to different stationary points from different
+initial guesses. These methods explore more broadly to escape local optima,
+but a finite run does not certify that the global minimum has been found.
 """
 
 from __future__ import annotations
+
+from ._history import History, monitor
 
 from .. import numeric as np
 
@@ -44,7 +47,7 @@ def simulated_annealing(f, x0, bounds=None, T0: float = 10.0, cooling: float = 0
     fx = fc(x)
     best, f_best = x.copy(), fx
     T = T0
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if T < T_min:
             break
@@ -57,7 +60,7 @@ def simulated_annealing(f, x0, bounds=None, T0: float = 10.0, cooling: float = 0
             x, fx = cand, f_cand
             if fx < f_best:
                 best, f_best = x.copy(), fx
-                history.append(best.copy())
+                history.append(best)
         T *= cooling
     return OptimizeResult(best, float(f_best), None, None, k, True, fc.calls, 0,
                           "simulated_annealing", history, "annealing completed")
@@ -81,7 +84,7 @@ def particle_swarm(f, bounds, n_particles: int = 40, max_iter: int = 500,
     P, FP = X.copy(), F.copy()
     g_idx = int(np.argmin(FP))
     g_best, f_best = P[g_idx].copy(), FP[g_idx]
-    history = [g_best.copy()]
+    history = History([g_best])
     for k in range(1, max_iter + 1):
         r1 = rng.random((n_particles, n))
         r2 = rng.random((n_particles, n))
@@ -93,7 +96,7 @@ def particle_swarm(f, bounds, n_particles: int = 40, max_iter: int = 500,
         i = int(np.argmin(FP))
         if FP[i] < f_best:
             g_best, f_best = P[i].copy(), FP[i]
-            history.append(g_best.copy())
+            history.append(g_best)
         if np.max(np.abs(X - g_best)) < tol:
             break
     return OptimizeResult(g_best, float(f_best), None, None, k, True, fc.calls, 0,
@@ -119,7 +122,7 @@ def differential_evolution(f, bounds, pop_size: int = 30, F: float = 0.8,
     n = lo.size
     pop = rng.uniform(lo, hi, size=(pop_size, n))
     fit = np.array([fc(p) for p in pop])
-    history = []
+    history = History()
     for k in range(1, max_iter + 1):
         for i in range(pop_size):
             idxs = [j for j in range(pop_size) if j != i]
@@ -138,7 +141,7 @@ def differential_evolution(f, bounds, pop_size: int = 30, F: float = 0.8,
             f_trial = fc(trial)
             if f_trial < fit[i]:
                 pop[i], fit[i] = trial, f_trial
-        history.append(pop[int(np.argmin(fit))].copy())
+        history.append(pop[int(np.argmin(fit))])
         if np.max(fit) - np.min(fit) < tol:
             break
     best = int(np.argmin(fit))
@@ -157,11 +160,11 @@ def genetic_algorithm(f, bounds, pop_size: int = 60, max_iter: int = 500,
     n = lo.size
     pop = rng.uniform(lo, hi, size=(pop_size, n))
     fit = np.array([fc(p) for p in pop])
-    history = []
+    history = History()
     for k in range(1, max_iter + 1):
         order = np.argsort(fit)
         pop, fit = pop[order], fit[order]
-        history.append(pop[0].copy())
+        history.append(pop[0])
         new = [pop[i].copy() for i in range(elite)]
         while len(new) < pop_size:
             # tournament selection
@@ -198,7 +201,7 @@ def basin_hopping(f, x0, n_hops: int = 100, step: float = 0.5, T: float = 1.0,
     res = local(fc, x)
     x, fx = as_vector(res.x), float(res.fun)
     best, f_best = x.copy(), fx
-    history = [best.copy()]
+    history = History([best])
     lo, hi = _bounds_arrays(bounds) if bounds is not None else (None, None)
     for k in range(1, n_hops + 1):
         cand = x + step * rng.standard_normal(x.size)
@@ -210,7 +213,7 @@ def basin_hopping(f, x0, n_hops: int = 100, step: float = 0.5, T: float = 1.0,
             x, fx = xc, f_cand
         if f_cand < f_best:
             best, f_best = xc.copy(), f_cand
-            history.append(best.copy())
+            history.append(best)
     return OptimizeResult(best, float(f_best), None, None, n_hops, True, fc.calls,
                           0, "basin_hopping", history, "hops completed")
 
@@ -267,7 +270,7 @@ def cma_es(f, x0, sigma0: float = 0.5, pop_size=None, max_iter: int = 1000,
     chiN = np.sqrt(n) * (1 - 1.0 / (4 * n) + 1.0 / (21 * n * n))
     counteval = 0
     best, f_best = xmean.copy(), fc(xmean)
-    history = [best.copy()]
+    history = History([best])
     for k in range(1, max_iter + 1):
         Z = rng.standard_normal((lam, n))
         X = xmean + sigma * (Z * D) @ B.T
@@ -276,7 +279,7 @@ def cma_es(f, x0, sigma0: float = 0.5, pop_size=None, max_iter: int = 1000,
         order = np.argsort(F)
         if F[order[0]] < f_best:
             best, f_best = X[order[0]].copy(), float(F[order[0]])
-            history.append(best.copy())
+            history.append(best)
         xold = xmean.copy()
         xmean = weights @ X[order[:mu]]
         # cumulative step-size adaptation
@@ -343,3 +346,8 @@ def dual_annealing_lite(f, bounds, max_iter: int = 2000, rng=None, local=True,
     return OptimizeResult(best_x, float(best_f), None, None, restarts, True, calls,
                           0, "dual_annealing_lite", [],
                           "annealing with local polish")
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['simulated_annealing', 'particle_swarm', 'differential_evolution', 'genetic_algorithm', 'basin_hopping', 'cma_es']:
+    globals()[_name] = monitor(globals()[_name])

@@ -1,225 +1,353 @@
 # Special functions
 
-```python
-from quadrivium.special import gamma, bessel_jn, zeta, lambert_w
-import quadrivium as qd          # qd.gamma, qd.erf, qd.beta, qd.lambert_w
-```
+Special functions provide reusable numerical representations of integrals,
+recurrences, and differential-equation solutions that appear throughout applied
+mathematics. The practical question is often which **form** to evaluate:
+a logarithm instead of a large gamma value, a complementary function instead
+of subtracting nearly equal numbers, or a scaled function instead of a product
+that overflows before cancellation.
 
-52 functions: the gamma and beta families, error functions, Bessel and Airy
-functions, elliptic and exponential integrals, the Riemann zeta function,
-Lambert W, hypergeometric functions, and spherical harmonics. Full signatures
-are in the [`special` reference](../api/special.md).
+Quadrivium implements these functions for real arguments, with complex output
+for spherical harmonics. It uses series, recurrences, continued fractions, and
+asymptotic formulas in different regions. The [special-function reference](../api/special.md)
+records complete signatures, domains, and iteration controls.
 
-Each is computed by whichever representation is accurate in the region asked
-for — series near the origin, continued fraction or asymptotic expansion far
-from it, a reflection formula where the argument is negative — rather than by
-one formula stretched past its useful range.
+## Inputs, shapes, and domain behavior
 
-## Gamma and friends
+A scalar input usually produces a Python scalar. Array arguments preserve their
+shape, and multi-argument elementwise functions broadcast compatible shapes.
+Orders such as the `n` in `bessel_jn(n, x)` are scalar integer choices; they are
+not array-valued real-order Bessel parameters.
 
 ```pycon
 >>> from quadrivium import numeric as np
->>> import quadrivium as qd
->>> round(float(qd.gamma(5.0)), 10)                 # Γ(n) = (n-1)!
+>>> from quadrivium import special as sp
+>>> isinstance(sp.gamma(5.0), float)
+True
+>>> sp.gamma(np.array([[1.0, 2.0], [3.0, 4.0]])).round(8).tolist()
+[[1.0, 1.0], [2.0, 6.0]]
+>>> sp.beta(np.array([1.0, 2.0])[:, None], np.array([1.0, 2.0, 3.0])).shape
+(2, 3)
+
+```
+
+Domain handling is function-specific. Some inputs raise `DomainError`, while
+some singular or overflowing values deliberately return infinity. An invalid
+member of an array can cause a domain-checking function to reject the whole
+call. Check domains before batching measurements from different regimes.
+
+| Function or family | Contract worth checking |
+| --- | --- |
+| `gamma` | Non-positive integer poles and positive overflow return `+inf` |
+| `erfinv` | `-1` and `1` return signed infinity; values beyond them are rejected |
+| `regularized_gamma_p/q` | Require `a > 0`, `x >= 0` |
+| `bessel_y0/y1/yn`, `bessel_k0/k1/kn` | Positive real arguments |
+| `elliptic_k` | Requires parameter `m < 1` |
+| `elliptic_e` | Allows `m = 1`; rejects `m > 1` |
+| `lambert_w` | Only real branches `0` and `-1` |
+| `zeta` | Real argument excluding its pole at `s = 1` |
+| `hyp2f1` | Implemented for real `abs(z) < 1`, with denominator-parameter restrictions |
+| `logit` | Requires `0 < p < 1`, including rejection of the endpoints |
+
+Most functions return only a value, without a `converged` flag or an error
+estimate. A `tol` or iteration limit controls the internal approximation;
+it is not a certified relative-error bound everywhere in the domain.
+
+## Gamma, logarithms, and ratios
+
+The gamma recurrence `Gamma(x+1)=x*Gamma(x)` extends the factorial relation
+`Gamma(n)=(n-1)!` at positive integers.
+
+```pycon
+>>> round(sp.gamma(5.0), 8)
 24.0
->>> round(float(qd.gamma(0.5)), 12) == round(float(np.sqrt(np.pi)), 12)
+>>> abs(sp.gamma(0.5) - float(np.sqrt(np.pi))) < 1e-12
+True
+>>> x = np.array([0.3, 0.8, 2.5, 8.0])
+>>> np.allclose(sp.gamma(x + 1), x * sp.gamma(x), rtol=1e-12)
 True
 
 ```
 
-`log_gamma` is what to use when the value would overflow — `Γ(200)` is beyond
-a double, but its logarithm is not:
+For positive arguments, use `log_gamma` when the gamma value may overflow or
+when it enters a product or ratio. Keeping a calculation in logarithmic form
+can prevent large intermediate values from appearing at all.
 
 ```pycon
->>> from quadrivium.special import log_gamma, digamma, polygamma
->>> round(float(log_gamma(200.0)), 6)
+>>> np.isinf(sp.gamma(200.0))
+True
+>>> round(sp.log_gamma(200.0), 6)
 857.93367
->>> abs(float(digamma(1.0)) + 0.5772156649015329) < 1e-12    # ψ(1) = −γ
+>>> np.isinf(sp.gamma(0.0))
+True
+>>> a, b = 120.0, 80.0
+>>> abs(sp.log_beta(a, b) - (sp.log_gamma(a) + sp.log_gamma(b) - sp.log_gamma(a+b))) < 1e-10
 True
 
 ```
 
-`polygamma(n, x)` gives higher derivatives (`trigamma` is `n = 1`), `beta` and
-`log_beta` the beta function, and `factorial` and `binomial` the exact
-combinatorial values. The incomplete forms — `incomplete_gamma_lower`,
-`incomplete_gamma_upper`, `regularized_gamma_p`, `regularized_gamma_q`,
-`incomplete_beta` — are the CDFs of the chi-square, Poisson, gamma, beta,
-Student-t and F distributions, which is where they are usually met.
+`beta(a,b)` evaluates the beta function; `log_beta(a,b)` is useful for its
+logarithm. For probability models use positive `a` and `b`. Subtracting two
+very large, nearly equal log-gamma values can still lose precision, so a
+logarithmic rewrite is an improvement in numerical range, not immunity to all
+cancellation.
 
-<figure markdown="span">
-  ![The gamma function through its poles, and the logarithm that stays finite](../assets/figures/special-gamma.svg#only-light)
-  ![The gamma function through its poles, and the logarithm that stays finite](../assets/figures/special-gamma-dark.svg#only-dark)
-  <figcaption>Γ has a pole at every non-positive integer and passes through the factorials at the positive ones. It also overflows a double past x = 172, which is the whole reason `log_gamma` exists as a separate function rather than as `log(gamma(x))`.</figcaption>
-</figure>
+`digamma` is the derivative of log gamma. `trigamma` is its derivative, and
+`polygamma(n, x)` gives higher orders. These often appear in likelihood
+gradients and curvature calculations.
 
 ```pycon
->>> from quadrivium.special import regularized_gamma_p, regularized_gamma_q
->>> p, q = regularized_gamma_p(3.0, 4.0), regularized_gamma_q(3.0, 4.0)
->>> abs(p + q - 1.0) < 1e-14                        # P + Q = 1, exactly
+>>> euler_constant = 0.5772156649015329
+>>> abs(sp.digamma(1.0) + euler_constant) < 1e-12
+True
+>>> abs(sp.trigamma(1.0) - float(np.pi**2 / 6)) < 1e-10
 True
 
 ```
 
-## Error function family
+`factorial` and `binomial` return floating-point values. Small integer cases
+are handled carefully, but these are not arbitrary-precision combinatorial
+interfaces. Use Python's integer arithmetic when exact huge integer values
+are the actual output required. A factorial represented as float64 eventually
+overflows even though the mathematical integer exists.
+
+## Incomplete gamma and beta
+
+An incomplete function integrates over part of the original domain. A
+regularized function divides by the complete integral. Distinguishing those
+normalizations avoids missing factors in probability and integral formulas.
+
+| Function | Meaning |
+| --- | --- |
+| `incomplete_gamma_lower(a,x)` | Unregularized lower incomplete gamma |
+| `incomplete_gamma_upper(a,x)` | Unregularized upper incomplete gamma |
+| `regularized_gamma_p(a,x)` | Lower incomplete gamma divided by `Gamma(a)` |
+| `regularized_gamma_q(a,x)` | Upper incomplete gamma divided by `Gamma(a)` |
+| `incomplete_beta(a,b,x)` | **Regularized** incomplete beta `I_x(a,b)` |
 
 ```pycon
->>> from quadrivium.special import erf, erfc, erfinv, erfcx, dawson
->>> round(float(erf(1.0)), 12)
+>>> p = sp.regularized_gamma_p(3.0, 4.0)
+>>> q = sp.regularized_gamma_q(3.0, 4.0)
+>>> abs(p + q - 1.0) < 1e-13
+True
+>>> abs(sp.incomplete_gamma_lower(3.0, 4.0) / sp.gamma(3.0) - p) < 1e-13
+True
+>>> abs(sp.incomplete_beta(1.0, 1.0, 0.3) - 0.3) < 1e-13
+True
+
+```
+
+The unregularized gamma routines can overflow in a factor even when a related
+regularized probability is representable. Use the normalized function directly
+when that is the quantity needed. For extreme probabilities, the distribution
+objects in the [stochastic guide](stochastic.md) provide CDF, survival, and
+log-tail interfaces with more appropriate semantics than manually combining
+special functions.
+
+## Error functions and cancellation
+
+`erf` is the scaled Gaussian integral. Its complement `erfc` is mathematically
+`1-erf(x)`, but the direct complementary implementation preserves small positive
+tails after `erf(x)` has rounded to one.
+
+```pycon
+>>> round(sp.erf(1.0), 12)
 0.84270079295
->>> abs(float(erfinv(erf(0.7))) - 0.7) < 1e-12
+>>> 1.0 - sp.erf(8.0) == 0.0
+True
+>>> sp.erfc(8.0) > 0.0
+True
+>>> abs(sp.erfinv(sp.erf(0.7)) - 0.7) < 1e-12
 True
 
 ```
 
-`erfc(x)` underflows for large `x`; `erfcx(x) = e^{x²} erfc(x)` does not, which
-is what makes it the right function for tail probabilities:
+For still larger positive arguments, `erfc` itself underflows.
+`erfcx(x)=exp(x*x)*erfc(x)` evaluates the scaled combination directly:
 
 ```pycon
->>> float(erfc(30.0)) == 0.0                        # underflows
-True
->>> float(erfcx(30.0)) > 0.0                        # scaled version survives
+>>> sp.erfc(30.0) == 0.0, sp.erfcx(30.0) > 0.0
+(True, True)
+>>> abs(float(np.sqrt(np.pi) * 30 * sp.erfcx(30.0)) - 1.0) < 0.001
 True
 
 ```
 
-`dawson` is computed by Rybicki's method, because both obvious routes —
-`e^{−x²}∫e^{t²}dt` and the scaled complementary error function — overflow
-before they meet in the middle. `fresnel_s` and `fresnel_c` complete the set.
+The second check uses the leading positive-tail asymptotic behavior. Computing
+`exp(x*x)` and `erfc(x)` separately can produce infinity times zero, even when
+the scaled answer is finite. The positive-tail advantage does not mean
+`erfcx` is bounded on the entire real line; large negative arguments grow.
+
+`dawson` supplies another scaled exponential integral. `fresnel_s` and
+`fresnel_c` use the convention with integrands `sin(pi*t*t/2)` and
+`cos(pi*t*t/2)`. Verify this factor before comparing optical or wave formulas
+that define Fresnel integrals with another scaling.
 
 <figure markdown="span">
-  ![The error function family, and the scaled form that survives the tail](../assets/figures/special-error-family.svg#only-light)
-  ![The error function family, and the scaled form that survives the tail](../assets/figures/special-error-family-dark.svg#only-dark)
-  <figcaption>erfc underflows to exactly zero at x = 27, which makes any tail probability computed through it zero as well. erfcx carries the e^{x²} factor and keeps returning digits far beyond that point.</figcaption>
+  ![Spherical Bessel identity and complementary-error-function cancellation diagnostics](../assets/figures/special-identity-checks.svg#only-light)
+  ![Spherical Bessel identity and complementary-error-function cancellation diagnostics](../assets/figures/special-identity-checks-dark.svg#only-dark)
+  <figcaption>The spherical Bessel check compares j₀(x) with sin(x)/x. The tail check compares erfc(x) and the subtraction 1−erf(x) against a direct complementary-error reference. These diagnostics show why an algebraically equivalent expression can lose useful digits, and why absolute error near a zero needs different interpretation from relative tail error.</figcaption>
 </figure>
 
-## Bessel and Airy functions
+## Bessel functions and stable recurrences
+
+Ordinary Bessel functions solve an oscillatory second-order differential
+equation. `J` is regular at the origin for nonnegative integer order; `Y` is
+singular there. Boundary or regularity conditions determine which solution
+belongs in a physical model.
 
 ```pycon
->>> from quadrivium.special import bessel_j0, bessel_jn, bessel_yn
->>> round(float(bessel_j0(1.0)), 12)
+>>> round(sp.bessel_j0(1.0), 12)
 0.765197686558
->>> round(float(bessel_jn(3, 2.5)), 12)
+>>> round(sp.bessel_jn(3, 2.5), 12)
 0.216600391039
-
-```
-
-The Wronskian identity `J_{n+1}(x)Y_n(x) − J_n(x)Y_{n+1}(x) = 2/(πx)` ties the
-two solutions together and holds to machine precision — a check no table of
-values could give you:
-
-```pycon
->>> from quadrivium.special import bessel_jn, bessel_yn
 >>> x = 3.7
->>> wronskian = (bessel_jn(3, x) * bessel_yn(2, x) - bessel_jn(2, x) * bessel_yn(3, x))
->>> abs(float(wronskian) - 2/(np.pi*x)) < 1e-9
+>>> residual = sp.bessel_jn(1, x) + sp.bessel_jn(3, x) - 4 * sp.bessel_jn(2, x) / x
+>>> abs(residual) < 1e-10
 True
 
 ```
 
-<figure markdown="span">
-  ![Bessel functions of the first and second kind](../assets/figures/special-bessel.svg#only-light)
-  ![Bessel functions of the first and second kind](../assets/figures/special-bessel-dark.svg#only-dark)
-  <figcaption>J is regular at the origin and Y is not, which is how a physical problem picks between them. The Wronskian identity ties the two families together and holds across the whole range plotted — a check no table of values could give you.</figcaption>
-</figure>
+A three-term recurrence can be stable in one direction and unstable in the
+other. `bessel_jn` chooses upward or downward recurrence according to the order
+and argument. Small values at large order require a relative-accuracy check
+away from zeros; near a root, relative error can be arbitrarily large because
+the true value is close to zero.
 
-Modified Bessel functions (`bessel_i0`, `bessel_i1`, `bessel_in`, `bessel_k0`,
-`bessel_k1`, `bessel_kn`) and spherical Bessel functions
-(`spherical_bessel_j`, `spherical_bessel_y`) follow the same pattern.
-`airy_ai` and `airy_bi` solve `y″ = xy`, the equation that governs the
-transition between oscillation and exponential growth.
+`bessel_i0/i1/in` and `bessel_k0/k1/kn` are modified Bessel functions. Their
+exponential growth or decay creates additional range limits. The package does
+not make every modified Bessel evaluation exponentially scaled merely because
+it uses a stable recurrence. Inspect finite values and choose the formulation
+appropriate to the required argument range.
 
-<figure markdown="span">
-  ![Airy functions: oscillation on one side, exponential behaviour on the other](../assets/figures/special-airy.svg#only-light)
-  ![Airy functions: oscillation on one side, exponential behaviour on the other](../assets/figures/special-airy-dark.svg#only-dark)
-  <figcaption>Both solve y″ = xy. Where x is negative the equation is oscillatory and both functions ring; where x is positive one decays and the other grows. That turning point is why the Airy functions appear wherever a wave meets a barrier.</figcaption>
-</figure>
-
-## Integrals and zeta
+Spherical Bessel functions use separate interfaces and orders:
 
 ```pycon
->>> from quadrivium.special import sine_integral, exponential_integral, expint_n
->>> round(float(sine_integral(1.0)), 12)
-0.946083070367
-
-```
-
-`zeta(s)` is evaluated on the whole real line: Euler-Maclaurin for `s > 1`,
-the alternating Borwein algorithm in the critical strip, and the functional
-equation for `s < 0`. The values it must reproduce are exactly known:
-
-```pycon
->>> from quadrivium.special import zeta
->>> abs(float(zeta(2.0)) - np.pi**2/6) < 1e-12
+>>> radius = np.array([0.2, 0.7, 1.5, 3.0])
+>>> np.allclose(sp.spherical_bessel_j(0, radius), np.sin(radius)/radius, atol=1e-12)
 True
->>> abs(float(zeta(-1.0)) + 1/12) < 1e-12           # ζ(−1) = −1/12
-True
-
-```
-
-## Lambert W and hypergeometric functions
-
-`lambert_w` inverts `w e^w = x`, with both real branches:
-
-```pycon
->>> round(float(qd.lambert_w(np.e)), 12)            # W(e·1) = 1
+>>> sp.spherical_bessel_j(0, 0.0)
 1.0
->>> w = float(qd.lambert_w(-0.2, branch=-1))        # the lower branch
->>> bool(abs(w * np.exp(w) + 0.2) < 1e-12)
+
+```
+
+The origin value is defined by a limit, so avoid evaluating `sin(x)/x` blindly
+at zero when constructing an independent reference. A recurrence residual
+alone is not a complete accuracy proof: two incorrect neighboring solutions
+can satisfy the same homogeneous recurrence. Combine identities with known
+values, asymptotics, or an independent reference.
+
+## Airy functions and special integrals
+
+`airy_ai` and `airy_bi` solve `y''=x*y`. Negative arguments are oscillatory;
+for positive arguments Ai decays and Bi grows. A graph of both on one linear
+scale can hide the decaying solution. If growth or decay is what matters,
+inspect the relevant scale and numerical range directly.
+
+Complete elliptic integrals take the **parameter** `m`, not the modulus `k`.
+A formula written as `K(k)` in a source may therefore require a call with
+`m=k*k`. In the usual real interval `0 <= m <= 1`, `K` diverges as `m`
+approaches one while `E(1)=1` remains finite.
+
+```pycon
+>>> abs(sp.elliptic_k(0.0) - float(np.pi/2)) < 1e-13
+True
+>>> abs(sp.elliptic_e(0.0) - float(np.pi/2)) < 1e-13
+True
+>>> sp.elliptic_e(1.0)
+1.0
+
+```
+
+`exponential_integral` denotes Ei, while `expint_n(n,x)` denotes
+`E_n(x)=integral_1^infinity exp(-x*t)/t**n dt`. Their signs, lower limits,
+and branch/domain conventions differ. `sine_integral` and `cosine_integral`
+likewise require their stated definitions when comparing formulas.
+`expint_n` permits `x=0` only when `n>=2`, where the integral is finite.
+
+## Zeta and Lambert W
+
+`zeta` evaluates the Riemann zeta function on the real line excluding `s=1`.
+Values for `s<=1` use continuation rather than the divergent defining series.
+The interface does not provide general complex zeta evaluation.
+
+```pycon
+>>> abs(sp.zeta(2.0) - float(np.pi**2/6)) < 1e-12
+True
+>>> abs(sp.zeta(-1.0) + 1/12) < 1e-12
+True
+>>> sp.zeta(-2.0)
+0.0
+
+```
+
+Near the pole, the function is sensitive to small changes in its argument.
+A large result is expected; it does not by itself show failure. Check the
+argument's precision and the distance to the singularity before demanding a
+small absolute error.
+
+`lambert_w` inverts `w*exp(w)=x`. There are two real answers for
+`-1/e < x < 0`, so branch choice is part of the model.
+
+```pycon
+>>> principal = sp.lambert_w(-0.2, branch=0)
+>>> lower = sp.lambert_w(-0.2, branch=-1)
+>>> lower < -1 < principal < 0
+True
+>>> abs(float(principal*np.exp(principal)) + 0.2) < 1e-12
+True
+>>> abs(float(lower*np.exp(lower)) + 0.2) < 1e-12
 True
 
 ```
 
-The hypergeometric functions `hyp1f1` (confluent, Kummer's `M`) and `hyp2f1`
-(Gauss) subsume most of the others as special cases. `hyp1f1` applies Kummer's
-transformation for *every* negative argument, because the direct alternating
-series loses about `2|z|` nepers of precision before it converges at all:
+The principal branch is defined for `x>=-1/e`; the lower branch for
+`-1/e<=x<0`. They meet at `w=-1`. Near that branch point a small equation
+residual does not necessarily imply a comparably small error in `w`, because
+the inverse is ill-conditioned there.
+
+## Hypergeometric and angular functions
+
+`hyp1f1(a,b,z)` is the confluent hypergeometric function; for negative
+arguments the implementation uses Kummer's transformation to avoid a badly
+cancelling direct series. `hyp2f1(a,b,c,z)` is restricted to real
+`abs(z)<1` and rejects non-positive integer `c`. It is not a general analytic
+continuation engine across the complex plane.
 
 ```pycon
->>> from quadrivium.special import hyp1f1
->>> abs(float(hyp1f1(1.0, 1.0, -30.0)) - float(np.exp(-30.0))) < 1e-15
+>>> np.allclose(sp.hyp1f1(1.0, 1.0, [-3.0, 0.0, 2.0]), np.exp([-3.0, 0.0, 2.0]), rtol=1e-12)
+True
+>>> abs(sp.hyp2f1(1.0, 1.0, 2.0, 0.3) + float(np.log(0.7))/0.3) < 1e-12
 True
 
 ```
 
-## Legendre and spherical harmonics
+`associated_legendre(l,m,x)` includes the Condon–Shortley phase and requires
+`0<=m<=l`, `abs(x)<=1`. `spherical_harmonic(l,m,theta,phi)` returns complex
+values, with **polar angle theta and azimuth phi**, both in radians.
+Negative `m` uses the conjugation identity implemented by the function.
 
 ```pycon
->>> from quadrivium.special import associated_legendre, spherical_harmonic
->>> round(float(associated_legendre(2, 0, 0.5)), 12)    # P₂(x) = (3x²−1)/2
+>>> round(sp.associated_legendre(2, 0, 0.5), 8)
 -0.125
->>> y = spherical_harmonic(1, 0, 0.7, 0.3)
->>> abs(float(np.real(y)) - float(np.sqrt(3/(4*np.pi)) * np.cos(0.7))) < 1e-12
+>>> harmonic = sp.spherical_harmonic(1, 0, 0.7, 0.3)
+>>> abs(float(np.real(harmonic)) - float(np.sqrt(3/(4*np.pi))*np.cos(0.7))) < 1e-12
 True
 
 ```
 
-<figure markdown="span">
-  ![The zeta function on the real line, and both real branches of Lambert W](../assets/figures/special-zeta-lambert.svg#only-light)
-  ![The zeta function on the real line, and both real branches of Lambert W](../assets/figures/special-zeta-lambert-dark.svg#only-dark)
-  <figcaption>ζ is evaluated by three different representations either side of its pole at s = 1, and reproduces the values that are known in closed form. Lambert W inverts w·eʷ, which is two-valued on [−1/e, 0): the branch is an argument, not a guess.</figcaption>
-</figure>
+For probability transformations, `logistic` avoids overflow for both signs of
+its argument and `logit` uses a stable logarithmic expression. The inverse
+relation is still limited by rounding: a large positive argument can make
+`logistic` equal exactly one, outside `logit`'s open interval.
 
-## Pitfalls
+## Validate the representation you use
 
-- **Check the domain.** `gamma` has poles at the non-positive integers,
-  `log_gamma` is real only for positive arguments, `elliptic_k(m)` needs
-  `m < 1`, and `lambert_w` needs `x ≥ −1/e`. Outside these you get a
-  `DomainError`, not a quiet `nan`.
-- **`erfc` underflows, `erfcx` does not.** Same for `exp(log_gamma(x))` versus
-  `gamma(x)` for large `x`.
-- **`bessel_jn` for large order and small argument is a tiny number**
-  computed by downward recurrence. It is accurate in a *relative* sense, which
-  is the useful sense, but do not expect the absolute error to be smaller than
-  the value itself times the machine epsilon.
-- **Integer versus real order.** The Bessel routines here take integer orders.
-  Half-integer orders are the spherical Bessel functions, which have their own
-  functions.
-- **`zeta` near `s = 1` is a pole.** Values close to 1 lose accuracy;
-  `zeta(1.0)` is undefined.
+Use known values for anchoring, identities for consistency, and separate
+absolute/relative checks near zeros and tails. Probe both sides of numerical
+regime changes and points near domain boundaries. Record whether an overflow,
+a pole, or a rejected domain value is expected in your model.
 
-## See also
-
-- [`special` API reference](../api/special.md) — every signature.
-- [Approximation guide](approx.md) — the orthogonal polynomial families.
-- [Stochastic guide](stochastic.md) — where the incomplete gamma and beta
-  functions become distribution functions.
+See [approximation](approx.md) for orthogonal polynomials,
+[stochastic methods](stochastic.md) for probability distributions, and
+[integration](integrate.md) for independent integral checks.

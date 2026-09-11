@@ -7,18 +7,20 @@ Finite differences, automatic differentiation, spectral differentiation.
 
 For worked examples and guidance on choosing between these routines, see the [differentiation guide](../guides/diff.md).
 
-**41 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**46 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.diff import forward_difference
-import quadrivium as qd            # qd.forward_difference, if re-exported
+from quadrivium import diff
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
 - [`autodiff`](#autodiff) &mdash; automatic differentiation: exact derivatives without step sizes (13)
 - [`finite`](#finite) &mdash; numerical differentiation by finite differences and related techniques (19)
 - [`spectral`](#spectral) &mdash; spectral differentiation: exponentially accurate derivatives (9)
+- [`tensor`](#tensor) &mdash; array-aware differentiation with reverse pullbacks and forward tangents (5)
 
 ## `autodiff`
 
@@ -28,21 +30,562 @@ Automatic differentiation: exact derivatives without step sizes.
 
 Forward mode uses dual numbers and costs one pass per input; reverse mode records a tape and yields the whole gradient in one pass, which is what makes it the right choice for scalar objectives in many variables.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`Dual` | `(value, deriv=0.0)` | Dual number ``a + b eps`` with ``eps^2 = 0``, for forward-mode AD. |
-| *class*&nbsp;`HyperDual` | `(a, b=0.0, c=0.0, d=0.0)` | Hyper-dual number ``a + b e1 + c e2 + d e1 e2`` with ``e1^2 = e2^2 = 0``. |
-| *class*&nbsp;`Variable` | `(value, parents=(), grads=())` | Reverse-mode AD variable; call ``backward`` then read ``.grad``. |
-| `derivative` | `(f: Callable, x: float) -> float` | Exact first derivative of a scalar function by forward-mode AD. |
-| `forward_gradient` | `(f: Callable, x) -> np.ndarray` | Gradient by forward mode: one pass per input variable. |
-| `forward_jacobian` | `(F: Callable, x) -> np.ndarray` | Jacobian by forward mode. |
-| `gradient` | `(f: Callable, x) -> np.ndarray` | Gradient by reverse mode: one sweep for all partials. |
-| `jacobian` | `(F: Callable, x) -> np.ndarray` | Jacobian by reverse mode: one sweep per output component. |
-| `hessian` | `(f: Callable, x) -> np.ndarray` | Exact Hessian by hyper-dual (forward-over-forward) differentiation. |
-| `hessian_vector_product` | `(f: Callable, x, v) -> np.ndarray` | Hessian-vector product ``H v`` without forming ``H``. |
-| `second_derivative_ad` | `(f: Callable, x: float) -> float` | Exact second derivative of a scalar function via hyper-dual arithmetic. |
-| `value_and_grad` | `(f: Callable, x)` | Both the value and the gradient from a single reverse sweep. |
-| `taylor_coefficients` | `(f: Callable, x: float, order: int = 5, h: float = 0.1)` | Taylor coefficients of ``f`` about ``x`` up to ``order``. |
+| [`Dual`](#api-Dual) | class | Dual number ``a + b eps`` with ``eps^2 = 0``, for forward-mode AD. |
+| [`HyperDual`](#api-HyperDual) | class | Hyper-dual number ``a + b e1 + c e2 + d e1 e2`` with ``e1^2 = e2^2 = 0``. |
+| [`Variable`](#api-Variable) | class | Reverse-mode AD variable; call ``backward`` then read ``.grad``. |
+| [`derivative`](#api-derivative) | function | Exact first derivative of a scalar function by forward-mode AD. |
+| [`forward_gradient`](#api-forward_gradient) | function | Gradient by forward mode: one pass per input variable. |
+| [`forward_jacobian`](#api-forward_jacobian) | function | Jacobian by forward mode. |
+| [`gradient`](#api-gradient) | function | Gradient by reverse mode: one sweep for all partials. |
+| [`jacobian`](#api-jacobian) | function | Jacobian by reverse mode: one sweep per output component. |
+| [`hessian`](#api-hessian) | function | Exact Hessian by hyper-dual (forward-over-forward) differentiation. |
+| [`hessian_vector_product`](#api-hessian_vector_product) | function | Hessian-vector product ``H v`` without forming ``H``. |
+| [`second_derivative_ad`](#api-second_derivative_ad) | function | Exact second derivative of a scalar function via hyper-dual arithmetic. |
+| [`value_and_grad`](#api-value_and_grad) | function | Both the value and the gradient from a single reverse sweep. |
+| [`taylor_coefficients`](#api-taylor_coefficients) | function | Taylor coefficients of ``f`` about ``x`` up to ``order``. |
+
+### `Dual` {#api-Dual}
+
+```python
+Dual(value, deriv=0.0)
+```
+
+Dual number `a + b eps` with `eps^2 = 0`, for forward-mode AD.
+
+Arithmetic on duals propagates the derivative exactly alongside the value.
+
+#### `Dual.__add__` {#api-Dual.__add__}
+
+```python
+Dual.__add__(self, o)
+```
+
+#### `Dual.__radd__` {#api-Dual.__radd__}
+
+```python
+Dual.__radd__(self, o)
+```
+
+#### `Dual.__neg__` {#api-Dual.__neg__}
+
+```python
+Dual.__neg__(self)
+```
+
+#### `Dual.__sub__` {#api-Dual.__sub__}
+
+```python
+Dual.__sub__(self, o)
+```
+
+#### `Dual.__rsub__` {#api-Dual.__rsub__}
+
+```python
+Dual.__rsub__(self, o)
+```
+
+#### `Dual.__mul__` {#api-Dual.__mul__}
+
+```python
+Dual.__mul__(self, o)
+```
+
+#### `Dual.__rmul__` {#api-Dual.__rmul__}
+
+```python
+Dual.__rmul__(self, o)
+```
+
+#### `Dual.__truediv__` {#api-Dual.__truediv__}
+
+```python
+Dual.__truediv__(self, o)
+```
+
+#### `Dual.__rtruediv__` {#api-Dual.__rtruediv__}
+
+```python
+Dual.__rtruediv__(self, o)
+```
+
+#### `Dual.__pow__` {#api-Dual.__pow__}
+
+```python
+Dual.__pow__(self, p)
+```
+
+#### `Dual.__rpow__` {#api-Dual.__rpow__}
+
+```python
+Dual.__rpow__(self, base)
+```
+
+#### `Dual.__abs__` {#api-Dual.__abs__}
+
+```python
+Dual.__abs__(self)
+```
+
+#### `Dual.__float__` {#api-Dual.__float__}
+
+```python
+Dual.__float__(self)
+```
+
+#### `Dual.sin` {#api-Dual.sin}
+
+```python
+Dual.sin(self)
+```
+
+#### `Dual.cos` {#api-Dual.cos}
+
+```python
+Dual.cos(self)
+```
+
+#### `Dual.tan` {#api-Dual.tan}
+
+```python
+Dual.tan(self)
+```
+
+#### `Dual.exp` {#api-Dual.exp}
+
+```python
+Dual.exp(self)
+```
+
+#### `Dual.log` {#api-Dual.log}
+
+```python
+Dual.log(self)
+```
+
+#### `Dual.sqrt` {#api-Dual.sqrt}
+
+```python
+Dual.sqrt(self)
+```
+
+#### `Dual.sinh` {#api-Dual.sinh}
+
+```python
+Dual.sinh(self)
+```
+
+#### `Dual.cosh` {#api-Dual.cosh}
+
+```python
+Dual.cosh(self)
+```
+
+#### `Dual.tanh` {#api-Dual.tanh}
+
+```python
+Dual.tanh(self)
+```
+
+#### `Dual.arctan` {#api-Dual.arctan}
+
+```python
+Dual.arctan(self)
+```
+
+#### `Dual.arcsin` {#api-Dual.arcsin}
+
+```python
+Dual.arcsin(self)
+```
+
+#### `Dual.arccos` {#api-Dual.arccos}
+
+```python
+Dual.arccos(self)
+```
+
+### `HyperDual` {#api-HyperDual}
+
+```python
+HyperDual(a, b=0.0, c=0.0, d=0.0)
+```
+
+Hyper-dual number `a + b e1 + c e2 + d e1 e2` with `e1^2 = e2^2 = 0`.
+
+The `e1 e2` component carries an exact second derivative, so Hessians come
+out to machine precision with no step size to choose.
+
+#### `HyperDual.__add__` {#api-HyperDual.__add__}
+
+```python
+HyperDual.__add__(self, o)
+```
+
+#### `HyperDual.__radd__` {#api-HyperDual.__radd__}
+
+```python
+HyperDual.__radd__(self, o)
+```
+
+#### `HyperDual.__neg__` {#api-HyperDual.__neg__}
+
+```python
+HyperDual.__neg__(self)
+```
+
+#### `HyperDual.__sub__` {#api-HyperDual.__sub__}
+
+```python
+HyperDual.__sub__(self, o)
+```
+
+#### `HyperDual.__rsub__` {#api-HyperDual.__rsub__}
+
+```python
+HyperDual.__rsub__(self, o)
+```
+
+#### `HyperDual.__mul__` {#api-HyperDual.__mul__}
+
+```python
+HyperDual.__mul__(self, o)
+```
+
+#### `HyperDual.__rmul__` {#api-HyperDual.__rmul__}
+
+```python
+HyperDual.__rmul__(self, o)
+```
+
+#### `HyperDual.__truediv__` {#api-HyperDual.__truediv__}
+
+```python
+HyperDual.__truediv__(self, o)
+```
+
+#### `HyperDual.__rtruediv__` {#api-HyperDual.__rtruediv__}
+
+```python
+HyperDual.__rtruediv__(self, o)
+```
+
+#### `HyperDual.__pow__` {#api-HyperDual.__pow__}
+
+```python
+HyperDual.__pow__(self, p)
+```
+
+#### `HyperDual.__rpow__` {#api-HyperDual.__rpow__}
+
+```python
+HyperDual.__rpow__(self, base)
+```
+
+#### `HyperDual.__float__` {#api-HyperDual.__float__}
+
+```python
+HyperDual.__float__(self)
+```
+
+#### `HyperDual.sin` {#api-HyperDual.sin}
+
+```python
+HyperDual.sin(self)
+```
+
+#### `HyperDual.cos` {#api-HyperDual.cos}
+
+```python
+HyperDual.cos(self)
+```
+
+#### `HyperDual.tan` {#api-HyperDual.tan}
+
+```python
+HyperDual.tan(self)
+```
+
+#### `HyperDual.exp` {#api-HyperDual.exp}
+
+```python
+HyperDual.exp(self)
+```
+
+#### `HyperDual.log` {#api-HyperDual.log}
+
+```python
+HyperDual.log(self)
+```
+
+#### `HyperDual.sqrt` {#api-HyperDual.sqrt}
+
+```python
+HyperDual.sqrt(self)
+```
+
+#### `HyperDual.tanh` {#api-HyperDual.tanh}
+
+```python
+HyperDual.tanh(self)
+```
+
+#### `HyperDual.sinh` {#api-HyperDual.sinh}
+
+```python
+HyperDual.sinh(self)
+```
+
+#### `HyperDual.cosh` {#api-HyperDual.cosh}
+
+```python
+HyperDual.cosh(self)
+```
+
+#### `HyperDual.arctan` {#api-HyperDual.arctan}
+
+```python
+HyperDual.arctan(self)
+```
+
+### `Variable` {#api-Variable}
+
+```python
+Variable(value, parents=(), grads=())
+```
+
+Reverse-mode AD variable; call `backward` then read `.grad`.
+
+#### `Variable.__add__` {#api-Variable.__add__}
+
+```python
+Variable.__add__(self, o)
+```
+
+#### `Variable.__radd__` {#api-Variable.__radd__}
+
+```python
+Variable.__radd__(self, o)
+```
+
+#### `Variable.__neg__` {#api-Variable.__neg__}
+
+```python
+Variable.__neg__(self)
+```
+
+#### `Variable.__sub__` {#api-Variable.__sub__}
+
+```python
+Variable.__sub__(self, o)
+```
+
+#### `Variable.__rsub__` {#api-Variable.__rsub__}
+
+```python
+Variable.__rsub__(self, o)
+```
+
+#### `Variable.__mul__` {#api-Variable.__mul__}
+
+```python
+Variable.__mul__(self, o)
+```
+
+#### `Variable.__rmul__` {#api-Variable.__rmul__}
+
+```python
+Variable.__rmul__(self, o)
+```
+
+#### `Variable.__truediv__` {#api-Variable.__truediv__}
+
+```python
+Variable.__truediv__(self, o)
+```
+
+#### `Variable.__rtruediv__` {#api-Variable.__rtruediv__}
+
+```python
+Variable.__rtruediv__(self, o)
+```
+
+#### `Variable.__pow__` {#api-Variable.__pow__}
+
+```python
+Variable.__pow__(self, p)
+```
+
+#### `Variable.__rpow__` {#api-Variable.__rpow__}
+
+```python
+Variable.__rpow__(self, base)
+```
+
+#### `Variable.__float__` {#api-Variable.__float__}
+
+```python
+Variable.__float__(self)
+```
+
+#### `Variable.sin` {#api-Variable.sin}
+
+```python
+Variable.sin(self)
+```
+
+#### `Variable.cos` {#api-Variable.cos}
+
+```python
+Variable.cos(self)
+```
+
+#### `Variable.tan` {#api-Variable.tan}
+
+```python
+Variable.tan(self)
+```
+
+#### `Variable.exp` {#api-Variable.exp}
+
+```python
+Variable.exp(self)
+```
+
+#### `Variable.log` {#api-Variable.log}
+
+```python
+Variable.log(self)
+```
+
+#### `Variable.sqrt` {#api-Variable.sqrt}
+
+```python
+Variable.sqrt(self)
+```
+
+#### `Variable.tanh` {#api-Variable.tanh}
+
+```python
+Variable.tanh(self)
+```
+
+#### `Variable.sinh` {#api-Variable.sinh}
+
+```python
+Variable.sinh(self)
+```
+
+#### `Variable.cosh` {#api-Variable.cosh}
+
+```python
+Variable.cosh(self)
+```
+
+#### `Variable.arctan` {#api-Variable.arctan}
+
+```python
+Variable.arctan(self)
+```
+
+#### `Variable.backward` {#api-Variable.backward}
+
+```python
+Variable.backward(self, seed: float = 1.0) -> None
+```
+
+Accumulate gradients through the recorded graph (reverse sweep).
+
+### `derivative` {#api-derivative}
+
+```python
+derivative(f: Callable, x: float) -> float
+```
+
+Exact first derivative of a scalar function by forward-mode AD.
+
+### `forward_gradient` {#api-forward_gradient}
+
+```python
+forward_gradient(f: Callable, x) -> np.ndarray
+```
+
+Gradient by forward mode: one pass per input variable.
+
+### `forward_jacobian` {#api-forward_jacobian}
+
+```python
+forward_jacobian(F: Callable, x) -> np.ndarray
+```
+
+Jacobian by forward mode.
+
+### `gradient` {#api-gradient}
+
+```python
+gradient(f: Callable, x) -> np.ndarray
+```
+
+Gradient by reverse mode: one sweep for all partials.
+
+### `jacobian` {#api-jacobian}
+
+```python
+jacobian(F: Callable, x) -> np.ndarray
+```
+
+Jacobian by reverse mode: one sweep per output component.
+
+### `hessian` {#api-hessian}
+
+```python
+hessian(f: Callable, x) -> np.ndarray
+```
+
+Exact Hessian by hyper-dual (forward-over-forward) differentiation.
+
+Perturbs component `i` along `e1` and `j` along `e2`; the `e1 e2`
+coefficient of the result is exactly the mixed partial.
+
+### `hessian_vector_product` {#api-hessian_vector_product}
+
+```python
+hessian_vector_product(f: Callable, x, v) -> np.ndarray
+```
+
+Hessian-vector product `H v` without forming `H`.
+
+### `second_derivative_ad` {#api-second_derivative_ad}
+
+```python
+second_derivative_ad(f: Callable, x: float) -> float
+```
+
+Exact second derivative of a scalar function via hyper-dual arithmetic.
+
+### `value_and_grad` {#api-value_and_grad}
+
+```python
+value_and_grad(f: Callable, x)
+```
+
+Both the value and the gradient from a single reverse sweep.
+
+### `taylor_coefficients` {#api-taylor_coefficients}
+
+```python
+taylor_coefficients(f: Callable, x: float, order: int = 5, h: float = 0.1)
+```
+
+Taylor coefficients of `f` about `x` up to `order`.
+
+One symmetric Fornberg stencil supplies the weights for every derivative
+order at once, so the whole series costs a single set of evaluations.
+
+`h` trades truncation against round-off: the stencil spans
+`x +/- order*h`, so reduce it for functions with nearby singularities and
+raise it if high-order coefficients look noisy.
 
 ## `finite`
 
@@ -52,27 +595,212 @@ Numerical differentiation by finite differences and related techniques.
 
 Includes arbitrary-order stencil generation (Fornberg's algorithm), Richardson extrapolation, and the complex-step derivative, which is free of subtractive cancellation.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `forward_difference` | `(f, x, h: float = 1e-06, order: int = 1)` | Forward difference, accuracy ``O(h)``. |
-| `backward_difference` | `(f, x, h: float = 1e-06, order: int = 1)` | Backward difference, accuracy ``O(h)``. |
-| `central_difference` | `(f, x, h: float = 1e-06, order: int = 1)` | Central difference, accuracy ``O(h^2)``. |
-| `second_derivative` | `(f, x, h: float = 1e-05)` | Second derivative by the three-point central formula. |
-| `third_derivative` | `(f, x, h: float = 0.0001)` | Third derivative by the five-point central formula. |
-| `fourth_derivative` | `(f, x, h: float = 0.001)` | Fourth derivative by the five-point central formula. |
-| `five_point_stencil` | `(f, x, h: float = 0.0001)` | Fourth-order accurate first derivative from five points. |
-| `fornberg_weights` | `(z: float, nodes, max_order: int = 1)` | Fornberg's algorithm for finite difference weights. |
-| `finite_difference_weights` | `(order: int, accuracy: int = 2, kind: str = 'central')` | Weights and offsets for a standard stencil. |
-| `differentiation_matrix` | `(x, order: int = 1, stencil: int = 3)` | Dense differentiation matrix ``D`` with ``D @ f(x) ~ f^(order)(x)``. |
-| `richardson_extrapolation` | `(F, h: float, levels: int = 5, factor: float = 2.0, order: int = 2)` | Richardson extrapolation of ``F(h)`` to ``h -> 0``. |
-| `richardson_derivative` | `(f, x, h: float = 0.1, levels: int = 5, order: int = 1)` | Derivative by Richardson extrapolation of central differences. |
-| `complex_step_derivative` | `(f, x, h: float = 1e-20)` | Complex-step derivative ``Im(f(x + ih))/h``. |
-| `optimal_step_size` | `(order: int = 1, accuracy: int = 2, scale: float = 1.0)` | Step size balancing truncation against round-off error. |
-| `gradient_fd` | `(f, x, h=None, method: str = 'central')` | Gradient of a scalar field by finite differences. |
-| `jacobian_fd` | `(F, x, h=None, method: str = 'central')` | Jacobian of a vector field by finite differences. |
-| `hessian_fd` | `(f, x, h=None)` | Hessian by second-order finite differences. |
-| `differentiate_data` | `(x, y, order: int = 1, stencil: int = 3)` | Differentiate tabulated data using a moving finite difference stencil. |
-| `savitzky_golay_derivative` | `(y, window: int = 5, poly_order: int = 2, order: int = 1, dx: float = 1.0)` | Savitzky-Golay smoothing differentiator for noisy data. |
+| [`forward_difference`](#api-forward_difference) | function | Forward difference, accuracy ``O(h)``. |
+| [`backward_difference`](#api-backward_difference) | function | Backward difference, accuracy ``O(h)``. |
+| [`central_difference`](#api-central_difference) | function | Central difference, accuracy ``O(h^2)``. |
+| [`second_derivative`](#api-second_derivative) | function | Second derivative by the three-point central formula. |
+| [`third_derivative`](#api-third_derivative) | function | Third derivative by the five-point central formula. |
+| [`fourth_derivative`](#api-fourth_derivative) | function | Fourth derivative by the five-point central formula. |
+| [`five_point_stencil`](#api-five_point_stencil) | function | Fourth-order accurate first derivative from five points. |
+| [`fornberg_weights`](#api-fornberg_weights) | function | Fornberg's algorithm for finite difference weights. |
+| [`finite_difference_weights`](#api-finite_difference_weights) | function | Weights and offsets for a standard stencil. |
+| [`differentiation_matrix`](#api-differentiation_matrix) | function | Dense differentiation matrix ``D`` with ``D @ f(x) ~ f^(order)(x)``. |
+| [`richardson_extrapolation`](#api-richardson_extrapolation) | function | Richardson extrapolation of ``F(h)`` to ``h -> 0``. |
+| [`richardson_derivative`](#api-richardson_derivative) | function | Derivative by Richardson extrapolation of central differences. |
+| [`complex_step_derivative`](#api-complex_step_derivative) | function | Complex-step derivative ``Im(f(x + ih))/h``. |
+| [`optimal_step_size`](#api-optimal_step_size) | function | Step size balancing truncation against round-off error. |
+| [`gradient_fd`](#api-gradient_fd) | function | Gradient of a scalar field by finite differences. |
+| [`jacobian_fd`](#api-jacobian_fd) | function | Jacobian of a vector field by finite differences. |
+| [`hessian_fd`](#api-hessian_fd) | function | Hessian by second-order finite differences. |
+| [`differentiate_data`](#api-differentiate_data) | function | Differentiate tabulated data using a moving finite difference stencil. |
+| [`savitzky_golay_derivative`](#api-savitzky_golay_derivative) | function | Savitzky-Golay smoothing differentiator for noisy data. |
+
+### `forward_difference` {#api-forward_difference}
+
+```python
+forward_difference(f, x, h: float = 1e-06, order: int = 1)
+```
+
+Forward difference, accuracy `O(h)`.
+
+### `backward_difference` {#api-backward_difference}
+
+```python
+backward_difference(f, x, h: float = 1e-06, order: int = 1)
+```
+
+Backward difference, accuracy `O(h)`.
+
+### `central_difference` {#api-central_difference}
+
+```python
+central_difference(f, x, h: float = 1e-06, order: int = 1)
+```
+
+Central difference, accuracy `O(h^2)`.
+
+### `second_derivative` {#api-second_derivative}
+
+```python
+second_derivative(f, x, h: float = 1e-05)
+```
+
+Second derivative by the three-point central formula.
+
+### `third_derivative` {#api-third_derivative}
+
+```python
+third_derivative(f, x, h: float = 0.0001)
+```
+
+Third derivative by the five-point central formula.
+
+### `fourth_derivative` {#api-fourth_derivative}
+
+```python
+fourth_derivative(f, x, h: float = 0.001)
+```
+
+Fourth derivative by the five-point central formula.
+
+### `five_point_stencil` {#api-five_point_stencil}
+
+```python
+five_point_stencil(f, x, h: float = 0.0001)
+```
+
+Fourth-order accurate first derivative from five points.
+
+### `fornberg_weights` {#api-fornberg_weights}
+
+```python
+fornberg_weights(z: float, nodes, max_order: int = 1)
+```
+
+Fornberg's algorithm for finite difference weights.
+
+Returns an array `W` of shape `(len(nodes), max_order+1)` where
+`W[:, m]` are the weights approximating the `m`-th derivative at `z`
+from the values at `nodes`. Handles arbitrary (even non-uniform) nodes.
+
+### `finite_difference_weights` {#api-finite_difference_weights}
+
+```python
+finite_difference_weights(order: int, accuracy: int = 2, kind: str = 'central')
+```
+
+Weights and offsets for a standard stencil.
+
+Returns `(offsets, weights)` such that
+`f^(order)(x) ~ sum w_i f(x + offset_i h) / h**order`.
+
+### `differentiation_matrix` {#api-differentiation_matrix}
+
+```python
+differentiation_matrix(x, order: int = 1, stencil: int = 3)
+```
+
+Dense differentiation matrix `D` with `D @ f(x) ~ f^(order)(x)`.
+
+Uses a moving Fornberg stencil, so non-uniform grids are supported.
+
+### `richardson_extrapolation` {#api-richardson_extrapolation}
+
+```python
+richardson_extrapolation(
+    F,
+    h: float,
+    levels: int = 5,
+    factor: float = 2.0,
+    order: int = 2,
+)
+```
+
+Richardson extrapolation of `F(h)` to `h -> 0`.
+
+`F` must be a function of the step alone; `order` is the leading error
+exponent of the base formula. Returns `(value, table)`.
+
+### `richardson_derivative` {#api-richardson_derivative}
+
+```python
+richardson_derivative(f, x, h: float = 0.1, levels: int = 5, order: int = 1)
+```
+
+Derivative by Richardson extrapolation of central differences.
+
+Reaches near machine precision without the step-size dilemma of a single
+finite difference.
+
+### `complex_step_derivative` {#api-complex_step_derivative}
+
+```python
+complex_step_derivative(f, x, h: float = 1e-20)
+```
+
+Complex-step derivative `Im(f(x + ih))/h`.
+
+Exact to machine precision with no subtractive cancellation, but `f` must
+be analytic and implemented with complex-safe operations.
+
+### `optimal_step_size` {#api-optimal_step_size}
+
+```python
+optimal_step_size(order: int = 1, accuracy: int = 2, scale: float = 1.0)
+```
+
+Step size balancing truncation against round-off error.
+
+### `gradient_fd` {#api-gradient_fd}
+
+```python
+gradient_fd(f, x, h=None, method: str = 'central')
+```
+
+Gradient of a scalar field by finite differences.
+
+### `jacobian_fd` {#api-jacobian_fd}
+
+```python
+jacobian_fd(F, x, h=None, method: str = 'central')
+```
+
+Jacobian of a vector field by finite differences.
+
+### `hessian_fd` {#api-hessian_fd}
+
+```python
+hessian_fd(f, x, h=None)
+```
+
+Hessian by second-order finite differences.
+
+### `differentiate_data` {#api-differentiate_data}
+
+```python
+differentiate_data(x, y, order: int = 1, stencil: int = 3)
+```
+
+Differentiate tabulated data using a moving finite difference stencil.
+
+### `savitzky_golay_derivative` {#api-savitzky_golay_derivative}
+
+```python
+savitzky_golay_derivative(
+    y,
+    window: int = 5,
+    poly_order: int = 2,
+    order: int = 1,
+    dx: float = 1.0,
+)
+```
+
+Savitzky-Golay smoothing differentiator for noisy data.
+
+Fits a local polynomial by least squares and differentiates the fit, which
+suppresses the noise amplification of plain differencing.
 
 ## `spectral`
 
@@ -82,14 +810,370 @@ Spectral differentiation: exponentially accurate derivatives.
 
 For smooth functions these converge faster than any power of the grid spacing, which is why they underpin spectral PDE solvers.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `fourier_diff_matrix` | `(n: int, L: float = 6.283185307179586, order: int = 1)` | Differentiation matrix for periodic data on ``n`` equispaced points. |
-| `fourier_derivative` | `(y, L: float = 6.283185307179586, order: int = 1)` | Derivative of a periodic sampled function via the FFT. |
-| `chebyshev_diff_matrix` | `(n: int, a: float = -1.0, b: float = 1.0)` | Chebyshev differentiation matrix on ``n+1`` Lobatto points. |
-| `chebyshev_points` | `(n: int, a: float = -1.0, b: float = 1.0)` | Chebyshev-Gauss-Lobatto points ``cos(j pi / n)``, ``j = 0..n``. |
-| `chebyshev_derivative` | `(f, n: int = 32, a: float = -1.0, b: float = 1.0)` | Spectrally accurate derivative of ``f`` sampled at Lobatto points. |
-| `spectral_derivative_fft` | `(y, L: float = 6.283185307179586, order: int = 1)` | Alias of ``fourier_derivative`` under its common name. |
-| `chebyshev_coefficients` | `(f, n: int = 32, a: float = -1.0, b: float = 1.0)` | Chebyshev series coefficients of ``f`` computed by the DCT (via FFT). |
-| `chebyshev_evaluate` | `(coeffs, t, a: float = -1.0, b: float = 1.0)` | Evaluate a Chebyshev series on ``[a, b]`` using Clenshaw's algorithm. |
-| `clenshaw` | `(coeffs, t)` | Clenshaw recurrence: stable evaluation of a Chebyshev series. |
+| [`fourier_diff_matrix`](#api-fourier_diff_matrix) | function | Differentiation matrix for periodic data on ``n`` equispaced points. |
+| [`fourier_derivative`](#api-fourier_derivative) | function | Derivative of a periodic sampled function via the FFT. |
+| [`chebyshev_diff_matrix`](#api-chebyshev_diff_matrix) | function | Chebyshev differentiation matrix on ``n+1`` Lobatto points. |
+| [`chebyshev_points`](#api-chebyshev_points) | function | Chebyshev-Gauss-Lobatto points ``cos(j pi / n)``, ``j = 0..n``. |
+| [`chebyshev_derivative`](#api-chebyshev_derivative) | function | Spectrally accurate derivative of ``f`` sampled at Lobatto points. |
+| [`spectral_derivative_fft`](#api-spectral_derivative_fft) | function | Alias of ``fourier_derivative`` under its common name. |
+| [`chebyshev_coefficients`](#api-chebyshev_coefficients) | function | Chebyshev series coefficients of ``f`` computed by the DCT (via FFT). |
+| [`chebyshev_evaluate`](#api-chebyshev_evaluate) | function | Evaluate a Chebyshev series on ``[a, b]`` using Clenshaw's algorithm. |
+| [`clenshaw`](#api-clenshaw) | function | Clenshaw recurrence: stable evaluation of a Chebyshev series. |
+
+### `fourier_diff_matrix` {#api-fourier_diff_matrix}
+
+```python
+fourier_diff_matrix(n: int, L: float = 6.283185307179586, order: int = 1)
+```
+
+Differentiation matrix for periodic data on `n` equispaced points.
+
+The matrix is circulant, built from its first column; the closed forms
+differ between even and odd `n`, and both are handled.
+
+### `fourier_derivative` {#api-fourier_derivative}
+
+```python
+fourier_derivative(y, L: float = 6.283185307179586, order: int = 1)
+```
+
+Derivative of a periodic sampled function via the FFT.
+
+### `chebyshev_diff_matrix` {#api-chebyshev_diff_matrix}
+
+```python
+chebyshev_diff_matrix(n: int, a: float = -1.0, b: float = 1.0)
+```
+
+Chebyshev differentiation matrix on `n+1` Lobatto points.
+
+Returns `(D, x)` with `D @ f(x) ~ f'(x)` to spectral accuracy.
+
+### `chebyshev_points` {#api-chebyshev_points}
+
+```python
+chebyshev_points(n: int, a: float = -1.0, b: float = 1.0)
+```
+
+Chebyshev-Gauss-Lobatto points `cos(j pi / n)`, `j = 0..n`.
+
+Returned in increasing order on `[a, b]`.
+
+### `chebyshev_derivative` {#api-chebyshev_derivative}
+
+```python
+chebyshev_derivative(f, n: int = 32, a: float = -1.0, b: float = 1.0)
+```
+
+Spectrally accurate derivative of `f` sampled at Lobatto points.
+
+### `spectral_derivative_fft` {#api-spectral_derivative_fft}
+
+```python
+spectral_derivative_fft(y, L: float = 6.283185307179586, order: int = 1)
+```
+
+Alias of `fourier_derivative` under its common name.
+
+### `chebyshev_coefficients` {#api-chebyshev_coefficients}
+
+```python
+chebyshev_coefficients(f, n: int = 32, a: float = -1.0, b: float = 1.0)
+```
+
+Chebyshev series coefficients of `f` computed by the DCT (via FFT).
+
+### `chebyshev_evaluate` {#api-chebyshev_evaluate}
+
+```python
+chebyshev_evaluate(coeffs, t, a: float = -1.0, b: float = 1.0)
+```
+
+Evaluate a Chebyshev series on `[a, b]` using Clenshaw's algorithm.
+
+### `clenshaw` {#api-clenshaw}
+
+```python
+clenshaw(coeffs, t)
+```
+
+Clenshaw recurrence: stable evaluation of a Chebyshev series.
+
+## `tensor`
+
+<small>`quadrivium.diff.tensor`</small>
+
+Array-aware differentiation with reverse pullbacks and forward tangents.
+
+Each tape node represents a whole array operation. JVP and VJP never assemble Jacobians. Supported primitives include broadcasting arithmetic, indexing, reductions, reshape/transpose, matrix multiplication and smooth elementary functions. Mutation and complex differentiation are intentionally rejected.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`Tensor`](#api-Tensor) | class | Differentiable real array; ``data`` owns a snapshot of the input. |
+| [`jvp`](#api-jvp) | function | Return ``(f(x), J(x) @ tangent)`` in one forward pass. |
+| [`vjp`](#api-vjp) | function | Return value and a pullback, or value and J.T @ cotangent if supplied. |
+| [`array_gradient`](#api-array_gradient) | function | Return the gradient of a scalar-valued objective with array input. |
+| [`array_value_and_grad`](#api-array_value_and_grad) | function | Return a scalar objective value and its gradient with respect to an array. |
+
+### `Tensor` {#api-Tensor}
+
+```python
+Tensor(data, *, requires_grad=True, tangent=None, _parents=())
+```
+
+Differentiable real array; `data` owns a snapshot of the input.
+
+#### `Tensor.data` {#api-Tensor.data}
+
+Read-only property.
+
+A read-only view of the immutable forward value.
+
+#### `Tensor.shape` {#api-Tensor.shape}
+
+Read-only property.
+
+#### `Tensor.ndim` {#api-Tensor.ndim}
+
+Read-only property.
+
+#### `Tensor.size` {#api-Tensor.size}
+
+Read-only property.
+
+#### `Tensor.__len__` {#api-Tensor.__len__}
+
+```python
+Tensor.__len__(self)
+```
+
+#### `Tensor.__float__` {#api-Tensor.__float__}
+
+```python
+Tensor.__float__(self)
+```
+
+#### `Tensor.__add__` {#api-Tensor.__add__}
+
+```python
+Tensor.__add__(self, other)
+```
+
+#### `Tensor.__radd__` {#api-Tensor.__radd__}
+
+```python
+Tensor.__radd__(self, other)
+```
+
+#### `Tensor.__sub__` {#api-Tensor.__sub__}
+
+```python
+Tensor.__sub__(self, other)
+```
+
+#### `Tensor.__rsub__` {#api-Tensor.__rsub__}
+
+```python
+Tensor.__rsub__(self, other)
+```
+
+#### `Tensor.__mul__` {#api-Tensor.__mul__}
+
+```python
+Tensor.__mul__(self, other)
+```
+
+#### `Tensor.__rmul__` {#api-Tensor.__rmul__}
+
+```python
+Tensor.__rmul__(self, other)
+```
+
+#### `Tensor.__truediv__` {#api-Tensor.__truediv__}
+
+```python
+Tensor.__truediv__(self, other)
+```
+
+#### `Tensor.__rtruediv__` {#api-Tensor.__rtruediv__}
+
+```python
+Tensor.__rtruediv__(self, other)
+```
+
+#### `Tensor.__neg__` {#api-Tensor.__neg__}
+
+```python
+Tensor.__neg__(self)
+```
+
+#### `Tensor.__pow__` {#api-Tensor.__pow__}
+
+```python
+Tensor.__pow__(self, other)
+```
+
+#### `Tensor.__rpow__` {#api-Tensor.__rpow__}
+
+```python
+Tensor.__rpow__(self, other)
+```
+
+#### `Tensor.__abs__` {#api-Tensor.__abs__}
+
+```python
+Tensor.__abs__(self)
+```
+
+#### `Tensor.exp` {#api-Tensor.exp}
+
+```python
+Tensor.exp(self)
+```
+
+#### `Tensor.expm1` {#api-Tensor.expm1}
+
+```python
+Tensor.expm1(self)
+```
+
+#### `Tensor.log` {#api-Tensor.log}
+
+```python
+Tensor.log(self)
+```
+
+#### `Tensor.log1p` {#api-Tensor.log1p}
+
+```python
+Tensor.log1p(self)
+```
+
+#### `Tensor.sin` {#api-Tensor.sin}
+
+```python
+Tensor.sin(self)
+```
+
+#### `Tensor.cos` {#api-Tensor.cos}
+
+```python
+Tensor.cos(self)
+```
+
+#### `Tensor.tan` {#api-Tensor.tan}
+
+```python
+Tensor.tan(self)
+```
+
+#### `Tensor.tanh` {#api-Tensor.tanh}
+
+```python
+Tensor.tanh(self)
+```
+
+#### `Tensor.sqrt` {#api-Tensor.sqrt}
+
+```python
+Tensor.sqrt(self)
+```
+
+#### `Tensor.sum` {#api-Tensor.sum}
+
+```python
+Tensor.sum(self, axis=None, keepdims=False, **kwargs)
+```
+
+#### `Tensor.mean` {#api-Tensor.mean}
+
+```python
+Tensor.mean(self, axis=None, keepdims=False, **kwargs)
+```
+
+#### `Tensor.reshape` {#api-Tensor.reshape}
+
+```python
+Tensor.reshape(self, *shape)
+```
+
+#### `Tensor.transpose` {#api-Tensor.transpose}
+
+```python
+Tensor.transpose(self, *axes)
+```
+
+#### `Tensor.T` {#api-Tensor.T}
+
+Read-only property.
+
+#### `Tensor.__getitem__` {#api-Tensor.__getitem__}
+
+```python
+Tensor.__getitem__(self, key)
+```
+
+#### `Tensor.__matmul__` {#api-Tensor.__matmul__}
+
+```python
+Tensor.__matmul__(self, other)
+```
+
+#### `Tensor.__rmatmul__` {#api-Tensor.__rmatmul__}
+
+```python
+Tensor.__rmatmul__(self, other)
+```
+
+#### `Tensor.backward` {#api-Tensor.backward}
+
+```python
+Tensor.backward(self, cotangent=None)
+```
+
+Accumulate a VJP into leaf `grad` arrays, resetting previous gradients.
+
+### `jvp` {#api-jvp}
+
+```python
+jvp(f, x, tangent)
+```
+
+Return `(f(x), J(x) @ tangent)` in one forward pass.
+
+### `vjp` {#api-vjp}
+
+```python
+vjp(f, x, cotangent=None)
+```
+
+Return value and a pullback, or value and J.T @ cotangent if supplied.
+
+### `array_gradient` {#api-array_gradient}
+
+```python
+array_gradient(f, x)
+```
+
+Return the gradient of a scalar-valued objective with array input.
+
+This is the gradient component of `array_value_and_grad(f, x)` and
+has the same requirements: `f` must accept a `Tensor`, use supported
+differentiable operations, and return exactly one element. The gradient
+has the shape of `x`.
+
+### `array_value_and_grad` {#api-array_value_and_grad}
+
+```python
+array_value_and_grad(f, x)
+```
+
+Return a scalar objective value and its gradient with respect to an array.
+
+`f` receives a differentiable `Tensor` and must use supported real
+arithmetic or tensor operations. Its result must contain exactly one
+element; other output sizes raise `ValueError`. The returned pair is
+`(float_value, gradient_array)`, with the gradient shaped like `x`.
+Inputs disconnected from the objective receive zero derivatives.

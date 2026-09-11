@@ -1,6 +1,7 @@
 /* Module assembly: the ufunc wrappers, the ndarray method table and the
  * module object itself. */
 #include "qnp.h"
+#include "qaccel.h"
 
 extern PyMethodDef qnp_index_methods[];
 extern PyMethodDef qnp_array_core_methods[];
@@ -510,6 +511,7 @@ PyMODINIT_FUNC PyInit__qnp(void) {
     if (add_table(module, qnp_array_core_methods) < 0) goto fail;
     if (add_table(module, qnp_random_methods) < 0) goto fail;
     if (qnp_add_random(module) < 0) goto fail;
+    if (qaccel_add(module) < 0) goto fail;
     PyObject *linalg = make_namespace("quadrivium._qnp.linalg", qnp_linalg_methods);
     if (linalg == NULL) goto fail;
     if (PyObject_SetAttrString(linalg, "LinAlgError", QNP_LinAlgError) < 0) goto fail;

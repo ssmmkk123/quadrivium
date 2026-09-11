@@ -330,7 +330,22 @@ def francis_qr(A, tol: float = 1e-12, max_iter: int = 1000):
 
 
 def jacobi_eigen(A, tol: float = 1e-12, max_sweeps: int = 100):
-    """Cyclic Jacobi rotations for symmetric matrices (very accurate)."""
+    """Cyclic Jacobi rotations for symmetric/Hermitian matrices.
+
+    Complex inputs with default controls use the native Hermitian kernel; its
+    internal sweep count is unavailable and reported as zero. Explicit sweep
+    budgets or tolerances use the readable complex rotation implementation.
+    """
+    raw = np.asarray(A)
+    if np.iscomplexobj(raw):
+        if raw.ndim != 2 or raw.shape[0] != raw.shape[1]:
+            raise ValueError("Jacobi eigenvalue method requires a square matrix")
+        if not np.allclose(raw, np.conjugate(raw.T), rtol=1e-12, atol=1e-14):
+            raise ValueError("Jacobi eigenvalue method requires a Hermitian matrix")
+        if _accel.available() and tol == 1e-12 and max_sweeps == 100:
+            values, vectors = np.linalg.eigh(raw)
+            return EigenResult(values, vectors, 0, True, "jacobi_hermitian")
+        return _hermitian_jacobi(raw, tol, max_sweeps)
     A = check_square(A)
     if not is_symmetric(A, tol=1e-8):
         raise ValueError("Jacobi eigenvalue method requires a symmetric matrix")
@@ -489,7 +504,25 @@ def bisection_eigenvalues(alpha, beta, tol: float = 1e-12):
 # Singular values and related decompositions
 # --------------------------------------------------------------------------
 def svd_jacobi(A, tol: float = 1e-13, max_sweeps: int = 60):
-    """One-sided Jacobi SVD: ``A = U S V'`` with high relative accuracy."""
+    """One-sided Jacobi SVD ``A = U S V.H``, including complex inputs/batches."""
+    raw = np.asarray(A)
+    if raw.ndim > 2:
+        if tol == 1e-13 and max_sweeps == 60:
+            return np.linalg.svd(raw, full_matrices=False)
+        m, n = raw.shape[-2:]
+        k = min(m, n)
+        U = np.empty(raw.shape[:-2] + (m, k), dtype=complex if np.iscomplexobj(raw) else float)
+        S = np.empty(raw.shape[:-2] + (k,))
+        Vh = np.empty(raw.shape[:-2] + (k, n), dtype=complex if np.iscomplexobj(raw) else float)
+        for index in np.ndindex(raw.shape[:-2]):
+            U[index], S[index], Vh[index] = svd_jacobi(raw[index], tol, max_sweeps)
+        return U, S, Vh
+    if np.iscomplexobj(raw):
+        if raw.ndim != 2:
+            raise ValueError("SVD requires a matrix")
+        if _accel.available() and tol == 1e-13 and max_sweeps == 60:
+            return np.linalg.svd(raw, full_matrices=False)
+        return _complex_jacobi_svd(raw, tol, max_sweeps)
     A = as_matrix(A)
     m, n = A.shape
     transposed = m < n
@@ -544,7 +577,10 @@ def _svd_assemble(W, V, m, n, transposed):
 
 
 def svd_golub_kahan(A):
-    """SVD through bidiagonalization plus a symmetric eigen-solve on ``B'B``."""
+    """SVD through a symmetric eigen-solve; complex/batched inputs use native SVD."""
+    raw = np.asarray(A)
+    if raw.ndim > 2 or np.iscomplexobj(raw):
+        return np.linalg.svd(raw, full_matrices=False)
     A = as_matrix(A)
     m, n = A.shape
     AtA = A.T @ A
@@ -571,15 +607,17 @@ def polar_decomposition(A, side: str = "right"):
     a rank-deficient ``A`` gives a singular ``P``, which is the correct answer
     rather than an error.
     """
-    A = as_matrix(A)
+    A = np.asarray(A)
+    if A.ndim != 2:
+        raise ValueError("polar decomposition requires a matrix")
     # full_matrices=False is essential: with the full SVD, U is m-by-m and Vt
     # is n-by-n, so U @ Vt is not even conformable when m != n.
     U, s, Vt = np.linalg.svd(A, full_matrices=False)
     R = U @ Vt
     if side == "right":
-        return R, Vt.T @ (s[:, None] * Vt)
+        return R, np.conjugate(Vt.T) @ (s[:, None] * Vt)
     if side == "left":
-        return U @ (s[:, None] * U.T), R
+        return U @ (s[:, None] * np.conjugate(U.T)), R
     raise ValueError("side must be 'right' or 'left'")
 
 
@@ -784,3 +822,83 @@ def matrix_function(A, f):
     w, V = np.linalg.eig(A)
     out = (V * f(w)) @ np.linalg.inv(V)
     return out.real if np.allclose(out.imag, 0.0) else out
+
+
+def _hermitian_jacobi(A, tol, max_sweeps):
+    if tol <= 0 or not np.isfinite(tol) or max_sweeps < 0:
+        raise ValueError("invalid Jacobi tolerance or sweep budget")
+    n = A.shape[0]
+    scale = float(np.max(np.abs(A))) if A.size else 1.0
+    scale = scale or 1.0
+    D, V = A / scale, np.eye(n, dtype=complex)
+    threshold = max(tol * min(1.0, float(np.linalg.norm(A)) or 1.0) / scale,
+                    4 * np.finfo(float).eps * max(1, n))
+    sweeps = 0
+    for sweep in range(max_sweeps):
+        if float(np.linalg.norm(np.tril(D, -1))) <= threshold:
+            break
+        for p in range(n - 1):
+            for q in range(p + 1, n):
+                r = abs(D[p, q])
+                if r <= np.finfo(float).tiny:
+                    continue
+                phase = D[p, q] / r
+                t = _safe_tangent(float((D[q, q].real - D[p, p].real) / (2 * r)))
+                c, sn = 1 / np.sqrt(1 + t * t), t / np.sqrt(1 + t * t)
+                # Apply the unitary plane rotation to both sides and to V.
+                dp, dq = D[:, p].copy(), D[:, q].copy()
+                D[:, p] = c * dp - sn * np.conjugate(phase) * dq
+                D[:, q] = sn * phase * dp + c * dq
+                dp, dq = D[p, :].copy(), D[q, :].copy()
+                D[p, :] = c * dp - sn * phase * dq
+                D[q, :] = sn * np.conjugate(phase) * dp + c * dq
+                vp, vq = V[:, p].copy(), V[:, q].copy()
+                V[:, p] = c * vp - sn * np.conjugate(phase) * vq
+                V[:, q] = sn * phase * vp + c * vq
+        sweeps = sweep + 1
+    values = np.real(np.diag(D)) * scale
+    index = np.argsort(values)
+    converged = float(np.linalg.norm(np.tril(D, -1))) <= threshold
+    return EigenResult(values[index], V[:, index], sweeps, converged, "jacobi_hermitian")
+
+
+def _complex_jacobi_svd(A, tol, max_sweeps):
+    if tol <= 0 or not np.isfinite(tol) or max_sweeps < 0:
+        raise ValueError("invalid SVD tolerance or sweep budget")
+    wide = A.shape[0] < A.shape[1]
+    W = np.conjugate(A.T).copy() if wide else A.copy()
+    m, n = W.shape
+    scale = float(np.max(np.abs(W))) if W.size else 1.0
+    scale = scale or 1.0
+    W /= scale
+    V = np.eye(n, dtype=complex)
+    for _ in range(max_sweeps):
+        rotated = False
+        for p in range(n - 1):
+            for q in range(p + 1, n):
+                a = float(np.sum(np.abs(W[:, p]) ** 2))
+                b = float(np.sum(np.abs(W[:, q]) ** 2))
+                cross = np.conjugate(W[:, p]) @ W[:, q]
+                r = abs(cross)
+                if r <= tol * np.sqrt(a) * np.sqrt(b) or r == 0:
+                    continue
+                rotated = True
+                phase = cross / r
+                t = _safe_tangent((b - a) / (2 * r))
+                c, sn = 1 / np.sqrt(1 + t * t), t / np.sqrt(1 + t * t)
+                wp, wq = W[:, p].copy(), W[:, q].copy()
+                W[:, p] = c * wp - sn * np.conjugate(phase) * wq
+                W[:, q] = sn * phase * wp + c * wq
+                vp, vq = V[:, p].copy(), V[:, q].copy()
+                V[:, p] = c * vp - sn * np.conjugate(phase) * vq
+                V[:, q] = sn * phase * vp + c * vq
+        if not rotated:
+            break
+    singular = np.linalg.norm(W, axis=0)
+    index = np.argsort(-singular)
+    singular, W, V = singular[index], W[:, index], V[:, index]
+    U = np.zeros((m, n), dtype=complex)
+    np.divide(W, singular, out=U, where=singular != 0)
+    if wide:
+        return V, singular * scale, np.conjugate(U.T)
+    return U, singular * scale, np.conjugate(V.T)

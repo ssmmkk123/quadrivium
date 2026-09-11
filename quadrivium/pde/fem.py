@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import PDESolution
+from ..core.storage import (pde_solution as PDESolution, TimeGrid,
+                            Trajectory, output_control, OutputRecorder)
 from ..core.utils import as_vector
 
 __all__ = [
@@ -142,7 +143,7 @@ def unit_square_mesh(n: int = 8, x_span=(0.0, 1.0), y_span=(0.0, 1.0)):
 
 
 def fem_2d_triangular(source, points=None, triangles=None, boundary=None,
-                      n: int = 8, bc=0.0, c_diff=1.0):
+                      n: int = 8, bc=0.0, c_diff=1.0, sparse: bool = True):
     """P1 finite elements on a triangular mesh for ``-c lap u = f``.
 
     Uses the closed-form gradients of the linear shape functions on each
@@ -150,6 +151,11 @@ def fem_2d_triangular(source, points=None, triangles=None, boundary=None,
     """
     if points is None:
         points, triangles, boundary = unit_square_mesh(n)
+    if sparse:
+        from .adaptive_fem import TriangularMesh, solve_fem_mesh
+        result = solve_fem_mesh(TriangularMesh(points, triangles, boundary), source, bc, c_diff)
+        result.method = "fem_2d_triangular"
+        return result
     P = np.asarray(points, dtype=float)
     T = np.asarray(triangles, dtype=int)
     npt = len(P)
@@ -215,14 +221,14 @@ def fem_1d_time_dependent(u0, source, x_span, t_span, n: int = 50, nt: int = 100
     is integrated element by element rather than frozen at one sample point.
     """
     x = np.linspace(float(x_span[0]), float(x_span[1]), n + 1)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dt = t[1] - t[0]
     # assemble_1d handles a variable c(x) element-wise; the pure mass matrix
     # comes from the reaction term with unit coefficient.
     K, _ = assemble_1d(x, c_diff, 0.0)
     _, M = fem_1d_mass_stiffness(x)
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, n + 1))
+    U = Trajectory(t)
     U[0] = u
     LHS = M + theta * dt * K
     RHS = M - (1 - theta) * dt * K
@@ -237,12 +243,15 @@ def fem_1d_time_dependent(u0, source, x_span, t_span, n: int = 50, nt: int = 100
     f_old = load(t[0])
     idx = np.arange(1, n)
     A_in = LHS[np.ix_(idx, idx)]
-    lu = np.linalg.inv(A_in) if n > 1 else None
+    from ..linalg import lu_factor
+    lu = lu_factor(A_in) if n > 1 else None
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         f_new = load(t[k + 1]) if time_dependent else f_old
         rhs = RHS @ u + dt * (theta * f_new + (1.0 - theta) * f_old)
         rhs_in = rhs[idx] - LHS[np.ix_(idx, [0, n])] @ np.array([bc[0], bc[1]])
-        u_in = lu @ rhs_in
+        u_in = lu.solve(rhs_in) if lu is not None else np.empty(0)
         u = np.concatenate([[bc[0]], u_in, [bc[1]]])
         U[k + 1] = u
         f_old = f_new
@@ -263,3 +272,10 @@ def _accepts_time(fn) -> bool:
     if any(pr.kind is pr.VAR_POSITIONAL for pr in sig.parameters.values()):
         return False
     return len(required) >= 2
+
+
+# Share output policy through nested method-of-lines and wrapper calls.
+for _name in __all__:
+    if "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

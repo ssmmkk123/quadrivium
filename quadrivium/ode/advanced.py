@@ -13,6 +13,7 @@ from .. import numeric as np
 
 from ..core.exceptions import ConvergenceError, StepSizeError
 from ..core.types import ODESolution
+from ..core.storage import OutputRecorder, TimeGrid, output_control
 from ..core.utils import CountedFunction, as_vector, numerical_jacobian
 
 __all__ = [
@@ -71,9 +72,12 @@ def gragg_bulirsch_stoer(f, t_span, y0, rtol: float = 1e-10, atol: float = 1e-12
     t = t0
     h = (abs(tf - t0) / 20.0 if h0 is None else abs(h0)) * direction
     steps = np.array([2 * (k + 1) for k in range(max_order + 1)])
-    ts, ys, dys = [t], [y.copy()], []
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t, y, fc(t, y))
     accepted = rejected = 0
     for _ in range(max_steps):
+        if recorder.stopped:
+            break
         if (t - tf) * direction >= 0:
             break
         if abs(h) > abs(tf - t):
@@ -94,11 +98,9 @@ def gragg_bulirsch_stoer(f, t_span, y0, rtol: float = 1e-10, atol: float = 1e-12
                     order = 2 * k
                     break
         if accept:
-            dys.append(fc(t, y))
             t = t + h
             y = table[0]
-            ts.append(t)
-            ys.append(y.copy())
+            recorder.append(t, y, fc(t, y))
             accepted += 1
             fac = 0.94 * (1.0 / max(err, 1e-12)) ** (1.0 / max(order, 1))
             h = h * min(4.0, max(0.2, fac))
@@ -110,10 +112,15 @@ def gragg_bulirsch_stoer(f, t_span, y0, rtol: float = 1e-10, atol: float = 1e-12
                 f"step size underflow at t={t:.6g}; extrapolation needs a "
                 "smooth right-hand side -- try an implicit solver if stiff"
             )
-    dys.append(fc(t, y))
-    return ODESolution(np.array(ts), np.array(ys), "gragg_bulirsch_stoer",
-                       accepted + rejected, accepted, rejected, fc.calls, True,
-                       "completed", None, np.array(dys))
+    ts, ys, dys = recorder.finish()
+    result = ODESolution(ts, ys, "gragg_bulirsch_stoer",
+                         accepted + rejected, accepted, rejected, fc.calls,
+                         (t-tf)*direction >= 0, "completed", None, dys)
+    result.checkpoint = recorder.checkpoint(result.method, {"h_next": h})
+    result._final_state = result.checkpoint.y
+    if recorder.stopped:
+        result.success, result.message = False, "callback stopped"
+    return result
 
 
 def bulirsch_stoer(f, t_span, y0, **kwargs):
@@ -253,11 +260,12 @@ def rk_nystrom(f, t_span, y0, dy0, n: int = 100):
     dy = as_vector(dy0).astype(float)
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    Y = np.empty((n + 1, y.size))
-    DY = np.empty((n + 1, y.size))
-    Y[0], DY[0] = y, dy
+    ts = TimeGrid(t0, tf, n + 1)
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t0, y, dy)
     for i in range(n):
+        if recorder.stopped:
+            break
         t = ts[i]
         k1 = 0.5 * h * fc(t, y, dy)
         q = 0.5 * h * (dy + 0.5 * k1)
@@ -267,10 +275,18 @@ def rk_nystrom(f, t_span, y0, dy0, n: int = 100):
         k4 = 0.5 * h * fc(t + h, y + r, dy + 2.0 * k3)
         y = y + h * (dy + (k1 + k2 + k3) / 3.0)
         dy = dy + (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 3.0
-        Y[i + 1], DY[i + 1] = y, dy
+        recorder.append(ts[i + 1], y, dy)
+    ts, Y, DY = recorder.finish()
     sol = ODESolution(ts, Y, "rk_nystrom", n, n, 0, fc.calls, True, "completed",
                       None, DY)
     sol.velocity = DY
+    if "recorder" in locals():
+        sol.checkpoint = recorder.checkpoint(sol.method, {"velocity": dy.tolist(), "dt": h})
+    if getattr(sol, "checkpoint", None) is not None:
+        sol._final_state = sol.checkpoint.y
+    if recorder.stopped:
+        sol.success, sol.message = False, "callback stopped"
+        sol.n_steps = sol.n_accepted = recorder.steps
     return sol
 
 
@@ -297,26 +313,45 @@ def stormer_cowell(f, t_span, y0, dy0, n: int = 100):
     dy0 = as_vector(dy0).astype(float)
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    Y = np.empty((n + 1, y0.size))
-    Y[0] = y0
-    # Bootstrap with Runge-Kutta-Nystrom rather than a low-order Taylor step.
-    # A second-order start caps the *global* order of the whole run at three,
-    # however accurate the multistep formula that follows it is.
+    ts = TimeGrid(t0, tf, n + 1)
     n_start = min(4, n)
-    start = rk_nystrom(lambda t, yy, dyy: f(t, yy), (t0, t0 + n_start * h),
-                       y0, dy0, n=n_start)
-    Y[: n_start + 1] = np.asarray(start.y)
-    accel = [fc(ts[k], Y[k]) for k in range(n_start + 1)]
-    for i in range(n_start + 1, n + 1):
-        a1, a2, a3, a4 = accel[-1], accel[-2], accel[-3], accel[-4]
-        Y[i] = (2 * Y[i - 1] - Y[i - 2]
-                + h * h * (14 * a1 - 5 * a2 + 4 * a3 - a4) / 12.0)
-        accel.append(fc(ts[i], Y[i]))
-    DY = np.gradient(Y, h, axis=0)
-    sol = ODESolution(ts, Y, "stormer_cowell", n, n, 0, fc.calls, True,
-                      "completed", None, DY)
+    start = rk_nystrom(lambda t, yy, dyy: f(t, yy), (t0, t0 + n_start*h),
+                       y0, dy0, n=n_start, save_at=None, save_every=1,
+                       final_only=False, callback=None)
+    positions = {j: start.y[j].copy() for j in range(n_start+1)}
+    recorder = OutputRecorder.current((t0, tf))
+    for j in range(n_start):
+        if recorder.stopped:
+            break
+        velocity = ((positions[1]-positions[0])/h if j==0 else
+                    (positions[j+1]-positions[j-1])/(2*h))
+        recorder.append(ts[j], positions[j], velocity)
+    accel = [fc(ts[k], positions[k]) for k in range(n_start+1)]
+    for i in range(n_start+1, n+1):
+        if recorder.stopped:
+            break
+        a1,a2,a3,a4 = accel[-1],accel[-2],accel[-3],accel[-4]
+        positions[i] = (2*positions[i-1]-positions[i-2]
+                        +h*h*(14*a1-5*a2+4*a3-a4)/12)
+        recorder.append(ts[i-1],positions[i-1],(positions[i]-positions[i-2])/(2*h))
+        accel.append(fc(ts[i],positions[i]))
+        if len(accel)>4:
+            accel.pop(0)
+        for j in list(positions):
+            if j<i-2:
+                del positions[j]
+    velocity = (positions[n]-positions[n-1])/h
+    recorder.append(ts[n],positions[n],velocity)
+    ts,Y,DY = recorder.finish()
+    sol = ODESolution(ts,Y,"stormer_cowell",n,n,0,fc.calls,True,
+                      "completed",None,DY)
     sol.velocity = DY
+    sol.checkpoint = recorder.checkpoint(sol.method, {"velocity": velocity.tolist(), "dt": h})
+    if getattr(sol, "checkpoint", None) is not None:
+        sol._final_state = sol.checkpoint.y
+    if recorder.stopped:
+        sol.success, sol.message = False, "callback stopped"
+        sol.n_steps = sol.n_accepted = recorder.steps
     return sol
 
 
@@ -348,12 +383,13 @@ def dae_index1_bdf(f, g, t_span, y0, z0, n: int = 200, order: int = 2,
     ny, nz = y.size, z.size
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    Y = np.empty((n + 1, ny))
-    Z = np.empty((n + 1, nz))
-    Y[0], Z[0] = y, z
+    ts = TimeGrid(t0, tf, n + 1)
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t0, np.concatenate([y, z]))
     hist = [y.copy()]
     for i in range(n):
+        if recorder.stopped:
+            break
         tn = ts[i + 1]
         k = min(len(hist), order)
         a, b = BDF[k]
@@ -381,12 +417,19 @@ def dae_index1_bdf(f, g, t_span, y0, z0, n: int = 200, order: int = 2,
         else:
             raise ConvergenceError(f"DAE Newton did not converge at t={tn:.6g}")
         y, z = w[:ny], w[ny:]
-        Y[i + 1], Z[i + 1] = y, z
+        recorder.append(ts[i + 1], np.concatenate([y, z]))
         hist.append(y.copy())
         if len(hist) > order:
             hist.pop(0)
-    sol = ODESolution(ts, Y, f"dae_index1_bdf{order}", n, n, 0, 0, True, "completed")
-    sol.z = Z
+    ts, states, _ = recorder.finish()
+    sol = ODESolution(ts, states[:, :ny].copy(), f"dae_index1_bdf{order}", n, n, 0, 0, True, "completed")
+    sol.z = states[:, ny:].copy()
+    sol.checkpoint = recorder.checkpoint(sol.method, {"differential_size": ny, "dt": h, "order": order, "history": [v.tolist() for v in hist]})
+    if getattr(sol, "checkpoint", None) is not None:
+        sol._final_state = sol.checkpoint.y[:ny]
+    if recorder.stopped:
+        sol.success, sol.message = False, "callback stopped"
+        sol.n_steps = sol.n_accepted = recorder.steps
     return sol
 
 
@@ -403,10 +446,12 @@ def mass_matrix_ode(M, f, t_span, y0, n: int = 200, theta: float = 0.5):
     y = as_vector(y0).astype(float)
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    Y = np.empty((n + 1, y.size))
-    Y[0] = y
+    ts = TimeGrid(t0, tf, n + 1)
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t0, y)
     for i in range(n):
+        if recorder.stopped:
+            break
         t, tn = ts[i], ts[i + 1]
         rhs_old = fc(t, y)
 
@@ -421,8 +466,14 @@ def mass_matrix_ode(M, f, t_span, y0, n: int = 200, theta: float = 0.5):
             J = numerical_jacobian(residual, w)
             w = w - np.linalg.solve(J, r)
         y = w
-        Y[i + 1] = y
-    return ODESolution(ts, Y, "mass_matrix_ode", n, n, 0, fc.calls, True, "completed")
+        recorder.append(ts[i + 1], y)
+    ts, Y, _ = recorder.finish()
+    result = ODESolution(ts, Y, "mass_matrix_ode", n, n, 0, fc.calls, True, "completed")
+    result.checkpoint = recorder.checkpoint(result.method, {"dt": h})
+    result._final_state = result.checkpoint.y
+    if recorder.stopped:
+        result.success, result.message = False, "callback stopped"
+    return result
 
 
 def dde_method_of_steps(f, history, delays, t_span, n: int = 400, solver=None,
@@ -457,9 +508,9 @@ def dde_method_of_steps(f, history, delays, t_span, n: int = 400, solver=None,
     tau = min(delays)
     kwargs.setdefault("max_step", tau / 20.0 if max_step is None else max_step)
     n_seg = max(1, int(np.ceil((tf - t0) / tau)))
-    segments = [(t0 + k * tau, min(t0 + (k + 1) * tau, tf)) for k in range(n_seg)]
-    all_t = [np.array([t0])]
-    all_y = [np.atleast_2d(as_vector(history(t0)))]
+    segments = ((t0 + k * tau, min(t0 + (k + 1) * tau, tf)) for k in range(n_seg))
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t0, as_vector(history(t0)))
     done = []          # finished segments, kept for their dense output
 
     def past(t):
@@ -475,20 +526,33 @@ def dde_method_of_steps(f, history, delays, t_span, n: int = 400, solver=None,
         for seg in done:
             if seg.t[0] <= t <= seg.t[-1]:
                 return as_vector(seg(t))
-        return as_vector(done[-1](done[-1].t[-1])) if done else all_y[0][0]
+        return as_vector(done[-1](done[-1].t[-1])) if done else as_vector(history(t0))
 
     y = as_vector(history(t0))
     for a, b in segments:
+        if recorder.stopped:
+            break
         if b <= a:
             continue
         rhs = lambda t, yy: as_vector(f(t, yy, [past(t - d) for d in delays]))
-        sol = solver(rhs, (a, b), y, **kwargs)
+        sol = solver(rhs, (a, b), y, save_at=None, save_every=1,
+                     final_only=False, callback=None, **kwargs)
         done.append(sol)
-        all_t.append(np.asarray(sol.t)[1:])
-        all_y.append(np.asarray(sol.y)[1:])
+        for j in range(1, len(sol.t)):
+            if recorder.stopped:
+                break
+            recorder.append(sol.t[j], sol.y[j], None if sol.dydt is None else sol.dydt[j])
+        done = [segment for segment in done if segment.t[-1] >= b - max(delays)]
         y = np.asarray(sol.y)[-1]
-    return ODESolution(np.concatenate(all_t), np.vstack(all_y), "dde_method_of_steps",
-                       len(segments), len(segments), 0, 0, True, "completed")
+    ts, ys, dys = recorder.finish()
+    result = ODESolution(ts, ys, "dde_method_of_steps", n_seg, n_seg, 0, 0, True, "completed", dydt=dys)
+    result.checkpoint = recorder.checkpoint(result.method, {"delays": delays,
+        "segments": [{"t": seg.t.tolist(), "y": seg.y.tolist(),
+                      "dydt": None if seg.dydt is None else seg.dydt.tolist()} for seg in done]})
+    result._final_state = result.checkpoint.y
+    if recorder.stopped:
+        result.success, result.message = False, "callback stopped"
+    return result
 
 
 def stiffness_ratio(jac, t, y):
@@ -516,3 +580,10 @@ def detect_stiffness(f, t, y, threshold: float = 1e3):
     J = numerical_jacobian(lambda yy: as_vector(f(t, yy)), as_vector(y))
     ratio = stiffness_ratio(lambda *_: J, t, y)
     return bool(ratio > threshold), ratio
+
+
+for _name in ("gragg_bulirsch_stoer", "bulirsch_stoer", "rk_nystrom",
+              "runge_kutta_nystrom", "stormer_cowell", "dae_index1_bdf", "mass_matrix_ode",
+              "dde_method_of_steps"):
+    globals()[_name] = output_control(globals()[_name])
+del _name

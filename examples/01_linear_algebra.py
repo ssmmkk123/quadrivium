@@ -17,7 +17,7 @@ def banner(title):
     print(f"\n{'=' * 68}\n{title}\n{'=' * 68}")
 
 
-banner("1. Factorizations reconstruct the matrix exactly")
+banner("1. Check matrix reconstruction to floating-point accuracy")
 rng = np.random.default_rng(0)
 A = rng.random((5, 5)) + 5 * np.eye(5)
 b = rng.random(5)
@@ -46,7 +46,7 @@ banner("3. Eigenvalues by five different routes")
 Sym = rng.random((6, 6))
 Sym = Sym + Sym.T + 6 * np.eye(6)
 reference = np.sort(np.linalg.eigvalsh(Sym))
-print(f"  reference (numpy):    {reference}")
+print(f"  reference (numeric.linalg): {reference}")
 print(f"  QR algorithm:         {np.sort(qr_algorithm(Sym).eigenvalues)}")
 print(f"  shifted QR:           {shifted_qr_algorithm(Sym).eigenvalues}")
 print(f"  Jacobi rotations:     {jacobi_eigen(Sym).eigenvalues}")

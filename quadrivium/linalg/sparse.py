@@ -20,6 +20,10 @@ from .. import _qnp as _core
 _csr_matvec = getattr(_core.linalg, "csr_matvec", None)
 _csr_validate = getattr(_core.linalg, "csr_validate", None)
 
+# Bound vectorized diagonal lookups by both row count and stored entries.
+_DIAGONAL_TILE_ROWS = 8192
+_DIAGONAL_TILE_ELEMENTS = 131072
+
 __all__ = [
     "COOMatrix",
     "CSRMatrix",
@@ -33,6 +37,10 @@ __all__ = [
     "reverse_cuthill_mckee",
     "bandwidth",
     "sparsity",
+    "spmm",
+    "sparse_triangular_solve",
+    "ilu_preconditioner",
+    "ichol_preconditioner",
 ]
 
 
@@ -97,7 +105,9 @@ def _compressed(indptr, indices, data, shape, axis):
 
 
 def _vector(v, size, shape):
-    v = as_vector(v)
+    v = np.asarray(v)
+    if v.ndim != 1:
+        raise DimensionError("expected a one-dimensional vector")
     if v.size != size:
         raise DimensionError(f"matrix is {shape} but vector has length {v.size}")
     return v
@@ -132,15 +142,67 @@ class _SparseBase:
         return self
 
     def __matmul__(self, v):
-        v = np.asarray(v, dtype=float)
+        if isinstance(v, _SparseBase):
+            return _sparse_product(self, v)
+        v = np.asarray(v)
         if v.ndim == 1:
             return self.matvec(v)
         if v.ndim != 2 or v.shape[0] != self.shape[1]:
             raise DimensionError(f"cannot multiply matrix {self.shape} by array {v.shape}")
-        out = np.empty((self.shape[0], v.shape[1]))
+        out = np.empty((self.shape[0], v.shape[1]), dtype=np.result_type(self.dtype, v.dtype))
         for j in range(v.shape[1]):
             out[:, j] = self.matvec(v[:, j])
         return out
+
+    @property
+    def dtype(self):
+        return self.data.dtype
+
+    @property
+    def T(self):
+        return self.transpose()
+
+    @property
+    def H(self):
+        # Sparse storage is currently real-valued.
+        return self.transpose()
+
+    def transpose(self):
+        if isinstance(self, CSRMatrix):
+            return CSCMatrix(self.indptr, self.indices, self.data, self.shape[::-1])
+        if isinstance(self, CSCMatrix):
+            return CSRMatrix(self.indptr, self.indices, self.data, self.shape[::-1])
+        rows, cols, data = _coordinates(self)
+        return COOMatrix(cols, rows, data, self.shape[::-1])
+
+    def rmatvec(self, v):
+        return self.transpose().matvec(v)
+
+    def matmat(self, v):
+        return self @ v
+
+    def __rmatmul__(self, v):
+        v = np.asarray(v)
+        return (self.T @ v.T).T
+
+    def tocsr(self):
+        if isinstance(self, CSRMatrix):
+            return self
+        rows, cols, data = _coordinates(self)
+        return COOMatrix(rows, cols, data, self.shape).tocsr()
+
+    def tocsc(self):
+        if isinstance(self, CSCMatrix):
+            return self
+        transposed = self.transpose().tocsr()
+        return CSCMatrix(transposed.indptr, transposed.indices, transposed.data, self.shape)
+
+    def diagonal(self):
+        return self.tocsr().diagonal()
+
+    def sum_duplicates(self):
+        """Return sorted canonical CSR storage, combining duplicate entries."""
+        return _rows_to_csr(_row_dicts(self), self.shape)
 
     def todense(self) -> np.ndarray:
         out = np.zeros(self.shape)
@@ -184,6 +246,8 @@ class COOMatrix(_SparseBase):
 
     def matvec(self, v):
         v = _vector(v, self.shape[1], self.shape)
+        if np.iscomplexobj(v):
+            return self.matvec(v.real) + 1j * self.matvec(v.imag)
         return np.bincount(self.rows, weights=self.data * v[self.cols],
                            minlength=self.shape[0]).astype(float, copy=False)
 
@@ -213,6 +277,8 @@ class CSRMatrix(_SparseBase):
 
     def matvec(self, v):
         v = _vector(v, self.shape[1], self.shape)
+        if np.iscomplexobj(v):
+            return self.matvec(v.real) + 1j * self.matvec(v.imag)
         # The compiled kernel walks the rows once; the array formulation below
         # first materialises the gather and the product, two nnz-sized
         # temporaries that dominate both the time and the memory at scale.
@@ -224,17 +290,46 @@ class CSRMatrix(_SparseBase):
     def rmatvec(self, v):
         """Product with the transpose, ``A' v``."""
         v = _vector(v, self.shape[0], self.shape)
+        if np.iscomplexobj(v):
+            return self.rmatvec(v.real) + 1j * self.rmatvec(v.imag)
         values = np.repeat(v, np.diff(self.indptr)) * self.data
         return np.bincount(self.indices, weights=values,
                            minlength=self.shape[1]).astype(float, copy=False)
 
     def diagonal(self):
         d = np.zeros(min(self.shape))
-        for i in range(len(d)):
-            s, e = self.indptr[i], self.indptr[i + 1]
-            hit = self.indices[s:e] == i
-            if hit.any():
-                d[i] = np.sum(self.data[s:e][hit])
+        start = 0
+        while start < d.size:
+            stop = min(start + _DIAGONAL_TILE_ROWS, d.size)
+            s = int(self.indptr[start])
+            if self.indptr[stop] - s > _DIAGONAL_TILE_ELEMENTS:
+                stop = max(start + 1, start + int(np.searchsorted(
+                    self.indptr[start:stop + 1], s + _DIAGONAL_TILE_ELEMENTS,
+                    side="right")) - 1)
+            e = int(self.indptr[stop])
+            if stop == start + 1:
+                # A single very long row needs no expanded row-index array.
+                hit = self.indices[s:e] == start
+                if hit.any():
+                    d[start] = np.sum(self.data[s:e][hit])
+            elif e > s:
+                columns = self.indices[s:e]
+                candidate = (columns >= start) & (columns < stop)
+                positions = np.flatnonzero(candidate) + s
+                rows = columns[candidate]
+                # Column r is diagonal precisely when its storage position
+                # lies in row r. This avoids expanding every row index.
+                hit = ((self.indptr[rows] <= positions)
+                       & (positions < self.indptr[rows + 1]))
+                rows = rows[hit]
+                d[rows] = self.data[positions[hit]] + 0.0
+                # Usually a row has at most one diagonal entry. Duplicates
+                # retain the original pairwise sum, including cancellation.
+                repeated = rows[1:][rows[1:] == rows[:-1]]
+                for row in np.unique(repeated):
+                    rs, re = self.indptr[row], self.indptr[row + 1]
+                    d[row] = np.sum(self.data[rs:re][self.indices[rs:re] == row])
+            start = stop
         return d
 
     def tocoo(self):
@@ -255,6 +350,8 @@ class CSCMatrix(_SparseBase):
 
     def matvec(self, v):
         v = _vector(v, self.shape[1], self.shape)
+        if np.iscomplexobj(v):
+            return self.matvec(v.real) + 1j * self.matvec(v.imag)
         values = np.repeat(v, np.diff(self.indptr)) * self.data
         return np.bincount(self.indices, weights=values,
                            minlength=self.shape[0]).astype(float, copy=False)
@@ -262,6 +359,8 @@ class CSCMatrix(_SparseBase):
     def rmatvec(self, v):
         """Product with the transpose, ``A' v``."""
         v = _vector(v, self.shape[0], self.shape)
+        if np.iscomplexobj(v):
+            return self.rmatvec(v.real) + 1j * self.rmatvec(v.imag)
         return _segment_sum(self.indptr, self.data * v[self.indices])
 
 
@@ -290,6 +389,8 @@ class DIAMatrix(_SparseBase):
 
     def matvec(self, v):
         v = _vector(v, self.shape[1], self.shape)
+        if np.iscomplexobj(v):
+            return self.matvec(v.real) + 1j * self.matvec(v.imag)
         out = np.zeros(self.shape[0])
         for k, start, stop, data in self._diagonals():
             out[start - k:stop - k] += data * v[start:stop]
@@ -466,3 +567,168 @@ def reverse_cuthill_mckee(A):
                 visited[j] = True
                 queue.append(j)
     return np.array(order[::-1], dtype=int)
+
+
+def _row_dicts(A):
+    """Canonical row dictionaries, O(nnz) storage, with duplicate cancellation."""
+    A = A.tocsr()
+    rows = []
+    for i in range(A.shape[0]):
+        row = {}
+        for p in range(int(A.indptr[i]), int(A.indptr[i + 1])):
+            j = int(A.indices[p])
+            row[j] = row.get(j, 0.0) + float(A.data[p])
+        rows.append({j: value for j, value in row.items() if value != 0.0})
+    return rows
+
+
+def _rows_to_csr(rows, shape):
+    indptr, indices, data = [0], [], []
+    for row in rows:
+        for j in sorted(row):
+            if row[j] != 0:
+                indices.append(j)
+                data.append(row[j])
+        indptr.append(len(data))
+    return CSRMatrix(indptr, indices, data, shape)
+
+
+def _sparse_product(A, B):
+    if A.shape[1] != B.shape[0]:
+        raise DimensionError("sparse product has incompatible shapes")
+    A, B = A.tocsr(), B.tocsr()
+    indptr, indices, data = [0], [], []
+    for i in range(A.shape[0]):
+        row = {}
+        for p in range(int(A.indptr[i]), int(A.indptr[i + 1])):
+            k, a = int(A.indices[p]), float(A.data[p])
+            for q in range(int(B.indptr[k]), int(B.indptr[k + 1])):
+                j = int(B.indices[q])
+                row[j] = row.get(j, 0.0) + a * float(B.data[q])
+        for j in sorted(row):
+            if row[j] != 0:
+                indices.append(j)
+                data.append(row[j])
+        indptr.append(len(data))
+    return CSRMatrix(indptr, indices, data, (A.shape[0], B.shape[1]))
+
+
+def spmm(A, B):
+    """Sparse/sparse or sparse/dense matrix product without dense conversion.
+
+    Sparse products return canonical CSR and need storage proportional to the
+    result plus one accumulator dictionary for the current output row.
+    """
+    if isinstance(A, _SparseBase):
+        return A @ B
+    if isinstance(B, _SparseBase):
+        return B.__rmatmul__(A)
+    return np.asarray(A) @ np.asarray(B)
+
+
+def sparse_triangular_solve(A, b, lower=True, unit_diagonal=False, out=None):
+    """Solve a CSR/CSC triangular system, including multiple right-hand sides."""
+    if not isinstance(A, _SparseBase) or A.shape[0] != A.shape[1]:
+        raise DimensionError("expected a square sparse matrix")
+    A = A.tocsr()
+    b = np.asarray(b, dtype=float)
+    if b.ndim not in (1, 2) or b.shape[0] != A.shape[0]:
+        raise DimensionError("right-hand side has incompatible shape")
+    x = b.copy()
+    for i in (range(A.shape[0]) if lower else range(A.shape[0] - 1, -1, -1)):
+        diagonal = 1.0 if unit_diagonal else 0.0
+        for p in range(int(A.indptr[i]), int(A.indptr[i + 1])):
+            j, value = int(A.indices[p]), A.data[p]
+            if j == i and not unit_diagonal:
+                diagonal += value
+            elif (j < i if lower else j > i):
+                x[i] -= value * x[j]
+            elif j != i and value != 0:
+                raise ValueError("matrix contains entries outside the requested triangle")
+        if diagonal == 0:
+            raise np.linalg.LinAlgError(f"zero sparse triangular pivot at row {i}")
+        x[i] /= diagonal
+    if out is not None:
+        if not isinstance(out, np.ndarray) or out.shape != x.shape:
+            raise DimensionError("out must match the solution shape")
+        out[...] = x
+        return out
+    return x
+
+
+def _sparse_ilu0(A):
+    if A.shape[0] != A.shape[1]:
+        raise DimensionError("ILU requires a square matrix")
+    if not np.all(np.isfinite(A.data)):
+        raise ValueError("ILU requires finite entries")
+    rows = _row_dicts(A)
+    lower, upper = [], []
+    for i, row in enumerate(rows):
+        for j in sorted(k for k in row if k < i):
+            pivot = rows[j].get(j, 0.0)
+            if pivot == 0:
+                raise np.linalg.LinAlgError(f"zero ILU pivot at row {j}")
+            multiplier = row[j] / pivot
+            row[j] = multiplier
+            for k, value in rows[j].items():
+                if k > j and k in row:
+                    row[k] -= multiplier * value
+        if row.get(i, 0.0) == 0:
+            raise np.linalg.LinAlgError(f"zero ILU pivot at row {i}")
+        lower.append({**{j: v for j, v in row.items() if j < i}, i: 1.0})
+        upper.append({j: v for j, v in row.items() if j >= i})
+    return _rows_to_csr(lower, A.shape), _rows_to_csr(upper, A.shape)
+
+
+def _sparse_ichol(A, drop_tol=0.0):
+    if A.shape[0] != A.shape[1]:
+        raise DimensionError("incomplete Cholesky requires a square matrix")
+    if not np.isfinite(drop_tol) or drop_tol < 0:
+        raise ValueError("drop_tol must be finite and nonnegative")
+    rows = _row_dicts(A)
+    for i, row in enumerate(rows):
+        for j, value in row.items():
+            partner = rows[j].get(i, 0.0)
+            if not np.isfinite(value) or abs(value - partner) > 1e-12 * max(1.0, abs(value), abs(partner)):
+                raise ValueError("incomplete Cholesky requires a finite symmetric matrix")
+    lower = []
+    for i, row in enumerate(rows):
+        li = {}
+        for j in sorted(k for k in row if k < i and abs(row[k]) > drop_tol):
+            lj = lower[j]
+            correction = sum(v * lj.get(k, 0.0) for k, v in li.items() if k < j)
+            li[j] = (row[j] - correction) / lj[j]
+        d = row.get(i, 0.0) - sum(v * v for v in li.values())
+        if d <= 0 or not np.isfinite(d):
+            raise np.linalg.LinAlgError(f"non-positive incomplete Cholesky pivot at row {i}")
+        li[i] = float(np.sqrt(d))
+        lower.append(li)
+    return _rows_to_csr(lower, A.shape)
+
+
+class _SparsePreconditioner:
+    def __init__(self, L, U, unit_lower=False):
+        self.L, self.U, self.shape = L, U, L.shape
+        self.unit_lower = unit_lower
+
+    def solve(self, b, out=None):
+        y = sparse_triangular_solve(self.L, b, unit_diagonal=self.unit_lower)
+        return sparse_triangular_solve(self.U, y, lower=False, out=out)
+
+    __call__ = solve
+
+
+def ilu_preconditioner(A):
+    """Factor sparse A with ILU(0), returning a reusable inverse application."""
+    if not isinstance(A, _SparseBase):
+        A = from_dense(A)
+    L, U = _sparse_ilu0(A)
+    return _SparsePreconditioner(L, U, unit_lower=True)
+
+
+def ichol_preconditioner(A, drop_tol=0.0):
+    """Factor sparse SPD A with IC(0), returning a reusable inverse application."""
+    if not isinstance(A, _SparseBase):
+        A = from_dense(A)
+    L = _sparse_ichol(A, drop_tol)
+    return _SparsePreconditioner(L, L.T)

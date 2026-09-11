@@ -43,3 +43,6 @@ from .utils import (
 )
 
 __all__ = [n for n in dir() if not n.startswith("_")]
+
+from .storage import OutputRecorder, SolverCheckpoint, resume_ode, resume_pde
+__all__ += ["OutputRecorder", "SolverCheckpoint", "resume_ode", "resume_pde"]

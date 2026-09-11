@@ -1,472 +1,301 @@
 # Linear algebra
 
-```python
-from quadrivium.linalg import householder_qr, conjugate_gradient, randomized_svd
-import quadrivium as qd          # qd.solve, qd.cholesky, qd.gmres, ...
-```
+Linear algebra begins with a representation and a question: solve a square
+system, fit an overdetermined model, extract eigenpairs, or apply a matrix
+function. The best algorithm depends on matrix structure, conditioning, size,
+and whether entries are explicitly available.
 
-124 routines covering direct solvers and factorizations, eigenvalue and
-singular value problems, stationary and Krylov iterations, least squares,
-sparse storage, matrix functions and matrix equations, and randomized
-low-rank methods. Full signatures are in the
-[`linalg` reference](../api/linalg.md).
-
-## Solving `A x = b`
-
-`solve` inspects the matrix and picks a factorization, which is the right
-default when you do not want to think about it:
+Quadrivium exposes both named algorithms for study and practical interfaces
+for repeated solves, sparse storage, and matrix-free iteration. This guide
+shows how to choose among them and how to verify the result. Full signatures
+are in the [linear algebra reference](../api/linalg.md).
 
 ```pycon
->>> from quadrivium import numeric as np
 >>> import quadrivium as qd
->>> A = np.array([[4.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 2.0]])
->>> b = np.array([1.0, 2.0, 3.0])
->>> x = qd.solve(A, b)
->>> float(np.max(np.abs(A @ x - b))) < 1e-14
+>>> from quadrivium import numeric as np
+>>> from quadrivium import linalg as la
+>>> A = np.array([[4.0, 1.0], [1.0, 3.0]])
+>>> b = np.array([1.0, 2.0])
+>>> x = la.solve(A, b)
+>>> np.allclose(A @ x, b)
 True
 
 ```
 
-It chooses Cholesky for a symmetric positive definite matrix, the Thomas
-algorithm for a tridiagonal one, and pivoted LU otherwise. Pass `method=` to
-override: `"lu"`, `"plu"`, `"cholesky"`, `"ldl"`, `"qr"`, `"thomas"`,
-`"gauss"`.
+## Select a method from the problem
 
-```mermaid
-flowchart TD
-    A["solve(A, b)"] --> B{"square?"}
-    B -- no --> C["least squares<br/>qr_least_squares"]
-    B -- yes --> D{"tridiagonal?"}
-    D -- yes --> E["Thomas<br/>O(n)"]
-    D -- no --> G{"symmetric?"}
-    G -- no --> H["pivoted LU<br/>2n³/3"]
-    G -- yes --> I{"positive definite?"}
-    I -- yes --> J["Cholesky<br/>n³/3"]
-    I -- no --> K["LDLᵀ<br/>n³/3"]
-```
-
-The questions it asks are the public ones from
-[`quadrivium.core`](core.md#shape-and-property-checks) — `is_symmetric`,
-`is_positive_definite`, `is_diagonally_dominant` — so you can ask them
-yourself before choosing a method by hand.
-
-When the matrix has structure worth exploiting, or you need the factors
-themselves, call the factorization directly:
-
-| Matrix | Use | Cost |
+| Problem | Starting point | Main requirement or tradeoff |
 | --- | --- | --- |
-| general | `plu_decomposition`, `plu_solve` | 2n³/3 |
-| general, several right-hand sides | `lu_decomposition` once, `lu_solve` per `b` | 2n³/3 + 2n² each |
-| symmetric positive definite | `cholesky`, `cholesky_solve` | n³/3 |
-| symmetric indefinite | `ldl_decomposition`, `ldl_solve` | n³/3 |
-| tridiagonal | `thomas` | O(n) |
-| banded, bandwidth `kl`/`ku` | `banded_solve` | O(n·kl·ku) |
-| block tridiagonal | `block_tridiagonal_solve` | O(n·m³) |
-| least squares, or ill-conditioned | `qr_solve`, `svd_least_squares` | 2mn² or more |
-| rank-1 update of a known inverse | `sherman_morrison` | O(n²) |
-| low-rank update of a known inverse | `woodbury` | O(n²k) |
+| Small or moderate square dense system | `solve` | Finite nonsingular matrix |
+| Same matrix, many solves | `lu_factor`, `cholesky_factor` | Reuse the factor object |
+| Symmetric positive definite system | Cholesky or conjugate gradient | Positive definiteness is essential |
+| Symmetric indefinite system | Pivoted LU or `minres` | Unpivoted LDL can encounter zero pivots |
+| Tridiagonal system | `thomas` | Pass three diagonal vectors; no pivoting |
+| Overdetermined full-rank fit | `qr_least_squares`, `qr_factor` | Avoids forming normal equations |
+| Rank-deficient or underdetermined fit | `svd_least_squares` | Singular-value cutoff defines effective rank |
+| Sparse nonsymmetric system | `gmres`, `bicgstab` | Preconditioning usually matters |
+| Matrix available only through products | `LinearOperator` and a Krylov solver | Supply the products the algorithm needs |
+| Few dominant singular values | `randomized_svd` | Approximate answer; seed and rank matter |
 
-Factorizations return their factors, and the factors reconstruct the matrix
-exactly:
+Dense storage grows as the square of matrix size and a general dense
+factorization grows roughly cubically in work. Sparsity only saves memory if
+you retain sparse storage; constructing a dense matrix and converting it later
+has already paid the dense allocation cost.
+
+## What `solve(method="auto")` actually does
+
+For a real two-dimensional matrix and one right-hand-side vector, `solve`
+requires a square matrix and follows this order:
+
+1. An exactly tridiagonal matrix of size greater than two uses Thomas elimination.
+2. A matrix passing the symmetry test is tried with Cholesky.
+3. If Cholesky is unsuitable, or the matrix is nonsymmetric, pivoted LU is used.
+
+It does not send rectangular systems to least squares. Select a least-squares
+routine explicitly. Valid explicit choices are `"lu"`, `"plu"`, `"gauss"`,
+`"gauss_jordan"`, `"cholesky"`, `"ldl"`, and `"qr"`.
+Call `thomas` directly to select that algorithm explicitly.
+
+Complex matrices, batches, and multiple right-hand sides take the array layer's
+dense path. That path supports `"auto"`, `"lu"`, `"plu"`, `"cholesky"`, and
+`"qr"`, with square trailing matrix dimensions. It does not apply the same
+real single-vector dispatch logic.
+
+A tridiagonal matrix can be nonsingular and still have an unsuitable pivot for
+Thomas elimination. If automatic selection encounters such a case, use
+`method="plu"`. Structure does not remove the need for a numerically safe
+factorization.
+
+## Verify a solve with a scaled residual
+
+For a computed vector `x`, form `r = A @ x - b`. An absolute residual is useful
+only in relation to the input scale. A normwise scaled residual divides by
+`||A|| ||x|| + ||b||`.
 
 ```pycon
->>> P, L, U = qd.plu_decomposition(A)
->>> float(np.max(np.abs(P @ A - L @ U))) < 1e-14
+>>> residual = A @ x - b
+>>> scale = np.linalg.norm(A) * np.linalg.norm(x) + np.linalg.norm(b)
+>>> float(np.linalg.norm(residual) / scale) < 1e-14
 True
->>> R = qd.cholesky(A)                      # lower triangular by default
->>> float(np.max(np.abs(R @ R.T - A))) < 1e-14
-True
 
 ```
 
-### Pivoting
-
-`gauss_elimination` exposes the choice that textbooks make and libraries hide:
-
-```pycon
->>> from quadrivium.linalg import gauss_elimination
->>> for strategy in ("none", "partial", "scaled", "complete"):
-...     x = gauss_elimination(A, b, pivoting=strategy)
-...     print(strategy, float(np.max(np.abs(A @ x - b))) < 1e-13)
-none True
-partial True
-scaled True
-complete True
-
-```
-
-Partial pivoting is the default and is what `plu_decomposition` does.
-`lu_complete_pivot` returns both row and column permutations, which matters
-only for matrices constructed to defeat partial pivoting.
-
-### QR: four algorithms, one answer
-
-```pycon
->>> from quadrivium.linalg import (gram_schmidt_qr, modified_gram_schmidt_qr,
-...                               householder_qr, givens_qr)
->>> M = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
->>> for qr in (gram_schmidt_qr, modified_gram_schmidt_qr, householder_qr, givens_qr):
-...     Q, R = qr(M)
-...     print(qr.__name__, float(np.max(np.abs(Q @ R - M))) < 1e-13)
-gram_schmidt_qr True
-modified_gram_schmidt_qr True
-householder_qr True
-givens_qr True
-
-```
-
-They differ in stability, not in what they compute. Classical Gram-Schmidt
-loses orthogonality as the columns become dependent; the modified form loses
-it more slowly; Householder and Givens are backward stable. Use
-`householder_qr` unless you are studying the difference — and it is worth
-studying, because on a nearly rank-deficient matrix classical Gram-Schmidt
-produces a `Q` whose columns are visibly not orthogonal while Householder's
-are orthogonal to machine precision. Givens is the one to reach for when the
-matrix is already nearly triangular, since it can zero one entry at a time.
+This check asks whether a small perturbation to the data could explain the
+computed answer. It does not measure forward error directly. An ill-conditioned
+matrix can amplify small perturbations substantially, so compare against a
+known solution when validating an algorithm and inspect conditioning when
+interpreting a real dataset.
 
 <figure markdown="span">
-  ![Loss of orthogonality against condition number for four QR algorithms](../assets/figures/linalg-qr-orthogonality.svg#only-light)
-  ![Loss of orthogonality against condition number for four QR algorithms](../assets/figures/linalg-qr-orthogonality-dark.svg#only-dark)
-  <figcaption>Each algorithm factorizes the same nearly rank-deficient matrix. <code>max|QᵀQ − I|</code> ought to be zero: classical Gram-Schmidt loses it as the square of the condition number, the modified form as the first power, and the two orthogonal-transformation methods do not lose it at all.</figcaption>
+  ![A small linear-system residual can coexist with a large solution error as conditioning worsens](../assets/figures/linalg-residual-sensitivity.svg#only-light)
+  ![A small linear-system residual can coexist with a large solution error as conditioning worsens](../assets/figures/linalg-residual-sensitivity-dark.svg#only-dark)
+  <figcaption>For A=diag(1,1/κ) with exact x=(1,1), add 10⁻¹⁰ to the second right-hand-side component and solve. The residual against the original right-hand side stays small while the solution error grows with κ. This demonstrates input sensitivity, not a failure of the linear solver.</figcaption>
 </figure>
 
-## Conditioning
+Use `core.condition_number` for small real square matrices or
+`condition_estimate` for a 1-norm estimate. The latter still performs dense
+linear algebra in this implementation; it is not a matrix-free estimator.
 
-Before trusting a solve, ask how much the answer can move:
+## Factorizations and repeated right-hand sides
+
+`plu_decomposition(A)` returns `(P, L, U)` with `P @ A = L @ U`.
+`cholesky(A)` returns a lower-triangular factor by default, with
+`A = L @ L.T` for real data. Verify factorization identities with tolerances,
+not exact equality.
 
 ```pycon
->>> from quadrivium.core import condition_number
->>> from quadrivium.linalg import condition_estimate, residual_analysis
->>> round(condition_number(A), 6)
-3.732051
->>> hilbert = np.array([[1/(i + j + 1) for j in range(6)] for i in range(6)])
->>> condition_number(hilbert) > 1e7
+>>> P, L, U = la.plu_decomposition(A)
+>>> np.allclose(P @ A, L @ U)
+True
+>>> C = la.cholesky(A)
+>>> np.allclose(C @ C.T, A)
 True
 
 ```
 
-`condition_estimate` is Hager's 1-norm estimator: O(n²) work per iteration
-using only solves, which is how a production library reports a condition
-number without forming an inverse.
+`lu_decomposition` and classical Doolittle/Crout algorithms expose unpivoted
+factorization variants. Partial pivoting is the usual general-purpose choice;
+`gauss_elimination` also offers `"none"`, `"scaled"`, and `"complete"` strategies.
+Complete pivoting additionally permutes columns, so reconstruction and solution
+reordering must use the returned column information.
 
-`residual_analysis` returns the residual, its norm, the RMSE, R², the
-covariance of the fit, standard errors, and the degrees of freedom — the whole
-diagnostic set for a least squares solve in one call.
-
-## Eigenvalues
-
-| You want | Use |
-| --- | --- |
-| the dominant eigenpair | `power_iteration` |
-| the eigenvalue nearest a shift `σ` | `inverse_power_iteration(A, sigma)` |
-| very fast convergence from a good guess | `rayleigh_quotient_iteration` (cubic, for symmetric `A`) |
-| all eigenvalues, symmetric | `jacobi_eigen` (accurate, simple) |
-| all eigenvalues, general | `francis_qr` or `qr_algorithm` |
-| a few extreme eigenvalues of a large symmetric matrix | `lanczos`, then `bisection_eigenvalues`; or `lobpcg` |
-| a Krylov basis of a large nonsymmetric matrix | `arnoldi` |
-| several eigenpairs at once | `subspace_iteration` |
-| `A x = λ B x` with `B` positive definite | `generalized_eigh` |
-| `A x = λ B x` with `B` singular | `qz_decomposition`, `qz_eigenvalues` |
-| eigenvalue localisation without computing anything | `gershgorin_disks` |
+For repeated work, use a factor object. Its construction snapshots and factors
+the matrix, and `.solve` applies those factors to new right-hand sides.
+Right-hand sides have shape `(n,)` or `(n, nrhs)`.
 
 ```pycon
->>> S = np.array([[2.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 2.0]])
->>> ev = qd.jacobi_eigen(S)
->>> [round(float(v), 10) for v in sorted(ev.eigenvalues)]
-[1.0, 2.0, 4.0]
->>> ev.converged
-True
->>> dominant = qd.power_iteration(S)
->>> round(float(dominant.eigenvalues[0]), 10)
-4.0
-
-```
-
-`EigenResult` unpacks as `(values, vectors)`, so the common case reads the way
-you would write it by hand:
-
-```pycon
->>> values, vectors = qd.jacobi_eigen(S)
->>> i = int(np.argmax(values))
->>> float(np.max(np.abs(S @ vectors[:, i] - values[i] * vectors[:, i]))) < 1e-12
+>>> factor = la.lu_factor(A)
+>>> B = np.array([[1.0, 0.0], [2.0, 1.0]])
+>>> X = factor.solve(B)
+>>> X.shape, bool(np.allclose(A @ X, B))
+((2, 2), True)
+>>> output = np.empty_like(B)
+>>> factor.solve(B, out=output) is output
 True
 
 ```
 
-Eigenvectors are returned as *columns*, matching `numpy.linalg.eig`.
+`LUFactor.solve(trans="N")` solves the original system; `"T"` and `"H"`
+select transpose and conjugate-transpose systems. `CholeskyFactor` uses a
+Hermitian positive definite factorization. `QRFactor` accepts rectangular
+matrices with at least as many rows as columns and requires full column rank.
+The objects support real or complex data but do not represent a batch of
+independent factorizations.
 
-<figure markdown="span">
-  ![Gershgorin disks and the eigenvalues they contain](../assets/figures/linalg-gershgorin.svg#only-light)
-  ![Gershgorin disks and the eigenvalues they contain](../assets/figures/linalg-gershgorin-dark.svg#only-dark)
-  <figcaption>Each row gives a disk centred on its diagonal entry whose radius is the sum of the other magnitudes in that row, and every eigenvalue lies in one of them. The disks cost O(n²) additions and no factorization; the eigenvalues plotted inside them came from `francis_qr`.</figcaption>
-</figure>
+## Least squares and regularization
 
-### Decompositions built on eigenvalues
-
-`schur` gives the real Schur form (quasi-triangular, 2×2 blocks for complex
-pairs), `hessenberg` the reduction that precedes it, `polar_decomposition` the
-unitary-times-positive-semidefinite factorization, and `svd_jacobi` /
-`svd_golub_kahan` the singular value decomposition:
+Least squares solves `min ||A @ x - b||_2`. For an inconsistent system, a
+nonzero residual is expected. Check that the residual is orthogonal to the
+columns of `A`, and evaluate predictions on data that did not determine the fit.
 
 ```pycon
->>> U, s, Vt = qd.svd_jacobi(np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
->>> U.shape, s.shape, Vt.shape
-((3, 2), (2,), (2, 2))
->>> float(np.max(np.abs(U @ np.diag(s) @ Vt - np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])))) < 1e-13
+>>> design = np.array([[1.0, 0.0], [1.0, 1.0], [1.0, 2.0], [1.0, 3.0]])
+>>> observations = np.array([1.0, 3.1, 4.9, 7.0])
+>>> coefficients = la.qr_least_squares(design, observations)
+>>> fit_residual = design @ coefficients - observations
+>>> np.allclose(design.T @ fit_residual, [0.0, 0.0], atol=1e-12)
 True
 
 ```
 
-One-sided Jacobi (`svd_jacobi`) computes small singular values to high
-*relative* accuracy, which Golub-Kahan does not guarantee; Golub-Kahan is the
-faster of the two.
+Normal equations form `A.T @ A`, which squares the 2-norm condition number.
+They are useful for understanding the derivation but can lose substantially
+more accuracy than QR. Householder QR is a practical dense default;
+classical and modified Gram-Schmidt and Givens QR expose alternative
+orthogonalization procedures.
 
-## Iterative solvers
-
-For a large matrix — or an operator you can only apply, never form — the
-Krylov methods take a matrix, or anything exposing `@` or `matvec`:
-
-| Matrix | Method |
-| --- | --- |
-| symmetric positive definite | `conjugate_gradient`, or `preconditioned_cg` with `M` |
-| symmetric indefinite | `minres` |
-| nonsymmetric | `gmres` (robust, memory grows) or `bicgstab` (cheap, can stagnate) |
-| nonsymmetric, short recurrence wanted | `bicg`, `cgs` |
-| rectangular or least squares | `lsqr`, `cgnr` |
-| diagonally dominant, simple splitting | `jacobi_iteration`, `gauss_seidel`, `sor` |
+`svd_least_squares(A, b, rcond=...)` discards singular values at or below a
+cutoff relative to the largest singular value and returns a minimum-norm
+solution for that effective rank. This threshold is a modeling decision when
+small singular directions contain noise.
 
 ```pycon
->>> n = 200
->>> K = np.diag(2.0 * np.ones(n)) + np.diag(-np.ones(n - 1), 1) + np.diag(-np.ones(n - 1), -1)
->>> rhs = np.ones(n)
->>> res = qd.conjugate_gradient(K, rhs, tol=1e-12)
->>> res.converged, res.iterations < n
-(True, True)
->>> float(np.max(np.abs(K @ res.x - rhs))) < 1e-10
+>>> redundant = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+>>> minimum_norm = la.svd_least_squares(redundant, [2.0, 4.0, 6.0])
+>>> np.allclose(minimum_norm, [1.0, 1.0])
 True
 
 ```
 
-<figure markdown="span">
-  ![Residual histories of CG, GMRES, SOR and Gauss-Seidel](../assets/figures/linalg-krylov-convergence.svg#only-light)
-  ![Residual histories of CG, GMRES, SOR and Gauss-Seidel](../assets/figures/linalg-krylov-convergence-dark.svg#only-dark)
-  <figcaption>The residual history each solver returns, on the five-point Laplacian of a 16×16 grid. Both Krylov methods reach machine precision in fewer iterations than the matrix has rows; the stationary iterations are still going when the plot ends.</figcaption>
-</figure>
+`ridge_regression` penalizes coefficient magnitude; `tikhonov` allows a penalty
+matrix; `truncated_svd` retains a chosen number of singular directions.
+`weighted_least_squares` multiplies rows by square-root weights, so its objective
+is `sum(weights * residual**2)`. Use nonnegative finite weights and meaningful
+variable scaling. Other interfaces cover equality constraints, nonnegative
+coefficients, and total least squares. See [approximation](approx.md) for the
+statistical and modeling implications of fitting choices.
 
-`IterationResult.residuals` is the full convergence history, which is the
-point of using these methods interactively:
+## Iterative solvers and preconditioners
+
+Krylov methods return `IterationResult`, carrying `x`, `converged`, `iterations`,
+`residuals`, and `message`. CG is appropriate for real symmetric positive
+definite matrices. MINRES handles symmetric indefinite systems. GMRES handles
+general systems by building an orthogonal basis; `restart` limits that basis
+at a possible cost in convergence. BiCGSTAB uses less storage but can exhibit
+irregular residual histories.
 
 ```pycon
->>> len(res.residuals) == res.iterations + 1
+>>> iterative = la.conjugate_gradient(A, b, tol=1e-12)
+>>> iterative.converged and np.allclose(A @ iterative.x, b)
 True
->>> bool(res.residuals[-1] < res.residuals[0])
+>>> iterative.residual < 1e-12
 True
 
 ```
 
-### Preconditioning
+For CG, the stored residual is the Euclidean residual divided by `||b||_2`,
+using one when `b` is zero. Recurrence-based residuals can drift from the true
+residual because of rounding, so recompute `A @ x - b` before accepting an
+important result. A small iteration count is useful only if the requested
+accuracy and per-iteration cost are also comparable.
 
-A preconditioner `M` approximates `A⁻¹` and is applied once per iteration.
-Four are provided: `jacobi_preconditioner` (diagonal), `ssor_preconditioner`,
-`incomplete_cholesky` (for SPD matrices), and `ilu0` (general, no fill-in).
+A preconditioner approximates a solve with a matrix that improves the
+iteration's effective conditioning. In `preconditioned_cg`, a callable `M(v)`
+returns the action of the **inverse** preconditioner. A matrix supplied as `M`
+is solved against. The default uses a diagonal approximation when available.
 
 ```pycon
->>> from quadrivium.linalg import jacobi_preconditioner, preconditioned_cg
->>> D = np.diag(np.linspace(1.0, 500.0, 100))       # badly scaled but diagonal
->>> A_bad = D + np.eye(100)
->>> plain = qd.conjugate_gradient(A_bad, np.ones(100), tol=1e-10)
->>> pre = preconditioned_cg(A_bad, np.ones(100), M=jacobi_preconditioner(A_bad), tol=1e-10)
->>> pre.iterations < plain.iterations
+>>> inverse_diagonal = lambda v: v / np.diag(A)
+>>> preconditioned = la.preconditioned_cg(A, b, M=inverse_diagonal, tol=1e-12)
+>>> preconditioned.converged and np.allclose(A @ preconditioned.x, b)
 True
 
 ```
 
-<figure markdown="span">
-  ![Plain CG against Jacobi- and incomplete-Cholesky-preconditioned CG](../assets/figures/linalg-preconditioning.svg#only-light)
-  ![Plain CG against Jacobi- and incomplete-Cholesky-preconditioned CG](../assets/figures/linalg-preconditioning-dark.svg#only-dark)
-  <figcaption>The same system, badly scaled on purpose: a diagonal rescaling of the Poisson matrix spanning four orders of magnitude. The preconditioner changes the iteration count by a factor of sixty, and the answer not at all.</figcaption>
-</figure>
+CG requires a compatible positive definite preconditioner. A cheap
+preconditioner is not automatically a good one: include setup time, application
+cost, and memory in any comparison. Stationary Jacobi, Gauss-Seidel, SOR, and
+SSOR are useful teaching methods and smoothers, but do not converge for every
+matrix. Relaxation parameters must fit the problem.
 
-`sor` needs a relaxation parameter; `optimal_sor_omega` computes the value
-that minimises the spectral radius of the iteration matrix for a consistently
-ordered matrix, which is the classical result worth seeing hold:
+## Sparse storage and matrix-free operators
+
+`COOMatrix`, `CSRMatrix`, `CSCMatrix`, and `DIAMatrix` expose coordinate,
+compressed-row, compressed-column, and diagonal storage. Use COO for assembly,
+CSR for repeated row-oriented products, and diagonal construction when the
+operator is naturally specified by bands.
 
 ```pycon
->>> from quadrivium.linalg import optimal_sor_omega, sor
->>> omega = optimal_sor_omega(K)
->>> bool(1.0 < omega < 2.0)
+>>> sparse = la.from_dense(A, fmt="csr")
+>>> np.allclose(sparse @ b, A @ b)
 True
->>> fast = sor(K, rhs, omega=omega, tol=1e-10, max_iter=20000)
->>> slow = sor(K, rhs, omega=1.0, tol=1e-10, max_iter=20000)   # = Gauss-Seidel
->>> fast.iterations < slow.iterations
+>>> sparse_result = la.sparse_solve(sparse, b, method="cg", tol=1e-12)
+>>> sparse_result.converged
 True
 
 ```
 
-## Sparse matrices
+Sparse products, triangular solves, ordering helpers, and incomplete
+factorizations are available. Sparse storage does not imply sparse direct
+factorization for every method; read the selected routine's contract before
+using it on a problem too large to densify.
 
-Four storage formats, each with the operations it is good at: `COOMatrix`
-(easy to build), `CSRMatrix` (fast row access and matrix-vector products),
-`CSCMatrix` (fast column access), `DIAMatrix` (banded). `from_dense`,
-`diags`, and `identity_sparse` construct them; `spmv` multiplies; every
-Krylov solver accepts them directly.
+A `LinearOperator` represents products without storing matrix entries. Declare
+its shape and a `matvec`; algorithms needing transpose products also require
+`rmatvec`, which applies the conjugate transpose. An optional `matmat` handles
+multiple vectors efficiently.
 
 ```pycon
->>> from quadrivium.linalg import from_dense, spmv, sparsity, bandwidth
->>> Ksp = from_dense(K, fmt="csr")
->>> round(sparsity(Ksp), 4)                 # fraction of entries that are zero
-0.985
->>> bandwidth(Ksp)
-(1, 1)
->>> float(np.max(np.abs(spmv(Ksp, rhs) - K @ rhs))) < 1e-14
-True
->>> qd.conjugate_gradient(Ksp, rhs, tol=1e-10).converged
+>>> operator = la.LinearOperator(A.shape, matvec=lambda v: A @ v,
+...                              rmatvec=lambda v: A.T @ v)
+>>> implicit = la.conjugate_gradient(operator, b, tol=1e-12)
+>>> implicit.converged and np.allclose(implicit.x, x)
 True
 
 ```
 
-`reverse_cuthill_mckee` reorders a symmetric sparse matrix to shrink its
-bandwidth, which is what makes a banded direct solve affordable.
+A matrix-free interface avoids materializing entries, but Krylov basis vectors
+and retained histories still consume memory. See [workflows](workflows.md) for
+callbacks and history controls on supported solvers.
 
-<figure markdown="span">
-  ![Sparsity pattern of a matrix before and after reverse Cuthill-McKee](../assets/figures/linalg-sparsity-rcm.svg#only-light)
-  ![Sparsity pattern of a matrix before and after reverse Cuthill-McKee](../assets/figures/linalg-sparsity-rcm-dark.svg#only-dark)
-  <figcaption>The same 120×120 matrix with its rows and columns permuted. Nothing about the linear system changes; the bandwidth falls by more than half, and with it the cost of a banded solve.</figcaption>
-</figure>
+## Eigenvalues, singular values, and matrix functions
 
-## Least squares
-
-Nine estimators, differing in what they assume about the data:
-
-| Problem | Use |
-| --- | --- |
-| well-conditioned, speed matters | `normal_equations` (squares the condition number — know that going in) |
-| the default | `qr_least_squares` |
-| rank-deficient or ill-conditioned | `svd_least_squares`, `pseudoinverse` |
-| regularised, ridge penalty | `ridge_regression` |
-| regularised with a smoothing operator | `tikhonov(A, b, alpha, L)` |
-| regularised by truncating the spectrum | `truncated_svd(A, b, k)` |
-| errors in `A` as well as `b` | `total_least_squares` |
-| known measurement variances | `weighted_least_squares` |
-| solution must be non-negative | `nonnegative_least_squares` |
-| solution must satisfy `C x = d` | `constrained_least_squares` |
-| large and sparse | `lsqr_least_squares` |
+Eigenvectors are defined up to sign or complex phase, and repeated eigenvalues
+allow different bases of the same invariant subspace. Verify an eigenpair with
+`A @ v - lambda*v`; do not compare eigenvector entries directly across methods.
 
 ```pycon
->>> t = np.linspace(0, 1, 11)
->>> V = np.vstack([np.ones_like(t), t, t**2]).T
->>> y = 1 + 2*t + 3*t**2
->>> coef = qd.linalg.qr_least_squares(V, y)
->>> [round(float(c), 10) for c in coef]
-[1.0, 2.0, 3.0]
-
-```
-
-<figure markdown="span">
-  ![Coefficient error and condition number against polynomial degree](../assets/figures/linalg-least-squares-conditioning.svg#only-light)
-  ![Coefficient error and condition number against polynomial degree](../assets/figures/linalg-least-squares-conditioning-dark.svg#only-dark)
-  <figcaption>Fitting a polynomial of rising degree to data generated by that same polynomial, so the right answer is known exactly. The normal equations work with κ(V)², which reaches 1/ε — no digits left — around degree 12, where Cholesky then refuses the Gram matrix outright.</figcaption>
-</figure>
-
-Non-negativity is a real constraint, not a projection of the unconstrained
-answer:
-
-```pycon
->>> from quadrivium.linalg import nonnegative_least_squares
->>> Anq = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
->>> x_nn = nonnegative_least_squares(Anq, np.array([1.0, -1.0, 1.0]))
->>> bool(np.all(x_nn >= 0))
+>>> eig = la.jacobi_eigen(A)
+>>> values, vectors = eig
+>>> np.allclose(A @ vectors, vectors * values, atol=1e-10)
 True
 
 ```
 
-## Matrix functions and matrix equations
+Power iteration seeks a dominant eigenpair, inverse iteration targets an
+eigenvalue near a shift, and Rayleigh quotient iteration refines a local guess.
+Jacobi and symmetric eigensolvers exploit symmetry; Schur-based methods handle
+general spectra. `lanczos` and `arnoldi` return reduced factorizations rather
+than universally returning an `EigenResult`; inspect their documented outputs.
 
-```pycon
->>> B = np.array([[4.0, 1.0], [2.0, 3.0]])
->>> S12 = qd.sqrtm(B)
->>> float(np.max(np.abs(S12 @ S12 - B))) < 1e-12
-True
->>> float(np.max(np.abs(qd.linalg.matrix_exponential(qd.logm(B)) - B))) < 1e-9
-True
+SVD represents `A = U @ diag(s) @ Vh`. It supports rank analysis, low-rank
+compression, least squares, and polar decomposition. Randomized SVD trades an
+approximate subspace for lower work; set `rng`, choose oversampling, and check
+`||A - approximation||` or an independent product-based error estimate.
 
-```
-
-`sqrtm` uses the scaled Denman-Beavers iteration and `logm` inverse scaling
-and squaring; `signm` gives the matrix sign function; `matrix_function(A, f)`
-applies any scalar function through the Schur form.
-
-The matrix equations are solved by Bartels-Stewart rather than by forming the
-Kronecker system, which is the difference between O(n³) and O(n⁶):
-
-```pycon
->>> Asy = np.array([[1.0, 2.0], [0.0, 3.0]])
->>> Bsy = np.array([[2.0, 0.0], [1.0, 4.0]])
->>> C = np.eye(2)
->>> X = qd.sylvester(Asy, Bsy, C)                 # A X + X B = C
->>> float(np.max(np.abs(Asy @ X + X @ Bsy - C))) < 1e-12
-True
->>> Astable = np.array([[-2.0, 1.0], [0.0, -3.0]])
->>> Q = np.eye(2)
->>> Y = qd.lyapunov(Astable, Q)                   # A Y + Y Aᵀ + Q = 0
->>> float(np.max(np.abs(Astable @ Y + Y @ Astable.T + Q))) < 1e-12
-True
-
-```
-
-`discrete_lyapunov` solves `A X Aᵀ − X + Q = 0` by doubling, and `care_newton`
-the continuous algebraic Riccati equation by Newton-Kleinman — the equation
-behind the linear quadratic regulator.
-
-## Randomized methods
-
-For a matrix that is large but numerically low rank, randomized methods get
-within a small factor of the optimal approximation for a fraction of the work:
-
-```pycon
->>> rng = np.random.default_rng(0)
->>> L = rng.standard_normal((300, 8)) @ rng.standard_normal((8, 200))   # rank 8
->>> U, s, Vt = qd.randomized_svd(L, k=8, rng=0)
->>> float(np.max(np.abs(U @ np.diag(s) @ Vt - L))) < 1e-8
-True
-
-```
-
-<figure markdown="span">
-  ![Randomized SVD singular values and approximation error](../assets/figures/linalg-randomized-svd.svg#only-light)
-  ![Randomized SVD singular values and approximation error](../assets/figures/linalg-randomized-svd-dark.svg#only-dark)
-  <figcaption>A 200×160 matrix of numerical rank 40. The sampled singular values sit on the exact ones, and the rank-k approximation lands within a few percent of the Eckart-Young optimum — the best any rank-k matrix can do — for a fraction of a full SVD's work.</figcaption>
-</figure>
-
-`randomized_range_finder`, `randomized_eigh`, `nystrom_approximation`,
-`interpolative_decomposition`, and `cur_decomposition` complete the family.
-The last two select actual rows and columns of `A`, so the factors keep the
-meaning of the original data — the reason to prefer them over an SVD when the
-columns are measurements of something.
-
-## Pitfalls
-
-- **`normal_equations` squares the condition number.** For a Vandermonde
-  matrix on more than a handful of points, the answer will have lost most of
-  its digits. Use `qr_least_squares`.
-- **Classical Gram-Schmidt loses orthogonality.** It is here to be compared
-  against, not to be used.
-- **Stationary iterations need a condition to converge.** Jacobi and
-  Gauss-Seidel converge for diagonally dominant or SPD matrices;
-  `is_diagonally_dominant` from `quadrivium.core` checks the easy case, and a
-  non-converging run returns `converged=False` rather than looping forever.
-- **CG requires symmetry and positive definiteness.** On a nonsymmetric
-  matrix it may appear to converge to the wrong answer. Use `gmres`.
-- **`power_iteration` needs a dominant eigenvalue.** With a complex conjugate
-  pair of equal modulus it will not settle; use `francis_qr`.
-- **The QR algorithm on a nonsymmetric matrix returns complex eigenvalues.**
-  Real Schur form keeps 2×2 blocks; `schur_eigenvalues` extracts the complex
-  pairs from them.
-
-## See also
-
-- [`linalg` API reference](../api/linalg.md) — every signature.
-- [Optimization guide](optimize.md) — least squares as an optimization problem
-  (`gauss_newton`, `levenberg_marquardt`, `curve_fit`).
-- [PDE guide](pde.md) — where these solvers are put to work on grids.
-- `examples/01_linear_algebra.py` — a runnable tour.
+Matrix functions such as `matrix_exponential`, `sqrtm`, and `logm` apply a
+function to a matrix, not elementwise to its entries. They have spectral-domain
+restrictions and branch choices. Matrix-equation routines include Sylvester,
+Lyapunov, and Riccati solvers. Always verify the equation and sign convention
+stated in the API; the same name in another library may use a different sign.
+For time evolution via matrix exponentials, continue with [ODE methods](ode.md).

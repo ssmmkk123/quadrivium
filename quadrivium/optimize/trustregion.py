@@ -7,6 +7,8 @@ is what makes them reliable on non-convex problems.
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -133,7 +135,7 @@ def trust_region(f, x0, grad_f=None, hess_f=None, delta0: float = 1.0,
     solve_sub = solvers[subproblem]
     x = as_vector(x0).copy()
     delta = delta0
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         if np.linalg.norm(gk) < tol:
@@ -150,7 +152,7 @@ def trust_region(f, x0, grad_f=None, hess_f=None, delta0: float = 1.0,
             delta = min(2 * delta, delta_max)
         if rho > eta:
             x = x + p
-            history.append(x.copy())
+            history.append(x)
         if delta < 1e-14:
             return OptimizeResult(x, float(fc(x)), gk, B, k,
                                   np.linalg.norm(gk) < tol, fc.calls, k,
@@ -168,7 +170,7 @@ def gauss_newton(residual, x0, jac=None, tol: float = 1e-10, max_iter: int = 200
     """
     rc = CountedFunction(lambda x: as_vector(residual(x)))
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         r = rc(x)
         J = np.atleast_2d(jac(x)) if jac is not None else numerical_jacobian(rc, x)
@@ -188,7 +190,7 @@ def gauss_newton(residual, x0, jac=None, tol: float = 1e-10, max_iter: int = 200
                 break
             lam *= 0.5
         x = x + lam * p
-        history.append(x.copy())
+        history.append(x)
         if np.linalg.norm(lam * p) < tol * max(1.0, np.linalg.norm(x)):
             r = rc(x)
             return OptimizeResult(x, 0.5 * float(r @ r), J.T @ r, None, k, True,
@@ -213,7 +215,7 @@ def levenberg_marquardt(residual, x0, jac=None, lam0: float = 1e-3,
     lam = lam0
     r = rc(x)
     cost = float(r @ r)
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         J = np.atleast_2d(jac(x)) if jac is not None else numerical_jacobian(rc, x)
         g = J.T @ r
@@ -234,7 +236,7 @@ def levenberg_marquardt(residual, x0, jac=None, lam0: float = 1e-3,
             x = x + p
             r, cost = r_new, cost_new
             lam = max(lam * lam_down, 1e-14)
-            history.append(x.copy())
+            history.append(x)
             if np.linalg.norm(p) < tol * max(1.0, np.linalg.norm(x)):
                 return OptimizeResult(x, 0.5 * cost, J.T @ r, None, k, True,
                                       rc.calls, k, "levenberg_marquardt", history,
@@ -252,12 +254,15 @@ def levenberg_marquardt(residual, x0, jac=None, lam0: float = 1e-3,
 
 def nonlinear_least_squares(residual, x0, jac=None, method: str = "lm", **kwargs):
     """Solve ``min 0.5 ||r(x)||^2`` by Levenberg-Marquardt or Gauss-Newton."""
+    if method in ("trf", "robust") or any(k in kwargs for k in ("bounds", "loss", "x_scale", "jac_sparsity")):
+        from .least_squares import least_squares
+        return least_squares(residual, x0, jac=jac, **kwargs)
     return {"lm": levenberg_marquardt, "gn": gauss_newton}[method](
         residual, x0, jac, **kwargs)
 
 
 def curve_fit(model, xdata, ydata, p0, jac=None, sigma=None, method: str = "lm",
-              **kwargs):
+              absolute_sigma=False, compute_covariance=True, **kwargs):
     """Fit ``model(x, *params)`` to data by nonlinear least squares.
 
     Returns the optimization result with ``covariance`` and ``std_errors``
@@ -265,16 +270,36 @@ def curve_fit(model, xdata, ydata, p0, jac=None, sigma=None, method: str = "lm",
     """
     xdata = np.asarray(xdata, dtype=float)
     ydata = np.asarray(ydata, dtype=float)
+    if sigma is not None and (np.any(np.asarray(sigma) <= 0) or not np.all(np.isfinite(sigma))):
+        raise ValueError("sigma must contain finite positive standard deviations")
     w = np.ones_like(ydata) if sigma is None else 1.0 / np.asarray(sigma, dtype=float)
 
     def residual(p):
         return (np.asarray(model(xdata, *p), dtype=float) - ydata) * w
 
-    res = nonlinear_least_squares(residual, p0, jac, method, **kwargs)
+    # The Jacobian callback retains the historical jac(params) convention.
+    # Weight its rows exactly as the residuals are weighted.
+    if jac is not None:
+        from ..linalg.operators import LinearOperator, aslinearoperator
+        def weighted_jac(p):
+            J = aslinearoperator(jac(p))
+            return LinearOperator(J.shape, lambda v: w * J.matvec(v),
+                                  lambda v: J.rmatvec(w * v))
+        if method in ("lm", "gn") and not any(k in kwargs for k in ("bounds", "loss", "x_scale", "jac_sparsity")):
+            # Existing dense LM/GN expects a concrete Jacobian.
+            use_jac = lambda p: np.asarray(jac(p)) * w[:, None]
+        else:
+            use_jac = weighted_jac
+    else:
+        use_jac = None
+    res = nonlinear_least_squares(residual, p0, use_jac, method, **kwargs)
+    if not compute_covariance or kwargs.get("loss", "linear") != "linear":
+        res.covariance = res.std_errors = None
+        return res
     J = numerical_jacobian(residual, res.x)
     m, n = J.shape
     dof = max(m - n, 1)
-    s2 = 2.0 * res.fun / dof
+    s2 = 1.0 if absolute_sigma else 2.0 * res.fun / dof
     try:
         cov = s2 * np.linalg.inv(J.T @ J)
         res.covariance = cov
@@ -283,3 +308,8 @@ def curve_fit(model, xdata, ydata, p0, jac=None, sigma=None, method: str = "lm",
         res.covariance = None
         res.std_errors = None
     return res
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['trust_region', 'gauss_newton', 'levenberg_marquardt']:
+    globals()[_name] = monitor(globals()[_name])

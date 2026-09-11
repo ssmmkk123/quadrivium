@@ -7,12 +7,13 @@ Newton-Cotes, Gauss, adaptive, Monte Carlo, oscillatory, singular, and multidime
 
 For worked examples and guidance on choosing between these routines, see the [integration guide](../guides/integrate.md).
 
-**66 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**67 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.integrate import rectangle_rule
-import quadrivium as qd            # qd.rectangle_rule, if re-exported
+from quadrivium import integrate
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
@@ -22,6 +23,7 @@ import quadrivium as qd            # qd.rectangle_rule, if re-exported
 - [`multidim`](#multidim) &mdash; multidimensional quadrature on boxes, simplices and general regions (12)
 - [`newton_cotes`](#newton_cotes) &mdash; newton-cotes quadrature: the interpolatory rules on equispaced nodes (15)
 - [`romberg`](#romberg) &mdash; romberg integration and richardson-accelerated quadrature (4)
+- [`vector`](#vector) &mdash; shared-node adaptive integration of vector and complex-valued functions (1)
 
 ## `adaptive`
 
@@ -29,14 +31,81 @@ import quadrivium as qd            # qd.rectangle_rule, if re-exported
 
 Adaptive quadrature: refine only where the integrand needs it.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `adaptive_simpson` | `(f, a: float, b: float, tol: float = 1e-10, max_depth: int = 50)` | Adaptive Simpson's rule with local error control by interval bisection. |
-| `adaptive_trapezoid` | `(f, a: float, b: float, tol: float = 1e-08, max_depth: int = 50)` | Adaptive trapezoid rule with bisection-based error control. |
-| `adaptive_gauss_kronrod` | `(f, a: float, b: float, tol: float = 1e-10, max_subdivisions: int = 500)` | Adaptive Gauss-Kronrod (7/15) quadrature -- the workhorse of ``quad``. |
-| `adaptive_quadrature` | `(f, a, b, tol=1e-10, method='gauss_kronrod')` | Adaptive quadrature with a selectable local rule. |
-| `global_adaptive` | `(f, a: float, b: float, tol: float = 1e-10, rule=None, max_subdivisions: int = 500)` | Globally adaptive quadrature driven by any local rule + error estimator. |
-| `quad` | `(f, a, b, tol: float = 1e-10, **kwargs)` | General-purpose definite integral. |
+| [`adaptive_simpson`](#api-adaptive_simpson) | function | Adaptive Simpson's rule with local error control by interval bisection. |
+| [`adaptive_trapezoid`](#api-adaptive_trapezoid) | function | Adaptive trapezoid rule with bisection-based error control. |
+| [`adaptive_gauss_kronrod`](#api-adaptive_gauss_kronrod) | function | Adaptive Gauss-Kronrod (7/15) quadrature -- the workhorse of ``quad``. |
+| [`adaptive_quadrature`](#api-adaptive_quadrature) | function | Adaptive quadrature with a selectable local rule. |
+| [`global_adaptive`](#api-global_adaptive) | function | Globally adaptive quadrature driven by any local rule + error estimator. |
+| [`quad`](#api-quad) | function | General-purpose definite integral. |
+
+### `adaptive_simpson` {#api-adaptive_simpson}
+
+```python
+adaptive_simpson(f, a: float, b: float, tol: float = 1e-10, max_depth: int = 50)
+```
+
+Adaptive Simpson's rule with local error control by interval bisection.
+
+### `adaptive_trapezoid` {#api-adaptive_trapezoid}
+
+```python
+adaptive_trapezoid(f, a: float, b: float, tol: float = 1e-08, max_depth: int = 50)
+```
+
+Adaptive trapezoid rule with bisection-based error control.
+
+### `adaptive_gauss_kronrod` {#api-adaptive_gauss_kronrod}
+
+```python
+adaptive_gauss_kronrod(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-10,
+    max_subdivisions: int = 500,
+)
+```
+
+Adaptive Gauss-Kronrod (7/15) quadrature -- the workhorse of `quad`.
+
+Maintains a queue of intervals and always subdivides the worst one, so the
+effort concentrates where the integrand is difficult.
+
+### `adaptive_quadrature` {#api-adaptive_quadrature}
+
+```python
+adaptive_quadrature(f, a, b, tol=1e-10, method='gauss_kronrod')
+```
+
+Adaptive quadrature with a selectable local rule.
+
+### `global_adaptive` {#api-global_adaptive}
+
+```python
+global_adaptive(
+    f,
+    a: float,
+    b: float,
+    tol: float = 1e-10,
+    rule=None,
+    max_subdivisions: int = 500,
+)
+```
+
+Globally adaptive quadrature driven by any local rule + error estimator.
+
+### `quad` {#api-quad}
+
+```python
+quad(f, a, b, tol: float = 1e-10, **kwargs)
+```
+
+General-purpose definite integral.
+
+Handles infinite limits by variable transformation and otherwise defers to
+adaptive Gauss-Kronrod.
 
 ## `gauss`
 
@@ -46,25 +115,209 @@ Gaussian quadrature drivers and the specialised high-accuracy rules.
 
 Gauss rules attain degree ``2n-1`` with ``n`` nodes; Clenshaw-Curtis and tanh-sinh trade a little of that optimality for nested points and for immunity to endpoint singularities.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `gauss_legendre` | `(f, a: float = -1.0, b: float = 1.0, n: int = 10)` | Gauss-Legendre quadrature, exact for polynomials of degree ``2n-1``. |
-| `gauss_chebyshev` | `(f, n: int = 10, kind: int = 1)` | Gauss-Chebyshev quadrature for the weight ``1/sqrt(1-x^2)`` on ``[-1,1]``. |
-| `gauss_hermite` | `(f, n: int = 20)` | Gauss-Hermite quadrature for ``int f(x) exp(-x^2) dx`` over the real line. |
-| `gauss_laguerre` | `(f, n: int = 20, alpha: float = 0.0)` | Gauss-Laguerre quadrature for ``int_0^inf f(x) x^alpha exp(-x) dx``. |
-| `gauss_jacobi` | `(f, n: int = 10, alpha: float = 0.0, beta: float = 0.0)` | Gauss-Jacobi quadrature for the weight ``(1-x)^alpha (1+x)^beta``. |
-| `gauss_lobatto` | `(f, a: float = -1.0, b: float = 1.0, n: int = 10)` | Gauss-Lobatto quadrature; includes both endpoints, degree ``2n-3``. |
-| `gauss_radau` | `(f, a: float = -1.0, b: float = 1.0, n: int = 10)` | Gauss-Radau quadrature; includes the left endpoint, degree ``2n-2``. |
-| `gauss_kronrod` | `(f, a: float = -1.0, b: float = 1.0)` | Single-panel 7/15 Gauss-Kronrod rule with its embedded error estimate. |
-| `composite_gauss` | `(f, a: float, b: float, panels: int = 10, n: int = 5)` | Composite Gauss-Legendre: split into panels, apply an ``n``-point rule. |
-| `clenshaw_curtis` | `(f, a: float = -1.0, b: float = 1.0, n: int = 32)` | Clenshaw-Curtis quadrature on Chebyshev points, weights via the FFT. |
-| `fejer` | `(f, a: float = -1.0, b: float = 1.0, n: int = 32, rule: int = 1)` | Fejer quadrature: the open cousin of Clenshaw-Curtis (no endpoints). |
-| `tanh_sinh` | `(f, a: float = -1.0, b: float = 1.0, levels: int = 10, tol: float = 1e-14, f_offset=None)` | Tanh-sinh (double exponential) quadrature. |
-| `double_exponential` | `(f, a=-1.0, b=1.0, **kwargs)` | Alias of ``tanh_sinh`` under its other common name. |
-| `singular_endpoint_quadrature` | `(f, a: float, b: float, tol: float = 1e-12)` | Integrate a function with integrable endpoint singularities. |
-| `filon` | `(f, a: float, b: float, omega: float, n: int = 100, kind: str = 'sin')` | Filon quadrature for oscillatory integrals of ``f(x) sin(wx)`` or ``cos(wx)``. |
-| `cauchy_principal_value` | `(f, a: float, b: float, c: float, n: int = 200)` | Cauchy principal value of ``int_a^b f(x)/(x - c) dx`` with ``a < c < b``. |
-| `hadamard_finite_part` | `(f, a: float, b: float, c: float, n: int = 200)` | Hadamard finite part of ``int_a^b f(x)/(x-c)^2 dx``. |
+| [`gauss_legendre`](#api-gauss_legendre) | function | Gauss-Legendre quadrature, exact for polynomials of degree ``2n-1``. |
+| [`gauss_chebyshev`](#api-gauss_chebyshev) | function | Gauss-Chebyshev quadrature for the weight ``1/sqrt(1-x^2)`` on ``[-1,1]``. |
+| [`gauss_hermite`](#api-gauss_hermite) | function | Gauss-Hermite quadrature for ``int f(x) exp(-x^2) dx`` over the real line. |
+| [`gauss_laguerre`](#api-gauss_laguerre) | function | Gauss-Laguerre quadrature for ``int_0^inf f(x) x^alpha exp(-x) dx``. |
+| [`gauss_jacobi`](#api-gauss_jacobi) | function | Gauss-Jacobi quadrature for the weight ``(1-x)^alpha (1+x)^beta``. |
+| [`gauss_lobatto`](#api-gauss_lobatto) | function | Gauss-Lobatto quadrature; includes both endpoints, degree ``2n-3``. |
+| [`gauss_radau`](#api-gauss_radau) | function | Gauss-Radau quadrature; includes the left endpoint, degree ``2n-2``. |
+| [`gauss_kronrod`](#api-gauss_kronrod) | function | Single-panel 7/15 Gauss-Kronrod rule with its embedded error estimate. |
+| [`composite_gauss`](#api-composite_gauss) | function | Composite Gauss-Legendre: split into panels, apply an ``n``-point rule. |
+| [`clenshaw_curtis`](#api-clenshaw_curtis) | function | Clenshaw-Curtis quadrature on Chebyshev points, weights via the FFT. |
+| [`fejer`](#api-fejer) | function | Fejer quadrature: the open cousin of Clenshaw-Curtis (no endpoints). |
+| [`tanh_sinh`](#api-tanh_sinh) | function | Tanh-sinh (double exponential) quadrature. |
+| [`double_exponential`](#api-double_exponential) | function | Alias of ``tanh_sinh`` under its other common name. |
+| [`singular_endpoint_quadrature`](#api-singular_endpoint_quadrature) | function | Integrate a function with integrable endpoint singularities. |
+| [`filon`](#api-filon) | function | Filon quadrature for oscillatory integrals of ``f(x) sin(wx)`` or ``cos(wx)``. |
+| [`cauchy_principal_value`](#api-cauchy_principal_value) | function | Cauchy principal value of ``int_a^b f(x)/(x - c) dx`` with ``a < c < b``. |
+| [`hadamard_finite_part`](#api-hadamard_finite_part) | function | Hadamard finite part of ``int_a^b f(x)/(x-c)^2 dx``. |
+
+### `gauss_legendre` {#api-gauss_legendre}
+
+```python
+gauss_legendre(f, a: float = -1.0, b: float = 1.0, n: int = 10)
+```
+
+Gauss-Legendre quadrature, exact for polynomials of degree `2n-1`.
+
+### `gauss_chebyshev` {#api-gauss_chebyshev}
+
+```python
+gauss_chebyshev(f, n: int = 10, kind: int = 1)
+```
+
+Gauss-Chebyshev quadrature for the weight `1/sqrt(1-x^2)` on `[-1,1]`.
+
+The returned value approximates `int f(x) w(x) dx`, weight included.
+
+### `gauss_hermite` {#api-gauss_hermite}
+
+```python
+gauss_hermite(f, n: int = 20)
+```
+
+Gauss-Hermite quadrature for `int f(x) exp(-x^2) dx` over the real line.
+
+### `gauss_laguerre` {#api-gauss_laguerre}
+
+```python
+gauss_laguerre(f, n: int = 20, alpha: float = 0.0)
+```
+
+Gauss-Laguerre quadrature for `int_0^inf f(x) x^alpha exp(-x) dx`.
+
+### `gauss_jacobi` {#api-gauss_jacobi}
+
+```python
+gauss_jacobi(f, n: int = 10, alpha: float = 0.0, beta: float = 0.0)
+```
+
+Gauss-Jacobi quadrature for the weight `(1-x)^alpha (1+x)^beta`.
+
+### `gauss_lobatto` {#api-gauss_lobatto}
+
+```python
+gauss_lobatto(f, a: float = -1.0, b: float = 1.0, n: int = 10)
+```
+
+Gauss-Lobatto quadrature; includes both endpoints, degree `2n-3`.
+
+### `gauss_radau` {#api-gauss_radau}
+
+```python
+gauss_radau(f, a: float = -1.0, b: float = 1.0, n: int = 10)
+```
+
+Gauss-Radau quadrature; includes the left endpoint, degree `2n-2`.
+
+### `gauss_kronrod` {#api-gauss_kronrod}
+
+```python
+gauss_kronrod(f, a: float = -1.0, b: float = 1.0)
+```
+
+Single-panel 7/15 Gauss-Kronrod rule with its embedded error estimate.
+
+### `composite_gauss` {#api-composite_gauss}
+
+```python
+composite_gauss(f, a: float, b: float, panels: int = 10, n: int = 5)
+```
+
+Composite Gauss-Legendre: split into panels, apply an `n`-point rule.
+
+### `clenshaw_curtis` {#api-clenshaw_curtis}
+
+```python
+clenshaw_curtis(f, a: float = -1.0, b: float = 1.0, n: int = 32)
+```
+
+Clenshaw-Curtis quadrature on Chebyshev points, weights via the FFT.
+
+Nearly as accurate as Gauss for smooth integrands, with nested nodes.
+
+### `fejer` {#api-fejer}
+
+```python
+fejer(f, a: float = -1.0, b: float = 1.0, n: int = 32, rule: int = 1)
+```
+
+Fejer quadrature: the open cousin of Clenshaw-Curtis (no endpoints).
+
+### `tanh_sinh` {#api-tanh_sinh}
+
+```python
+tanh_sinh(
+    f,
+    a: float = -1.0,
+    b: float = 1.0,
+    levels: int = 10,
+    tol: float = 1e-14,
+    f_offset=None,
+)
+```
+
+Tanh-sinh (double exponential) quadrature.
+
+The substitution `x = tanh(pi/2 sinh(t))` sends the integrand and all its
+derivatives to zero at the endpoints, so endpoint singularities integrate
+cleanly and the trapezoid rule in `t` converges roughly exponentially.
+
+Two details matter for accuracy: the weights are formed from `sech` in a
+way that cannot overflow, and each abscissa is built as an offset from the
+nearer endpoint so that `1 - |x|` keeps its significant digits.
+
+Accuracy limit for singular integrands: an abscissa closer to an endpoint
+than `eps * (b - a)` rounds onto the endpoint itself, so the very tail of
+a singularity is lost -- about `1e-8` for an inverse-square-root. Pass
+`f_offset(d, side)`, returning `f(a + d)` for `side == -1` and
+`f(b - d)` for `side == +1`, to evaluate from the endpoint distance and
+recover full precision.
+
+### `double_exponential` {#api-double_exponential}
+
+```python
+double_exponential(f, a=-1.0, b=1.0, **kwargs)
+```
+
+Alias of `tanh_sinh` under its other common name.
+
+### `singular_endpoint_quadrature` {#api-singular_endpoint_quadrature}
+
+```python
+singular_endpoint_quadrature(f, a: float, b: float, tol: float = 1e-12)
+```
+
+Integrate a function with integrable endpoint singularities.
+
+Uses tanh-sinh, which is the standard tool for `1/sqrt(x)`-type behaviour.
+
+### `filon` {#api-filon}
+
+```python
+filon(f, a: float, b: float, omega: float, n: int = 100, kind: str = 'sin')
+```
+
+Filon quadrature for oscillatory integrals of `f(x) sin(wx)` or `cos(wx)`.
+
+Ordinary quadrature needs several points per oscillation, so its cost grows
+linearly in `w` and its accuracy collapses when `w` is large.  Filon's
+rule interpolates only the *slowly varying* `f` and integrates the
+oscillatory factor analytically, so accuracy actually *improves* with
+increasing `w` at fixed cost.
+
+`n` must be even (the rule pairs panels like Simpson's).
+
+### `cauchy_principal_value` {#api-cauchy_principal_value}
+
+```python
+cauchy_principal_value(f, a: float, b: float, c: float, n: int = 200)
+```
+
+Cauchy principal value of `int_a^b f(x)/(x - c) dx` with `a < c < b`.
+
+The integral diverges on each side of `c` and the divergences cancel only
+in the symmetric limit.  Subtracting `f(c)` first removes the pole --
+`(f(x) - f(c))/(x - c)` is bounded and integrable -- and the remaining
+`f(c) * int dx/(x-c)` is done analytically as `f(c) ln|(b-c)/(c-a)|`.
+Attacking the original integrand numerically, however finely, cannot work:
+the answer depends on an exact cancellation of infinities.
+
+### `hadamard_finite_part` {#api-hadamard_finite_part}
+
+```python
+hadamard_finite_part(f, a: float, b: float, c: float, n: int = 200)
+```
+
+Hadamard finite part of `int_a^b f(x)/(x-c)^2 dx`.
+
+A stronger singularity than the Cauchy case: even the principal value
+diverges, and what survives is the finite part after the divergent term is
+discarded.  Obtained here by subtracting the first two Taylor terms of
+`f` at `c` and integrating those analytically.
 
 ## `monte_carlo`
 
@@ -74,20 +327,137 @@ Monte Carlo and quasi-Monte Carlo integration.
 
 Convergence is ``O(N^-1/2)`` regardless of dimension, which is why these are the methods of choice once the dimension is large; the variance reduction techniques here buy back a substantial constant factor.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `monte_carlo` | `(f, a: float, b: float, n: int = 100000, rng=None)` | Plain Monte Carlo on an interval, with a standard error estimate. |
-| `monte_carlo_nd` | `(f, lows, highs, n: int = 100000, rng=None)` | Plain Monte Carlo over a box in any dimension. |
-| `stratified_sampling` | `(f, a: float, b: float, n: int = 10000, strata: int = 100, rng=None)` | Stratified Monte Carlo: sample uniformly within equal sub-intervals. |
-| `importance_sampling` | `(f, sampler, pdf, n: int = 100000, rng=None)` | Importance sampling: draw from ``sampler`` and reweight by ``f/pdf``. |
-| `control_variates` | `(f, g, g_mean: float, a: float, b: float, n: int = 100000, rng=None)` | Control variates: subtract a correlated function with known mean. |
-| `antithetic_variates` | `(f, a: float, b: float, n: int = 100000, rng=None)` | Antithetic variates: pair each sample with its mirror image. |
-| `quasi_monte_carlo` | `(f, lows, highs, n: int = 4096, sequence: str = 'halton')` | Quasi-Monte Carlo: low-discrepancy points give ``O((log N)^d / N)``. |
-| `halton_sequence` | `(n: int, dim: int = 1, skip: int = 1)` | Halton low-discrepancy sequence, one prime base per dimension. |
-| `sobol_sequence` | `(n: int, dim: int = 1)` | Sobol-style low-discrepancy sequence. |
-| `latin_hypercube` | `(n: int, dim: int = 1, rng=None)` | Latin hypercube sample: one point per stratum in every dimension. |
-| `hit_or_miss` | `(f, a: float, b: float, ymax: float, n: int = 100000, rng=None)` | Hit-or-miss Monte Carlo: the area under the curve by rejection counting. |
-| `vegas_lite` | `(f, a: float, b: float, n: int = 20000, iterations: int = 5, bins: int = 50, rng=None)` | Simplified VEGAS: adapt a piecewise-constant sampling density to ``\|f\|``. |
+| [`monte_carlo`](#api-monte_carlo) | function | Plain Monte Carlo on an interval, with a standard error estimate. |
+| [`monte_carlo_nd`](#api-monte_carlo_nd) | function | Plain Monte Carlo over a box in any dimension. |
+| [`stratified_sampling`](#api-stratified_sampling) | function | Stratified Monte Carlo: sample uniformly within equal sub-intervals. |
+| [`importance_sampling`](#api-importance_sampling) | function | Importance sampling: draw from ``sampler`` and reweight by ``f/pdf``. |
+| [`control_variates`](#api-control_variates) | function | Control variates: subtract a correlated function with known mean. |
+| [`antithetic_variates`](#api-antithetic_variates) | function | Antithetic variates: pair each sample with its mirror image. |
+| [`quasi_monte_carlo`](#api-quasi_monte_carlo) | function | Quasi-Monte Carlo: low-discrepancy points give ``O((log N)^d / N)``. |
+| [`halton_sequence`](#api-halton_sequence) | function | Halton low-discrepancy sequence, one prime base per dimension. |
+| [`sobol_sequence`](#api-sobol_sequence) | function | Sobol sequence, preserving historical points in the first six dimensions. |
+| [`latin_hypercube`](#api-latin_hypercube) | function | Latin hypercube sample: one point per stratum in every dimension. |
+| [`hit_or_miss`](#api-hit_or_miss) | function | Hit-or-miss Monte Carlo: the area under the curve by rejection counting. |
+| [`vegas_lite`](#api-vegas_lite) | function | Simplified VEGAS: adapt a piecewise-constant sampling density to ``\|f\|``. |
+
+### `monte_carlo` {#api-monte_carlo}
+
+```python
+monte_carlo(f, a: float, b: float, n: int = 100000, rng=None)
+```
+
+Plain Monte Carlo on an interval, with a standard error estimate.
+
+### `monte_carlo_nd` {#api-monte_carlo_nd}
+
+```python
+monte_carlo_nd(f, lows, highs, n: int = 100000, rng=None)
+```
+
+Plain Monte Carlo over a box in any dimension.
+
+### `stratified_sampling` {#api-stratified_sampling}
+
+```python
+stratified_sampling(f, a: float, b: float, n: int = 10000, strata: int = 100, rng=None)
+```
+
+Stratified Monte Carlo: sample uniformly within equal sub-intervals.
+
+Variance never exceeds plain Monte Carlo and is usually much lower.
+
+### `importance_sampling` {#api-importance_sampling}
+
+```python
+importance_sampling(f, sampler, pdf, n: int = 100000, rng=None)
+```
+
+Importance sampling: draw from `sampler` and reweight by `f/pdf`.
+
+Variance collapses when `pdf` is close to proportional to `|f|`.
+
+### `control_variates` {#api-control_variates}
+
+```python
+control_variates(f, g, g_mean: float, a: float, b: float, n: int = 100000, rng=None)
+```
+
+Control variates: subtract a correlated function with known mean.
+
+### `antithetic_variates` {#api-antithetic_variates}
+
+```python
+antithetic_variates(f, a: float, b: float, n: int = 100000, rng=None)
+```
+
+Antithetic variates: pair each sample with its mirror image.
+
+### `quasi_monte_carlo` {#api-quasi_monte_carlo}
+
+```python
+quasi_monte_carlo(f, lows, highs, n: int = 4096, sequence: str = 'halton')
+```
+
+Quasi-Monte Carlo: low-discrepancy points give `O((log N)^d / N)`.
+
+Substantially better than plain Monte Carlo for smooth integrands in
+moderate dimension.
+
+### `halton_sequence` {#api-halton_sequence}
+
+```python
+halton_sequence(n: int, dim: int = 1, skip: int = 1)
+```
+
+Halton low-discrepancy sequence, one prime base per dimension.
+
+### `sobol_sequence` {#api-sobol_sequence}
+
+```python
+sobol_sequence(n: int, dim: int = 1)
+```
+
+Sobol sequence, preserving historical points in the first six dimensions.
+
+Higher dimensions use primitive-polynomial direction numbers from the
+stateful `quadrivium.stochastic.Sobol` engine. For scrambling,
+checkpoints and balanced power-of-two sampling, use that engine directly.
+
+### `latin_hypercube` {#api-latin_hypercube}
+
+```python
+latin_hypercube(n: int, dim: int = 1, rng=None)
+```
+
+Latin hypercube sample: one point per stratum in every dimension.
+
+### `hit_or_miss` {#api-hit_or_miss}
+
+```python
+hit_or_miss(f, a: float, b: float, ymax: float, n: int = 100000, rng=None)
+```
+
+Hit-or-miss Monte Carlo: the area under the curve by rejection counting.
+
+### `vegas_lite` {#api-vegas_lite}
+
+```python
+vegas_lite(
+    f,
+    a: float,
+    b: float,
+    n: int = 20000,
+    iterations: int = 5,
+    bins: int = 50,
+    rng=None,
+)
+```
+
+Simplified VEGAS: adapt a piecewise-constant sampling density to `|f|`.
+
+Captures the essential idea of importance sampling on a learned grid.
 
 ## `multidim`
 
@@ -95,20 +465,151 @@ Convergence is ``O(N^-1/2)`` regardless of dimension, which is why these are the
 
 Multidimensional quadrature on boxes, simplices and general regions.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `double_integral` | `(f, ax, bx, ay, by, nx: int = 20, ny: int = 20)` | Double integral over a rectangle or a ``y``-varying region. |
-| `triple_integral` | `(f, ax, bx, ay, by, az, bz, nx: int = 10, ny: int = 10, nz: int = 10)` | Triple integral over a box or a nested variable region. |
-| `tensor_gauss` | `(f, lows, highs, n=8)` | Tensor-product Gauss-Legendre over a box in any dimension. |
-| `nested_quadrature` | `(f, bounds, n: int = 20, rule=None)` | Iterated one-dimensional quadrature over nested variable bounds. |
-| `cubature_box` | `(f, lows, highs, n=8)` | Alias of ``tensor_gauss`` under the cubature name. |
-| `triangle_quadrature` | `(f, vertices, degree: int = 4)` | Symmetric quadrature over a triangle, exact to the given degree. |
-| `tetrahedron_quadrature` | `(f, vertices, degree: int = 2)` | Quadrature over a tetrahedron in barycentric coordinates. |
-| `polar_integral` | `(f, r_min: float, r_max: float, theta_min: float = 0.0, theta_max: float = 6.283185307179586, nr: int = 20, ...)` | Integrate over an annular sector, including the ``r`` Jacobian. |
-| `spherical_integral` | `(f, r_min: float, r_max: float, nr: int = 16, nt: int = 16, np_: int = 32)` | Integrate over a spherical shell with the ``r^2 sin(theta)`` Jacobian. |
-| `monte_carlo_region` | `(f, indicator, lows, highs, n: int = 100000, rng=None)` | Monte Carlo over an arbitrary region defined by an indicator function. |
-| `smolyak_grid` | `(dim: int, level: int, rule=None)` | Smolyak sparse grid nodes and weights on ``[-1, 1]^dim``. |
-| `sparse_grid_quadrature` | `(f, lows, highs, level: int = 4)` | Integrate over a box with a Smolyak sparse grid. |
+| [`double_integral`](#api-double_integral) | function | Double integral over a rectangle or a ``y``-varying region. |
+| [`triple_integral`](#api-triple_integral) | function | Triple integral over a box or a nested variable region. |
+| [`tensor_gauss`](#api-tensor_gauss) | function | Tensor-product Gauss-Legendre over a box in any dimension. |
+| [`nested_quadrature`](#api-nested_quadrature) | function | Iterated one-dimensional quadrature over nested variable bounds. |
+| [`cubature_box`](#api-cubature_box) | function | Alias of ``tensor_gauss`` under the cubature name. |
+| [`triangle_quadrature`](#api-triangle_quadrature) | function | Symmetric quadrature over a triangle, exact to the given degree. |
+| [`tetrahedron_quadrature`](#api-tetrahedron_quadrature) | function | Quadrature over a tetrahedron in barycentric coordinates. |
+| [`polar_integral`](#api-polar_integral) | function | Integrate over an annular sector, including the ``r`` Jacobian. |
+| [`spherical_integral`](#api-spherical_integral) | function | Integrate over a spherical shell with the ``r^2 sin(theta)`` Jacobian. |
+| [`monte_carlo_region`](#api-monte_carlo_region) | function | Monte Carlo over an arbitrary region defined by an indicator function. |
+| [`smolyak_grid`](#api-smolyak_grid) | function | Smolyak sparse grid nodes and weights on ``[-1, 1]^dim``. |
+| [`sparse_grid_quadrature`](#api-sparse_grid_quadrature) | function | Integrate over a box with a Smolyak sparse grid. |
+
+### `double_integral` {#api-double_integral}
+
+```python
+double_integral(f, ax, bx, ay, by, nx: int = 20, ny: int = 20)
+```
+
+Double integral over a rectangle or a `y`-varying region.
+
+`ay` and `by` may be callables of `x`, which handles non-rectangular
+regions bounded by two curves.
+
+### `triple_integral` {#api-triple_integral}
+
+```python
+triple_integral(f, ax, bx, ay, by, az, bz, nx: int = 10, ny: int = 10, nz: int = 10)
+```
+
+Triple integral over a box or a nested variable region.
+
+### `tensor_gauss` {#api-tensor_gauss}
+
+```python
+tensor_gauss(f, lows, highs, n=8)
+```
+
+Tensor-product Gauss-Legendre over a box in any dimension.
+
+Cost grows as `n^d`, so this is practical up to about five dimensions;
+beyond that use `~quadrivium.integrate.monte_carlo.quasi_monte_carlo`.
+
+### `nested_quadrature` {#api-nested_quadrature}
+
+```python
+nested_quadrature(f, bounds, n: int = 20, rule=None)
+```
+
+Iterated one-dimensional quadrature over nested variable bounds.
+
+`bounds` is a list of `(lo, hi)` pairs where each entry may be a
+callable of the outer variables.
+
+### `cubature_box` {#api-cubature_box}
+
+```python
+cubature_box(f, lows, highs, n=8)
+```
+
+Alias of `tensor_gauss` under the cubature name.
+
+### `triangle_quadrature` {#api-triangle_quadrature}
+
+```python
+triangle_quadrature(f, vertices, degree: int = 4)
+```
+
+Symmetric quadrature over a triangle, exact to the given degree.
+
+### `tetrahedron_quadrature` {#api-tetrahedron_quadrature}
+
+```python
+tetrahedron_quadrature(f, vertices, degree: int = 2)
+```
+
+Quadrature over a tetrahedron in barycentric coordinates.
+
+### `polar_integral` {#api-polar_integral}
+
+```python
+polar_integral(
+    f,
+    r_min: float,
+    r_max: float,
+    theta_min: float = 0.0,
+    theta_max: float = 6.283185307179586,
+    nr: int = 20,
+    nt: int = 40,
+)
+```
+
+Integrate over an annular sector, including the `r` Jacobian.
+
+### `spherical_integral` {#api-spherical_integral}
+
+```python
+spherical_integral(
+    f,
+    r_min: float,
+    r_max: float,
+    nr: int = 16,
+    nt: int = 16,
+    np_: int = 32,
+)
+```
+
+Integrate over a spherical shell with the `r^2 sin(theta)` Jacobian.
+
+### `monte_carlo_region` {#api-monte_carlo_region}
+
+```python
+monte_carlo_region(f, indicator, lows, highs, n: int = 100000, rng=None)
+```
+
+Monte Carlo over an arbitrary region defined by an indicator function.
+
+### `smolyak_grid` {#api-smolyak_grid}
+
+```python
+smolyak_grid(dim: int, level: int, rule=None)
+```
+
+Smolyak sparse grid nodes and weights on `[-1, 1]^dim`.
+
+A full tensor grid needs `m^dim` points; the sparse construction combines
+only those tensor products whose total level is bounded, cutting the count
+to roughly `m (log m)^{dim-1}` while keeping polynomial exactness up to
+the same total degree.  That is what makes moderate-dimensional quadrature
+(say 5-20 dimensions) feasible at all -- the tensor grid is hopeless there.
+
+Returns `(nodes, weights)` with `nodes` of shape `(N, dim)`.
+
+### `sparse_grid_quadrature` {#api-sparse_grid_quadrature}
+
+```python
+sparse_grid_quadrature(f, lows, highs, level: int = 4)
+```
+
+Integrate over a box with a Smolyak sparse grid.
+
+`f` takes a point vector.  Compare the node count against `m^dim` for
+the tensor rule of the same one-dimensional resolution to see the saving.
 
 ## `newton_cotes`
 
@@ -116,23 +617,149 @@ Multidimensional quadrature on boxes, simplices and general regions.
 
 Newton-Cotes quadrature: the interpolatory rules on equispaced nodes.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `rectangle_rule` | `(f, a: float, b: float, n: int = 100, side: str = 'left')` | Riemann sum with left, right or midpoint sampling. |
-| `midpoint_rule` | `(f, a: float, b: float, n: int = 100)` | Composite midpoint rule; second-order accurate and open. |
-| `trapezoid_rule` | `(f, a: float, b: float, n: int = 100)` | Composite trapezoid rule, error ``O(h^2)``. |
-| `simpson_rule` | `(f, a: float, b: float, n: int = 100)` | Composite Simpson's 1/3 rule, error ``O(h^4)``; ``n`` must be even. |
-| `simpson38_rule` | `(f, a: float, b: float, n: int = 99)` | Composite Simpson's 3/8 rule; ``n`` must be a multiple of 3. |
-| `boole_rule` | `(f, a: float, b: float, n: int = 100)` | Composite Boole's rule, error ``O(h^6)``; ``n`` must be a multiple of 4. |
-| `newton_cotes_weights` | `(n: int, closed: bool = True)` | Weights of the degree-``n`` Newton-Cotes rule on ``[0, 1]``. |
-| `newton_cotes` | `(f, a: float, b: float, n: int = 4, closed: bool = True)` | Single-panel Newton-Cotes rule of arbitrary degree ``n``. |
-| `composite_trapezoid` | `(f, a, b, n=100)` | Alias of ``trapezoid_rule`` under its composite name. |
-| `composite_simpson` | `(f, a, b, n=100)` | Alias of ``simpson_rule`` under its composite name. |
-| `composite_midpoint` | `(f, a, b, n=100)` | Alias of ``midpoint_rule`` under its composite name. |
-| `trapezoid_data` | `(x, y) -> float` | Trapezoid rule applied to tabulated data (non-uniform spacing allowed). |
-| `simpson_data` | `(x, y) -> float` | Simpson's rule on tabulated data; falls back to trapezoid on the last interval when the number of intervals is odd. |
-| `cumulative_trapezoid` | `(x, y, initial: float = 0.0)` | Running integral of tabulated data by the trapezoid rule. |
-| `corrected_trapezoid` | `(f, a: float, b: float, n: int = 100, df=None)` | Euler-Maclaurin corrected trapezoid rule. |
+| [`rectangle_rule`](#api-rectangle_rule) | function | Riemann sum with left, right or midpoint sampling. |
+| [`midpoint_rule`](#api-midpoint_rule) | function | Composite midpoint rule; second-order accurate and open. |
+| [`trapezoid_rule`](#api-trapezoid_rule) | function | Composite trapezoid rule, error ``O(h^2)``. |
+| [`simpson_rule`](#api-simpson_rule) | function | Composite Simpson's 1/3 rule, error ``O(h^4)``; ``n`` must be even. |
+| [`simpson38_rule`](#api-simpson38_rule) | function | Composite Simpson's 3/8 rule; ``n`` must be a multiple of 3. |
+| [`boole_rule`](#api-boole_rule) | function | Composite Boole's rule, error ``O(h^6)``; ``n`` must be a multiple of 4. |
+| [`newton_cotes_weights`](#api-newton_cotes_weights) | function | Weights of the degree-``n`` Newton-Cotes rule on ``[0, 1]``. |
+| [`newton_cotes`](#api-newton_cotes) | function | Single-panel Newton-Cotes rule of arbitrary degree ``n``. |
+| [`composite_trapezoid`](#api-composite_trapezoid) | function | Alias of ``trapezoid_rule`` under its composite name. |
+| [`composite_simpson`](#api-composite_simpson) | function | Alias of ``simpson_rule`` under its composite name. |
+| [`composite_midpoint`](#api-composite_midpoint) | function | Alias of ``midpoint_rule`` under its composite name. |
+| [`trapezoid_data`](#api-trapezoid_data) | function | Trapezoid rule applied to tabulated data (non-uniform spacing allowed). |
+| [`simpson_data`](#api-simpson_data) | function | Simpson's rule on tabulated data; falls back to trapezoid on the last interval when the number of intervals is odd. |
+| [`cumulative_trapezoid`](#api-cumulative_trapezoid) | function | Running integral of tabulated data by the trapezoid rule. |
+| [`corrected_trapezoid`](#api-corrected_trapezoid) | function | Euler-Maclaurin corrected trapezoid rule. |
+
+### `rectangle_rule` {#api-rectangle_rule}
+
+```python
+rectangle_rule(f, a: float, b: float, n: int = 100, side: str = 'left')
+```
+
+Riemann sum with left, right or midpoint sampling.
+
+### `midpoint_rule` {#api-midpoint_rule}
+
+```python
+midpoint_rule(f, a: float, b: float, n: int = 100)
+```
+
+Composite midpoint rule; second-order accurate and open.
+
+### `trapezoid_rule` {#api-trapezoid_rule}
+
+```python
+trapezoid_rule(f, a: float, b: float, n: int = 100)
+```
+
+Composite trapezoid rule, error `O(h^2)`.
+
+### `simpson_rule` {#api-simpson_rule}
+
+```python
+simpson_rule(f, a: float, b: float, n: int = 100)
+```
+
+Composite Simpson's 1/3 rule, error `O(h^4)`; `n` must be even.
+
+### `simpson38_rule` {#api-simpson38_rule}
+
+```python
+simpson38_rule(f, a: float, b: float, n: int = 99)
+```
+
+Composite Simpson's 3/8 rule; `n` must be a multiple of 3.
+
+### `boole_rule` {#api-boole_rule}
+
+```python
+boole_rule(f, a: float, b: float, n: int = 100)
+```
+
+Composite Boole's rule, error `O(h^6)`; `n` must be a multiple of 4.
+
+### `newton_cotes_weights` {#api-newton_cotes_weights}
+
+```python
+newton_cotes_weights(n: int, closed: bool = True)
+```
+
+Weights of the degree-`n` Newton-Cotes rule on `[0, 1]`.
+
+Computed by exactly integrating the Lagrange basis. Note that closed rules
+develop negative weights for `n >= 8` and become unstable.
+
+### `newton_cotes` {#api-newton_cotes}
+
+```python
+newton_cotes(f, a: float, b: float, n: int = 4, closed: bool = True)
+```
+
+Single-panel Newton-Cotes rule of arbitrary degree `n`.
+
+### `composite_trapezoid` {#api-composite_trapezoid}
+
+```python
+composite_trapezoid(f, a, b, n=100)
+```
+
+Alias of `trapezoid_rule` under its composite name.
+
+### `composite_simpson` {#api-composite_simpson}
+
+```python
+composite_simpson(f, a, b, n=100)
+```
+
+Alias of `simpson_rule` under its composite name.
+
+### `composite_midpoint` {#api-composite_midpoint}
+
+```python
+composite_midpoint(f, a, b, n=100)
+```
+
+Alias of `midpoint_rule` under its composite name.
+
+### `trapezoid_data` {#api-trapezoid_data}
+
+```python
+trapezoid_data(x, y) -> float
+```
+
+Trapezoid rule applied to tabulated data (non-uniform spacing allowed).
+
+### `simpson_data` {#api-simpson_data}
+
+```python
+simpson_data(x, y) -> float
+```
+
+Simpson's rule on tabulated data; falls back to trapezoid on the last
+interval when the number of intervals is odd.
+
+### `cumulative_trapezoid` {#api-cumulative_trapezoid}
+
+```python
+cumulative_trapezoid(x, y, initial: float = 0.0)
+```
+
+Running integral of tabulated data by the trapezoid rule.
+
+### `corrected_trapezoid` {#api-corrected_trapezoid}
+
+```python
+corrected_trapezoid(f, a: float, b: float, n: int = 100, df=None)
+```
+
+Euler-Maclaurin corrected trapezoid rule.
+
+Adding the endpoint derivative term raises the order from 2 to 4.
 
 ## `romberg`
 
@@ -140,9 +767,78 @@ Newton-Cotes quadrature: the interpolatory rules on equispaced nodes.
 
 Romberg integration and Richardson-accelerated quadrature.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `romberg` | `(f, a: float, b: float, levels: int = 12, tol: float = 1e-12)` | Romberg integration: Richardson extrapolation of the trapezoid rule. |
-| `romberg_table` | `(f, a: float, b: float, levels: int = 10, tol: float = 1e-12)` | Full Romberg tableau of trapezoid estimates and their extrapolations. |
-| `richardson_quadrature` | `(rule, f, a: float, b: float, n: int = 8, levels: int = 5, order: int = 2)` | Richardson-extrapolate any composite rule by repeated halving of ``h``. |
-| `euler_maclaurin` | `(f, a: float, b: float, n: int = 100, terms: int = 2, df=None)` | Euler-Maclaurin corrected trapezoid rule. |
+| [`romberg`](#api-romberg) | function | Romberg integration: Richardson extrapolation of the trapezoid rule. |
+| [`romberg_table`](#api-romberg_table) | function | Full Romberg tableau of trapezoid estimates and their extrapolations. |
+| [`richardson_quadrature`](#api-richardson_quadrature) | function | Richardson-extrapolate any composite rule by repeated halving of ``h``. |
+| [`euler_maclaurin`](#api-euler_maclaurin) | function | Euler-Maclaurin corrected trapezoid rule. |
+
+### `romberg` {#api-romberg}
+
+```python
+romberg(f, a: float, b: float, levels: int = 12, tol: float = 1e-12)
+```
+
+Romberg integration: Richardson extrapolation of the trapezoid rule.
+
+Each column of the tableau raises the order by two, so column `j` is
+`O(h^(2j+2))` accurate.
+
+### `romberg_table` {#api-romberg_table}
+
+```python
+romberg_table(f, a: float, b: float, levels: int = 10, tol: float = 1e-12)
+```
+
+Full Romberg tableau of trapezoid estimates and their extrapolations.
+
+### `richardson_quadrature` {#api-richardson_quadrature}
+
+```python
+richardson_quadrature(
+    rule,
+    f,
+    a: float,
+    b: float,
+    n: int = 8,
+    levels: int = 5,
+    order: int = 2,
+)
+```
+
+Richardson-extrapolate any composite rule by repeated halving of `h`.
+
+### `euler_maclaurin` {#api-euler_maclaurin}
+
+```python
+euler_maclaurin(f, a: float, b: float, n: int = 100, terms: int = 2, df=None)
+```
+
+Euler-Maclaurin corrected trapezoid rule.
+
+Adds derivative corrections at the endpoints; `terms` counts Bernoulli
+corrections (each adds two orders of accuracy).
+
+## `vector`
+
+<small>`quadrivium.integrate.vector`</small>
+
+Shared-node adaptive integration of vector and complex-valued functions.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`quad_vec`](#api-quad_vec) | function | Adaptive Gauss--Kronrod integration preserving the integrand's array shape. |
+
+### `quad_vec` {#api-quad_vec}
+
+```python
+quad_vec(f, a, b, *, epsabs=1e-10, epsrel=1e-08, norm='max', limit=1000, points=None)
+```
+
+Adaptive Gauss--Kronrod integration preserving the integrand's array shape.
+
+`norm='max'` controls each component using epsabs + epsrel*abs(integral).
+`norm='2'` controls the Euclidean error norm. epsabs may be an array under
+componentwise control. `limit` bounds retained panels. Infinite limits
+are mapped to a finite interval. Error estimates are not certified bounds.

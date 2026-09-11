@@ -46,6 +46,7 @@ static int nonzero_arrays(QArray *a, QArray **out, qintp *count) {
         switch (c->dtype) {
             case QNP_BOOL: nz = *(const qbool *)p != 0; break;
             case QNP_INT64: nz = *(const int64_t *)p != 0; break;
+            case QNP_FLOAT32: case QNP_COMPLEX64: { qcomplex z=qnp_read_number(p,a->dtype); nz=z.re != 0 || z.im != 0; break; }
             case QNP_FLOAT64: nz = *(const double *)p != 0.0; break;
             default: {
                 const qcomplex *z = (const qcomplex *)p;
@@ -72,6 +73,7 @@ static int nonzero_arrays(QArray *a, QArray **out, qintp *count) {
         switch (c->dtype) {
             case QNP_BOOL: nz = *(const qbool *)p != 0; break;
             case QNP_INT64: nz = *(const int64_t *)p != 0; break;
+            case QNP_FLOAT32: case QNP_COMPLEX64: { qcomplex z=qnp_read_number(p,a->dtype); nz=z.re != 0 || z.im != 0; break; }
             case QNP_FLOAT64: nz = *(const double *)p != 0.0; break;
             default: {
                 const qcomplex *z = (const qcomplex *)p;
@@ -1030,6 +1032,7 @@ static PyObject *py_add_at(PyObject *self, PyObject *args) {
         return NULL;
     }
     QArray *a = (QArray *)ao;
+    if(!(a->flags & QNP_WRITEABLE)){PyErr_SetString(PyExc_ValueError,"add.at destination is read-only");return NULL;}
     IdxSpec spec;
     if (parse_key(&spec, a, key) < 0) return NULL;
     if (!spec.has_advanced) {
@@ -1078,6 +1081,7 @@ static PyObject *py_add_at(PyObject *self, PyObject *args) {
             switch (a->dtype) {
                 case QNP_BOOL: *(qbool *)dst |= *(const qbool *)s; break;
                 case QNP_INT64: *(int64_t *)dst += *(const int64_t *)s; break;
+                case QNP_FLOAT32: case QNP_COMPLEX64: qnp_write_number(dst,a->dtype,qc_add(qnp_read_number(dst,a->dtype),qnp_read_number(s,a->dtype))); break;
                 case QNP_FLOAT64: *(double *)dst += *(const double *)s; break;
                 default: {
                     qcomplex *d = (qcomplex *)dst;

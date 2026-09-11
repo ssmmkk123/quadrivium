@@ -62,7 +62,9 @@ static PyObject *make_filled(PyObject *shape_obj, PyObject *dtype_obj, int mode,
             return NULL;
         }
         Py_XDECREF(one);
-        if (dtype == QNP_FLOAT64) {
+        if (dtype >= QNP_FLOAT32) {
+            for (qintp i=0;i<n;i++) memcpy(out->data+i*isz,scratch,(size_t)isz);
+        } else if (dtype == QNP_FLOAT64) {
             double v = *(double *)scratch;
             double *p = (double *)out->data;
             for (qintp i = 0; i < n; i++) p[i] = v;
@@ -233,6 +235,7 @@ static PyObject *py_arange(PyObject *self, PyObject *args, PyObject *kwds) {
         switch (dtype) {
             case QNP_BOOL: ((qbool *)out->data)[i] = v != 0.0; break;
             case QNP_INT64: ((int64_t *)out->data)[i] = (int64_t)((long long)start + (long long)i * (long long)step); break;
+            case QNP_FLOAT32: case QNP_COMPLEX64: qnp_write_number(out->data+i*QNP_ITEMSIZE(dtype),dtype,qc(v,0)); break;
             case QNP_FLOAT64: ((double *)out->data)[i] = v; break;
             default: ((qcomplex *)out->data)[i] = qc(v, 0.0); break;
         }
@@ -267,6 +270,7 @@ static PyObject *py_linspace(PyObject *self, PyObject *args, PyObject *kwds) {
         switch (dtype) {
             case QNP_BOOL: ((qbool *)out->data)[i] = v != 0.0; break;
             case QNP_INT64: ((int64_t *)out->data)[i] = (int64_t)v; break;
+            case QNP_FLOAT32: case QNP_COMPLEX64: qnp_write_number(out->data+i*QNP_ITEMSIZE(dtype),dtype,qc(v,0)); break;
             case QNP_FLOAT64: ((double *)out->data)[i] = v; break;
             default: ((qcomplex *)out->data)[i] = qc(v, 0.0); break;
         }
@@ -295,6 +299,7 @@ static PyObject *py_eye(PyObject *self, PyObject *args, PyObject *kwds) {
         switch (dtype) {
             case QNP_BOOL: *(qbool *)p = 1; break;
             case QNP_INT64: *(int64_t *)p = 1; break;
+            case QNP_FLOAT32: case QNP_COMPLEX64: qnp_write_number(p,dtype,qc(1,0)); break;
             case QNP_FLOAT64: *(double *)p = 1.0; break;
             default: *(qcomplex *)p = qc(1.0, 0.0); break;
         }
@@ -747,6 +752,10 @@ static PyObject *py_outer(PyObject *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"a", "b", "out", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO|O:outer", kwlist, &ao, &bo, &out_o))
         return NULL;
+    if(out_o && out_o != Py_None) {
+        if(!QArray_Check(out_o)){PyErr_SetString(PyExc_TypeError,"outer output must be an array");return NULL;}
+        if(!(((QArray *)out_o)->flags & QNP_WRITEABLE)){PyErr_SetString(PyExc_ValueError,"outer output is read-only");return NULL;}
+    }
     QArray *a = qnp_from_any(ao, -1, 0);
     QArray *b = qnp_from_any(bo, -1, 0);
     if (a == NULL || b == NULL) { Py_XDECREF(a); Py_XDECREF(b); return NULL; }
@@ -770,7 +779,11 @@ static PyObject *py_outer(PyObject *self, PyObject *args, PyObject *kwds) {
         out = qnp_new(2, shape, dt);
     }
     if (out == NULL) { Py_DECREF(ca); Py_DECREF(cb); return NULL; }
-    if (dt == QNP_FLOAT64) {
+    if (dt >= QNP_FLOAT32) {
+        int isz=QNP_ITEMSIZE(dt);
+        for(qintp i=0;i<m;i++) for(qintp j=0;j<n;j++)
+            qnp_write_number(out->data+(i*n+j)*isz,dt,qc_mul(qnp_read_number(ca->data+i*isz,dt),qnp_read_number(cb->data+j*isz,dt)));
+    } else if (dt == QNP_FLOAT64) {
         const double *x = (const double *)ca->data, *y = (const double *)cb->data;
         double *o = (double *)out->data;
         for (qintp i = 0; i < m; i++) {

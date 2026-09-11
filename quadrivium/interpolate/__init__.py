@@ -12,3 +12,7 @@ from .multivariate import *  # noqa: F401,F403,E402
 from .polynomial import *  # noqa: F401,F403,E402
 from .rational import *  # noqa: F401,F403,E402
 from .spline import *  # noqa: F401,F403,E402
+
+from . import scattered as _scattered
+from .scattered import *  # noqa: F401,F403
+__all__ += _scattered.__all__

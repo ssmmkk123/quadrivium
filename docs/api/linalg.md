@@ -7,21 +7,24 @@ Factorizations, eigenvalues, Krylov solvers, least squares, sparse storage, matr
 
 For worked examples and guidance on choosing between these routines, see the [linear algebra guide](../guides/linalg.md).
 
-**124 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**136 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.linalg import forward_substitution
-import quadrivium as qd            # qd.forward_substitution, if re-exported
+from quadrivium import linalg
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
 - [`direct`](#direct) &mdash; direct methods for dense linear systems (32)
 - [`eigen`](#eigen) &mdash; eigenvalue and singular value algorithms (23)
+- [`factors`](#factors) &mdash; reusable dense factorizations; factor once, solve many right-hand sides (6)
 - [`iterative`](#iterative) &mdash; iterative solvers for linear systems (21)
 - [`lstsq`](#lstsq) &mdash; least squares and regularization (13)
 - [`matfun`](#matfun) &mdash; matrix functions, matrix equations and randomized decompositions (23)
-- [`sparse`](#sparse) &mdash; sparse matrix formats and sparse-specific algorithms (12)
+- [`operators`](#operators) &mdash; composable matrix-free linear maps with explicit adjoint products (2)
+- [`sparse`](#sparse) &mdash; sparse matrix formats and sparse-specific algorithms (16)
 
 ## `direct`
 
@@ -31,40 +34,323 @@ Direct methods for dense linear systems.
 
 Gaussian elimination in its several pivoting variants, the classical factorizations (LU, Cholesky, LDL', QR), and the specialised band solvers. All factorizations are written explicitly rather than delegated to LAPACK so the algorithms themselves are inspectable.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `forward_substitution` | `(L, b, unit_diagonal: bool = False) -> np.ndarray` | Solve ``L x = b`` for lower-triangular ``L``. |
-| `back_substitution` | `(U, b, unit_diagonal: bool = False) -> np.ndarray` | Solve ``U x = b`` for upper-triangular ``U``. |
-| `gauss_elimination` | `(A, b, pivoting: str = 'partial')` | Solve ``A x = b`` by Gaussian elimination. |
-| `gauss_jordan` | `(A, b=None)` | Gauss-Jordan elimination to reduced row echelon form. |
-| `lu_decomposition` | `(A)` | Unpivoted ``A = L U`` (Doolittle: unit diagonal on ``L``). |
-| `lu_solve` | `(L, U, b, P=None) -> np.ndarray` | Solve using a precomputed LU (optionally PLU) factorization. |
-| `plu_decomposition` | `(A)` | Partially pivoted ``P A = L U``; returns ``(P, L, U)``. |
-| `plu_solve` | `(A, b) -> np.ndarray` | Factor with partial pivoting and solve in one call. |
-| `lu_complete_pivot` | `(A)` | Complete pivoting ``P A Q = L U``; returns ``(P, L, U, Q)``. |
-| `cholesky` | `(A, lower: bool = True) -> np.ndarray` | Cholesky factor of a symmetric positive definite matrix. |
-| `cholesky_solve` | `(A, b) -> np.ndarray` | Solve an SPD system via Cholesky. |
-| `ldl_decomposition` | `(A)` | ``A = L D L'`` for symmetric (possibly indefinite) ``A``; returns ``(L, d)``. |
-| `ldl_solve` | `(A, b) -> np.ndarray` | Solve a symmetric system via the ``L D L'`` factorization. |
-| `crout` | `(A)` | Crout factorization (unit diagonal on ``U``). |
-| `doolittle` | `(A)` | Doolittle factorization (unit diagonal on ``L``) computed by inner products. |
-| `gram_schmidt_qr` | `(A)` | Classical Gram-Schmidt ``A = Q R`` (numerically the weakest variant). |
-| `modified_gram_schmidt_qr` | `(A)` | Modified Gram-Schmidt: same result, far better orthogonality. |
-| `householder_qr` | `(A, reduced: bool = True)` | Householder reflections ``A = Q R`` (backward stable). |
-| `givens_qr` | `(A)` | QR by Givens rotations; ideal for sparse or nearly-triangular matrices. |
-| `qr_solve` | `(A, b, method: str = 'householder') -> np.ndarray` | Least-squares / square solve through a QR factorization. |
-| `hessenberg` | `(A, compute_q: bool = True)` | Reduce ``A`` to upper Hessenberg form by Householder similarity. |
-| `bidiagonalize` | `(A)` | Golub-Kahan bidiagonalization ``A = U B V'`` with ``B`` upper bidiagonal. |
-| `thomas` | `(a, b, c, d) -> np.ndarray` | Thomas algorithm for tridiagonal systems. |
-| `banded_solve` | `(A, b, kl: int, ku: int) -> np.ndarray` | Banded Gaussian elimination with partial pivoting. |
-| `block_tridiagonal_solve` | `(A_blocks, B_blocks, C_blocks, d_blocks)` | Block Thomas algorithm. |
-| `solve` | `(A, b, method: str = 'auto') -> np.ndarray` | Solve ``A x = b``, choosing a factorization automatically by default. |
-| `inverse` | `(A) -> np.ndarray` | Matrix inverse via Gauss-Jordan elimination. |
-| `determinant` | `(A) -> float` | Determinant from the pivoted LU factorization. |
-| `rank` | `(A, tol=None) -> int` | Numerical rank from the singular values. |
-| `nullspace` | `(A, tol=None) -> np.ndarray` | Orthonormal basis for the null space, from the SVD. |
-| `sherman_morrison` | `(Ainv, u, v) -> np.ndarray` | Inverse of the rank-one update ``A + u v'`` given ``A^-1``. |
-| `woodbury` | `(Ainv, U, Cinv, V) -> np.ndarray` | Inverse of ``A + U C V`` given ``A^-1`` and ``C^-1`` (Woodbury identity). |
+| [`forward_substitution`](#api-forward_substitution) | function | Solve ``L x = b`` for lower-triangular ``L``. |
+| [`back_substitution`](#api-back_substitution) | function | Solve ``U x = b`` for upper-triangular ``U``. |
+| [`gauss_elimination`](#api-gauss_elimination) | function | Solve ``A x = b`` by Gaussian elimination. |
+| [`gauss_jordan`](#api-gauss_jordan) | function | Gauss-Jordan elimination to reduced row echelon form. |
+| [`lu_decomposition`](#api-lu_decomposition) | function | Unpivoted ``A = L U`` (Doolittle: unit diagonal on ``L``). |
+| [`lu_solve`](#api-lu_solve) | function | Solve using a precomputed LU (optionally PLU) factorization. |
+| [`plu_decomposition`](#api-plu_decomposition) | function | Partially pivoted ``P A = L U``; returns ``(P, L, U)``. |
+| [`plu_solve`](#api-plu_solve) | function | Factor with partial pivoting and solve in one call. |
+| [`lu_complete_pivot`](#api-lu_complete_pivot) | function | Complete pivoting ``P A Q = L U``; returns ``(P, L, U, Q)``. |
+| [`cholesky`](#api-cholesky) | function | Cholesky factor of a positive-definite Hermitian matrix or matrix batch. |
+| [`cholesky_solve`](#api-cholesky_solve) | function | Solve positive-definite Hermitian systems, including multiple RHS/batches. |
+| [`ldl_decomposition`](#api-ldl_decomposition) | function | ``A = L D L'`` for symmetric (possibly indefinite) ``A``; returns ``(L, d)``. |
+| [`ldl_solve`](#api-ldl_solve) | function | Solve a symmetric system via the ``L D L'`` factorization. |
+| [`crout`](#api-crout) | function | Crout factorization (unit diagonal on ``U``). |
+| [`doolittle`](#api-doolittle) | function | Doolittle factorization (unit diagonal on ``L``) computed by inner products. |
+| [`gram_schmidt_qr`](#api-gram_schmidt_qr) | function | Classical Gram-Schmidt ``A = Q R`` (numerically the weakest variant). |
+| [`modified_gram_schmidt_qr`](#api-modified_gram_schmidt_qr) | function | Modified Gram-Schmidt: same result, far better orthogonality. |
+| [`householder_qr`](#api-householder_qr) | function | Householder reflections ``A = Q R`` for real/complex matrices or batches. |
+| [`givens_qr`](#api-givens_qr) | function | QR by Givens rotations; ideal for sparse or nearly-triangular matrices. |
+| [`qr_solve`](#api-qr_solve) | function | Least-squares / square solve through a QR factorization. |
+| [`hessenberg`](#api-hessenberg) | function | Reduce ``A`` to upper Hessenberg form by Householder similarity. |
+| [`bidiagonalize`](#api-bidiagonalize) | function | Golub-Kahan bidiagonalization ``A = U B V'`` with ``B`` upper bidiagonal. |
+| [`thomas`](#api-thomas) | function | Thomas algorithm for tridiagonal systems. |
+| [`banded_solve`](#api-banded_solve) | function | Banded Gaussian elimination with partial pivoting. |
+| [`block_tridiagonal_solve`](#api-block_tridiagonal_solve) | function | Block Thomas algorithm. |
+| [`solve`](#api-solve) | function | Solve ``A x = b``, choosing a factorization automatically by default. |
+| [`inverse`](#api-inverse) | function | Matrix inverse via Gauss-Jordan elimination. |
+| [`determinant`](#api-determinant) | function | Determinant from the pivoted LU factorization. |
+| [`rank`](#api-rank) | function | Numerical rank from the singular values. |
+| [`nullspace`](#api-nullspace) | function | Orthonormal basis for the null space, from the SVD. |
+| [`sherman_morrison`](#api-sherman_morrison) | function | Inverse of the rank-one update ``A + u v'`` given ``A^-1``. |
+| [`woodbury`](#api-woodbury) | function | Inverse of ``A + U C V`` given ``A^-1`` and ``C^-1`` (Woodbury identity). |
+
+### `forward_substitution` {#api-forward_substitution}
+
+```python
+forward_substitution(L, b, unit_diagonal: bool = False) -> np.ndarray
+```
+
+Solve `L x = b` for lower-triangular `L`.
+
+### `back_substitution` {#api-back_substitution}
+
+```python
+back_substitution(U, b, unit_diagonal: bool = False) -> np.ndarray
+```
+
+Solve `U x = b` for upper-triangular `U`.
+
+### `gauss_elimination` {#api-gauss_elimination}
+
+```python
+gauss_elimination(A, b, pivoting: str = 'partial')
+```
+
+Solve `A x = b` by Gaussian elimination.
+
+`pivoting` selects `'none'`, `'partial'`, `'scaled'` (scaled partial
+pivoting) or `'complete'` (full pivoting, which also permutes columns).
+
+### `gauss_jordan` {#api-gauss_jordan}
+
+```python
+gauss_jordan(A, b=None)
+```
+
+Gauss-Jordan elimination to reduced row echelon form.
+
+With `b` given returns the solution vector; without it returns `A^-1`.
+
+### `lu_decomposition` {#api-lu_decomposition}
+
+```python
+lu_decomposition(A)
+```
+
+Unpivoted `A = L U` (Doolittle: unit diagonal on `L`).
+
+### `lu_solve` {#api-lu_solve}
+
+```python
+lu_solve(L, U, b, P=None) -> np.ndarray
+```
+
+Solve using a precomputed LU (optionally PLU) factorization.
+
+### `plu_decomposition` {#api-plu_decomposition}
+
+```python
+plu_decomposition(A)
+```
+
+Partially pivoted `P A = L U`; returns `(P, L, U)`.
+
+### `plu_solve` {#api-plu_solve}
+
+```python
+plu_solve(A, b) -> np.ndarray
+```
+
+Factor with partial pivoting and solve in one call.
+
+### `lu_complete_pivot` {#api-lu_complete_pivot}
+
+```python
+lu_complete_pivot(A)
+```
+
+Complete pivoting `P A Q = L U`; returns `(P, L, U, Q)`.
+
+### `cholesky` {#api-cholesky}
+
+```python
+cholesky(A, lower: bool = True) -> np.ndarray
+```
+
+Cholesky factor of a positive-definite Hermitian matrix or matrix batch.
+
+The upper factor is the conjugate transpose of the lower factor.
+
+### `cholesky_solve` {#api-cholesky_solve}
+
+```python
+cholesky_solve(A, b) -> np.ndarray
+```
+
+Solve positive-definite Hermitian systems, including multiple RHS/batches.
+
+### `ldl_decomposition` {#api-ldl_decomposition}
+
+```python
+ldl_decomposition(A)
+```
+
+`A = L D L'` for symmetric (possibly indefinite) `A`; returns `(L, d)`.
+
+### `ldl_solve` {#api-ldl_solve}
+
+```python
+ldl_solve(A, b) -> np.ndarray
+```
+
+Solve a symmetric system via the `L D L'` factorization.
+
+### `crout` {#api-crout}
+
+```python
+crout(A)
+```
+
+Crout factorization (unit diagonal on `U`).
+
+### `doolittle` {#api-doolittle}
+
+```python
+doolittle(A)
+```
+
+Doolittle factorization (unit diagonal on `L`) computed by inner products.
+
+### `gram_schmidt_qr` {#api-gram_schmidt_qr}
+
+```python
+gram_schmidt_qr(A)
+```
+
+Classical Gram-Schmidt `A = Q R` (numerically the weakest variant).
+
+### `modified_gram_schmidt_qr` {#api-modified_gram_schmidt_qr}
+
+```python
+modified_gram_schmidt_qr(A)
+```
+
+Modified Gram-Schmidt: same result, far better orthogonality.
+
+### `householder_qr` {#api-householder_qr}
+
+```python
+householder_qr(A, reduced: bool = True)
+```
+
+Householder reflections `A = Q R` for real/complex matrices or batches.
+
+### `givens_qr` {#api-givens_qr}
+
+```python
+givens_qr(A)
+```
+
+QR by Givens rotations; ideal for sparse or nearly-triangular matrices.
+
+### `qr_solve` {#api-qr_solve}
+
+```python
+qr_solve(A, b, method: str = 'householder') -> np.ndarray
+```
+
+Least-squares / square solve through a QR factorization.
+
+### `hessenberg` {#api-hessenberg}
+
+```python
+hessenberg(A, compute_q: bool = True)
+```
+
+Reduce `A` to upper Hessenberg form by Householder similarity.
+
+### `bidiagonalize` {#api-bidiagonalize}
+
+```python
+bidiagonalize(A)
+```
+
+Golub-Kahan bidiagonalization `A = U B V'` with `B` upper bidiagonal.
+
+### `thomas` {#api-thomas}
+
+```python
+thomas(a, b, c, d) -> np.ndarray
+```
+
+Thomas algorithm for tridiagonal systems.
+
+`a` sub-diagonal (length n-1 or n with a[0] ignored), `b` diagonal,
+`c` super-diagonal, `d` right-hand side. Runs in O(n).
+
+`d` may also be a 2-D array holding one right-hand side per *column*, in
+which case the returned array has the same shape. The elimination
+coefficients depend only on the matrix, so a whole block of systems costs
+barely more than one -- which is what alternating-direction and
+line-relaxation schemes need, where the same tridiagonal matrix is solved
+once per grid line.
+
+### `banded_solve` {#api-banded_solve}
+
+```python
+banded_solve(A, b, kl: int, ku: int) -> np.ndarray
+```
+
+Banded Gaussian elimination with partial pivoting.
+
+`kl`/`ku` are the lower/upper bandwidths of the dense matrix `A`.
+
+### `block_tridiagonal_solve` {#api-block_tridiagonal_solve}
+
+```python
+block_tridiagonal_solve(A_blocks, B_blocks, C_blocks, d_blocks)
+```
+
+Block Thomas algorithm.
+
+`B_blocks` are the diagonal blocks, `A_blocks` the sub-diagonal blocks
+and `C_blocks` the super-diagonal blocks.
+
+### `solve` {#api-solve}
+
+```python
+solve(A, b, method: str = 'auto') -> np.ndarray
+```
+
+Solve `A x = b`, choosing a factorization automatically by default.
+
+`auto` uses Cholesky for SPD matrices, the Thomas algorithm for
+tridiagonal ones, and pivoted LU otherwise. Broadcast batches, complex
+inputs and multiple right-hand sides use the native array-core solvers;
+these support `auto`, `lu`, `plu`, `cholesky` and `qr`.
+
+### `inverse` {#api-inverse}
+
+```python
+inverse(A) -> np.ndarray
+```
+
+Matrix inverse via Gauss-Jordan elimination.
+
+### `determinant` {#api-determinant}
+
+```python
+determinant(A) -> float
+```
+
+Determinant from the pivoted LU factorization.
+
+### `rank` {#api-rank}
+
+```python
+rank(A, tol=None) -> int
+```
+
+Numerical rank from the singular values.
+
+### `nullspace` {#api-nullspace}
+
+```python
+nullspace(A, tol=None) -> np.ndarray
+```
+
+Orthonormal basis for the null space, from the SVD.
+
+### `sherman_morrison` {#api-sherman_morrison}
+
+```python
+sherman_morrison(Ainv, u, v) -> np.ndarray
+```
+
+Inverse of the rank-one update `A + u v'` given `A^-1`.
+
+### `woodbury` {#api-woodbury}
+
+```python
+woodbury(Ainv, U, Cinv, V) -> np.ndarray
+```
+
+Inverse of `A + U C V` given `A^-1` and `C^-1` (Woodbury identity).
 
 ## `eigen`
 
@@ -74,31 +360,392 @@ Eigenvalue and singular value algorithms.
 
 Covers the vector iterations (power / inverse / Rayleigh), the QR algorithm in its unshifted, shifted and Francis double-shift forms, the Jacobi rotation method, Krylov projections (Lanczos, Arnoldi), and SVD by one-sided Jacobi.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `power_iteration` | `(A, x0=None, tol: float = 1e-10, max_iter: int = 1000)` | Dominant eigenpair by the power method. |
-| `inverse_power_iteration` | `(A, sigma: float = 0.0, x0=None, tol: float = 1e-10, max_iter: int = 1000)` | Eigenpair closest to the shift ``sigma`` by inverse iteration. |
-| `shifted_power_iteration` | `(A, sigma: float, **kwargs)` | Power iteration on ``A - sigma I``, undoing the shift at the end. |
-| `rayleigh_quotient_iteration` | `(A, x0=None, tol: float = 1e-12, max_iter: int = 100)` | Rayleigh quotient iteration: cubic convergence for symmetric ``A``. |
-| `deflation_power` | `(A, k=None, tol: float = 1e-10, max_iter: int = 1000)` | Leading ``k`` eigenpairs of a symmetric matrix by Hotelling deflation. |
-| `qr_algorithm` | `(A, tol: float = 1e-12, max_iter: int = 5000, compute_vectors: bool = False)` | Unshifted QR iteration ``A_{k+1} = R_k Q_k``. |
-| `shifted_qr_algorithm` | `(A, tol: float = 1e-12, max_iter: int = 5000)` | Hessenberg QR with Wilkinson shifts and deflation (real spectra). |
-| `francis_qr` | `(A, tol: float = 1e-12, max_iter: int = 1000)` | Francis double-shift QR: real Schur form, handling complex pairs. |
-| `jacobi_eigen` | `(A, tol: float = 1e-12, max_sweeps: int = 100)` | Cyclic Jacobi rotations for symmetric matrices (very accurate). |
-| `lanczos` | `(A, k=None, v0=None, reorthogonalize: bool = True)` | Lanczos tridiagonalization of a symmetric matrix. |
-| `arnoldi` | `(A, k=None, v0=None)` | Arnoldi iteration for general matrices; returns ``(Q, H)``. |
-| `sturm_sequence` | `(alpha, beta, x: float) -> int` | Number of eigenvalues of a symmetric tridiagonal matrix below ``x``. |
-| `bisection_eigenvalues` | `(alpha, beta, tol: float = 1e-12)` | All eigenvalues of a symmetric tridiagonal matrix via Sturm bisection. |
-| `svd_jacobi` | `(A, tol: float = 1e-13, max_sweeps: int = 60)` | One-sided Jacobi SVD: ``A = U S V'`` with high relative accuracy. |
-| `svd_golub_kahan` | `(A)` | SVD through bidiagonalization plus a symmetric eigen-solve on ``B'B``. |
-| `polar_decomposition` | `(A, side: str = 'right')` | Polar decomposition of a (possibly rectangular) matrix. |
-| `schur` | `(A, tol: float = 1e-12, max_iter: int = 2000)` | Real Schur form ``A = Q T Q'`` by shifted QR with deflation. |
-| `schur_eigenvalues` | `(T, tol: float = 1e-13) -> np.ndarray` | Eigenvalues read from the diagonal blocks of a real Schur form. |
-| `gershgorin_disks` | `(A)` | Gershgorin disks as ``(centers, radii)``; the spectrum lies in their union. |
-| `spectral_radius` | `(A) -> float` | Largest eigenvalue modulus. |
-| `matrix_power` | `(A, p: int) -> np.ndarray` | Integer matrix power by binary exponentiation. |
-| `matrix_exponential` | `(A, order: int = 6) -> np.ndarray` | Matrix exponential by scaling-and-squaring with a Pade approximant. |
-| `matrix_function` | `(A, f)` | Apply a scalar function to a diagonalizable matrix via its eigendecomposition. |
+| [`power_iteration`](#api-power_iteration) | function | Dominant eigenpair by the power method. |
+| [`inverse_power_iteration`](#api-inverse_power_iteration) | function | Eigenpair closest to the shift ``sigma`` by inverse iteration. |
+| [`shifted_power_iteration`](#api-shifted_power_iteration) | function | Power iteration on ``A - sigma I``, undoing the shift at the end. |
+| [`rayleigh_quotient_iteration`](#api-rayleigh_quotient_iteration) | function | Rayleigh quotient iteration: cubic convergence for symmetric ``A``. |
+| [`deflation_power`](#api-deflation_power) | function | Leading ``k`` eigenpairs of a symmetric matrix by Hotelling deflation. |
+| [`qr_algorithm`](#api-qr_algorithm) | function | Unshifted QR iteration ``A_{k+1} = R_k Q_k``. |
+| [`shifted_qr_algorithm`](#api-shifted_qr_algorithm) | function | Hessenberg QR with Wilkinson shifts and deflation (real spectra). |
+| [`francis_qr`](#api-francis_qr) | function | Francis double-shift QR: real Schur form, handling complex pairs. |
+| [`jacobi_eigen`](#api-jacobi_eigen) | function | Cyclic Jacobi rotations for symmetric/Hermitian matrices. |
+| [`lanczos`](#api-lanczos) | function | Lanczos tridiagonalization of a symmetric matrix. |
+| [`arnoldi`](#api-arnoldi) | function | Arnoldi iteration for general matrices; returns ``(Q, H)``. |
+| [`sturm_sequence`](#api-sturm_sequence) | function | Number of eigenvalues of a symmetric tridiagonal matrix below ``x``. |
+| [`bisection_eigenvalues`](#api-bisection_eigenvalues) | function | All eigenvalues of a symmetric tridiagonal matrix via Sturm bisection. |
+| [`svd_jacobi`](#api-svd_jacobi) | function | One-sided Jacobi SVD ``A = U S V.H``, including complex inputs/batches. |
+| [`svd_golub_kahan`](#api-svd_golub_kahan) | function | SVD through a symmetric eigen-solve; complex/batched inputs use native SVD. |
+| [`polar_decomposition`](#api-polar_decomposition) | function | Polar decomposition of a (possibly rectangular) matrix. |
+| [`schur`](#api-schur) | function | Real Schur form ``A = Q T Q'`` by shifted QR with deflation. |
+| [`schur_eigenvalues`](#api-schur_eigenvalues) | function | Eigenvalues read from the diagonal blocks of a real Schur form. |
+| [`gershgorin_disks`](#api-gershgorin_disks) | function | Gershgorin disks as ``(centers, radii)``; the spectrum lies in their union. |
+| [`spectral_radius`](#api-spectral_radius) | function | Largest eigenvalue modulus. |
+| [`matrix_power`](#api-matrix_power) | function | Integer matrix power by binary exponentiation. |
+| [`matrix_exponential`](#api-matrix_exponential) | function | Matrix exponential by scaling-and-squaring with a Pade approximant. |
+| [`matrix_function`](#api-matrix_function) | function | Apply a scalar function to a diagonalizable matrix via its eigendecomposition. |
+
+### `power_iteration` {#api-power_iteration}
+
+```python
+power_iteration(A, x0=None, tol: float = 1e-10, max_iter: int = 1000)
+```
+
+Dominant eigenpair by the power method.
+
+### `inverse_power_iteration` {#api-inverse_power_iteration}
+
+```python
+inverse_power_iteration(
+    A,
+    sigma: float = 0.0,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+)
+```
+
+Eigenpair closest to the shift `sigma` by inverse iteration.
+
+### `shifted_power_iteration` {#api-shifted_power_iteration}
+
+```python
+shifted_power_iteration(A, sigma: float, **kwargs)
+```
+
+Power iteration on `A - sigma I`, undoing the shift at the end.
+
+### `rayleigh_quotient_iteration` {#api-rayleigh_quotient_iteration}
+
+```python
+rayleigh_quotient_iteration(A, x0=None, tol: float = 1e-12, max_iter: int = 100)
+```
+
+Rayleigh quotient iteration: cubic convergence for symmetric `A`.
+
+### `deflation_power` {#api-deflation_power}
+
+```python
+deflation_power(A, k=None, tol: float = 1e-10, max_iter: int = 1000)
+```
+
+Leading `k` eigenpairs of a symmetric matrix by Hotelling deflation.
+
+### `qr_algorithm` {#api-qr_algorithm}
+
+```python
+qr_algorithm(A, tol: float = 1e-12, max_iter: int = 5000, compute_vectors: bool = False)
+```
+
+Unshifted QR iteration `A_{k+1} = R_k Q_k`.
+
+The iteration is preceded by a Householder reduction to upper Hessenberg
+form. That is an orthogonal similarity, so it changes no eigenvalue, and
+Hessenberg form is invariant under a QR step -- which drops the cost of a
+sweep from `O(n^3)` to `O(n^2)` and lets the convergence test read the
+subdiagonal alone instead of the whole lower triangle.
+
+Being unshifted, this still converges only linearly, at a rate set by the
+ratios of successive eigenvalue magnitudes, and does not converge at all
+for a matrix with complex-conjugate pairs. `shifted_qr_algorithm` and
+`francis_qr` exist for those cases.
+
+### `shifted_qr_algorithm` {#api-shifted_qr_algorithm}
+
+```python
+shifted_qr_algorithm(A, tol: float = 1e-12, max_iter: int = 5000)
+```
+
+Hessenberg QR with Wilkinson shifts and deflation (real spectra).
+
+### `francis_qr` {#api-francis_qr}
+
+```python
+francis_qr(A, tol: float = 1e-12, max_iter: int = 1000)
+```
+
+Francis double-shift QR: real Schur form, handling complex pairs.
+
+Returns the (possibly complex) eigenvalues read off the quasi-triangular
+real Schur form.
+
+### `jacobi_eigen` {#api-jacobi_eigen}
+
+```python
+jacobi_eigen(A, tol: float = 1e-12, max_sweeps: int = 100)
+```
+
+Cyclic Jacobi rotations for symmetric/Hermitian matrices.
+
+Complex inputs with default controls use the native Hermitian kernel; its
+internal sweep count is unavailable and reported as zero. Explicit sweep
+budgets or tolerances use the readable complex rotation implementation.
+
+### `lanczos` {#api-lanczos}
+
+```python
+lanczos(A, k=None, v0=None, reorthogonalize: bool = True)
+```
+
+Lanczos tridiagonalization of a symmetric matrix.
+
+Returns `(alpha, beta, Q)` with `T = tridiag(beta, alpha, beta)`.
+
+### `arnoldi` {#api-arnoldi}
+
+```python
+arnoldi(A, k=None, v0=None)
+```
+
+Arnoldi iteration for general matrices; returns `(Q, H)`.
+
+`H` is `(k+1, k)` upper Hessenberg with `A Q_k = Q_{k+1} H`.
+
+### `sturm_sequence` {#api-sturm_sequence}
+
+```python
+sturm_sequence(alpha, beta, x: float) -> int
+```
+
+Number of eigenvalues of a symmetric tridiagonal matrix below `x`.
+
+### `bisection_eigenvalues` {#api-bisection_eigenvalues}
+
+```python
+bisection_eigenvalues(alpha, beta, tol: float = 1e-12)
+```
+
+All eigenvalues of a symmetric tridiagonal matrix via Sturm bisection.
+
+### `svd_jacobi` {#api-svd_jacobi}
+
+```python
+svd_jacobi(A, tol: float = 1e-13, max_sweeps: int = 60)
+```
+
+One-sided Jacobi SVD `A = U S V.H`, including complex inputs/batches.
+
+### `svd_golub_kahan` {#api-svd_golub_kahan}
+
+```python
+svd_golub_kahan(A)
+```
+
+SVD through a symmetric eigen-solve; complex/batched inputs use native SVD.
+
+### `polar_decomposition` {#api-polar_decomposition}
+
+```python
+polar_decomposition(A, side: str = 'right')
+```
+
+Polar decomposition of a (possibly rectangular) matrix.
+
+`side="right"` returns `(R, P)` with `A = R @ P`; `side="left"`
+returns `(P, R)` with `A = P @ R`.  `R` has orthonormal columns
+(rows) and `P` is symmetric positive semidefinite.
+
+The reduced SVD is used throughout, so tall, square and wide matrices are
+all handled.  `P` is positive *definite* only when `A` has full rank;
+a rank-deficient `A` gives a singular `P`, which is the correct answer
+rather than an error.
+
+### `schur` {#api-schur}
+
+```python
+schur(A, tol: float = 1e-12, max_iter: int = 2000)
+```
+
+Real Schur form `A = Q T Q'` by shifted QR with deflation.
+
+`T` is quasi-triangular: 1-by-1 blocks hold real eigenvalues and 2-by-2
+blocks hold complex-conjugate pairs.  A real matrix with complex spectrum
+has no triangular real Schur form, so the convergence test must accept
+2-by-2 blocks -- testing `norm(tril(T, -1)) < tol` instead would never
+pass and would burn every iteration.
+
+Returns `(Q, T)`.  Use `schur_eigenvalues` to read the spectrum
+off the diagonal blocks.
+
+### `schur_eigenvalues` {#api-schur_eigenvalues}
+
+```python
+schur_eigenvalues(T, tol: float = 1e-13) -> np.ndarray
+```
+
+Eigenvalues read from the diagonal blocks of a real Schur form.
+
+2-by-2 blocks are found by a relative test on the subdiagonal, so a form
+produced elsewhere -- carrying round-off rather than exact zeros -- is read
+correctly rather than as a string of spurious complex pairs.
+
+### `gershgorin_disks` {#api-gershgorin_disks}
+
+```python
+gershgorin_disks(A)
+```
+
+Gershgorin disks as `(centers, radii)`; the spectrum lies in their union.
+
+### `spectral_radius` {#api-spectral_radius}
+
+```python
+spectral_radius(A) -> float
+```
+
+Largest eigenvalue modulus.
+
+### `matrix_power` {#api-matrix_power}
+
+```python
+matrix_power(A, p: int) -> np.ndarray
+```
+
+Integer matrix power by binary exponentiation.
+
+### `matrix_exponential` {#api-matrix_exponential}
+
+```python
+matrix_exponential(A, order: int = 6) -> np.ndarray
+```
+
+Matrix exponential by scaling-and-squaring with a Pade approximant.
+
+### `matrix_function` {#api-matrix_function}
+
+```python
+matrix_function(A, f)
+```
+
+Apply a scalar function to a diagonalizable matrix via its eigendecomposition.
+
+## `factors`
+
+<small>`quadrivium.linalg.factors`</small>
+
+Reusable dense factorizations; factor once, solve many right-hand sides.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`LUFactor`](#api-LUFactor) | class | Partial-pivoted LU stored in one matrix and an O(n) permutation. |
+| [`CholeskyFactor`](#api-CholeskyFactor) | class | Reusable lower Cholesky factor of a positive-definite Hermitian matrix. |
+| [`QRFactor`](#api-QRFactor) | class | Packed Householder QR for full-column-rank least squares (m >= n). |
+| [`lu_factor`](#api-lu_factor) | function | Factor A once for repeated linear solves; see ``LUFactor``. |
+| [`cholesky_factor`](#api-cholesky_factor) | function | Factor a Hermitian positive-definite A for repeated solves. |
+| [`qr_factor`](#api-qr_factor) | function | Factor a full-column-rank A for repeated least-squares solves. |
+
+### `LUFactor` {#api-LUFactor}
+
+```python
+LUFactor(A)
+```
+
+Partial-pivoted LU stored in one matrix and an O(n) permutation.
+
+`solve` uses only an RHS-sized temporary and is safe for concurrent calls.
+`out` allows the caller to retain its own reusable output storage.
+
+#### `LUFactor.solve` {#api-LUFactor.solve}
+
+```python
+LUFactor.solve(self, b, out=None, trans='N')
+```
+
+Solve A x=b, A.T x=b (`trans='T'`), or A.H x=b (`'H'`).
+
+#### `LUFactor.slogdet` {#api-LUFactor.slogdet}
+
+```python
+LUFactor.slogdet(self)
+```
+
+#### `LUFactor.determinant` {#api-LUFactor.determinant}
+
+```python
+LUFactor.determinant(self)
+```
+
+#### `LUFactor.__call__` {#api-LUFactor.__call__}
+
+```python
+LUFactor.__call__(self, b, out=None, trans='N')
+```
+
+Solve A x=b, A.T x=b (`trans='T'`), or A.H x=b (`'H'`).
+
+### `CholeskyFactor` {#api-CholeskyFactor}
+
+```python
+CholeskyFactor(A)
+```
+
+Reusable lower Cholesky factor of a positive-definite Hermitian matrix.
+
+#### `CholeskyFactor.solve` {#api-CholeskyFactor.solve}
+
+```python
+CholeskyFactor.solve(self, b, out=None)
+```
+
+#### `CholeskyFactor.logdet` {#api-CholeskyFactor.logdet}
+
+```python
+CholeskyFactor.logdet(self)
+```
+
+#### `CholeskyFactor.__call__` {#api-CholeskyFactor.__call__}
+
+```python
+CholeskyFactor.__call__(self, b, out=None)
+```
+
+### `QRFactor` {#api-QRFactor}
+
+```python
+QRFactor(A)
+```
+
+Packed Householder QR for full-column-rank least squares (m >= n).
+
+Reflector tails occupy the strict lower triangle; no dense Q is retained.
+Storage is O(m*n) and each solve needs O(m*nrhs) working memory.
+
+#### `QRFactor.solve` {#api-QRFactor.solve}
+
+```python
+QRFactor.solve(self, b, out=None)
+```
+
+#### `QRFactor.__call__` {#api-QRFactor.__call__}
+
+```python
+QRFactor.__call__(self, b, out=None)
+```
+
+### `lu_factor` {#api-lu_factor}
+
+```python
+lu_factor(A)
+```
+
+Factor A once for repeated linear solves; see `LUFactor`.
+
+### `cholesky_factor` {#api-cholesky_factor}
+
+```python
+cholesky_factor(A)
+```
+
+Factor a Hermitian positive-definite A for repeated solves.
+
+### `qr_factor` {#api-qr_factor}
+
+```python
+qr_factor(A)
+```
+
+Factor a full-column-rank A for repeated least-squares solves.
 
 ## `iterative`
 
@@ -108,29 +755,443 @@ Iterative solvers for linear systems.
 
 Two families: classical stationary splittings (Jacobi through SSOR) and Krylov subspace methods (CG through GMRES). Every solver accepts either a dense array or any object exposing ``@`` / ``matvec``, so the sparse types in ``quadrivium.linalg.sparse`` work unchanged.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `jacobi_iteration` | `(A, b, x0=None, tol: float = 1e-10, max_iter: int = 10000)` | Jacobi iteration ``x <- D^-1 (b - (L+U) x)``. |
-| `gauss_seidel` | `(A, b, x0=None, tol: float = 1e-10, max_iter: int = 10000)` | Gauss-Seidel: forward substitution against the lower triangle. |
-| `sor` | `(A, b, omega: float = 1.5, x0=None, tol: float = 1e-10, max_iter: int = 10000)` | Successive over-relaxation; ``0 < omega < 2`` is required for convergence. |
-| `ssor` | `(A, b, omega: float = 1.5, x0=None, tol: float = 1e-10, max_iter: int = 10000)` | Symmetric SOR: a forward sweep followed by a backward sweep. |
-| `richardson` | `(A, b, omega=None, x0=None, tol: float = 1e-10, max_iter: int = 10000)` | Richardson iteration ``x <- x + omega r``. |
-| `chebyshev_iteration` | `(A, b, lmin=None, lmax=None, x0=None, tol: float = 1e-10, max_iter: int = 1000)` | Chebyshev semi-iteration for SPD systems with a known spectral interval. |
-| `steepest_descent` | `(A, b, x0=None, tol: float = 1e-10, max_iter: int = 10000)` | Steepest descent for SPD systems (CG without conjugacy). |
-| `conjugate_gradient` | `(A, b, x0=None, tol: float = 1e-10, max_iter=None)` | Conjugate gradient for symmetric positive definite systems. |
-| `preconditioned_cg` | `(A, b, M=None, x0=None, tol: float = 1e-10, max_iter=None)` | Preconditioned CG; ``M`` applies ``M^-1`` and defaults to Jacobi. |
-| `minres` | `(A, b, x0=None, tol: float = 1e-10, max_iter=None)` | MINRES for symmetric (possibly indefinite) systems, via Lanczos + Givens. |
-| `gmres` | `(A, b, x0=None, tol: float = 1e-10, restart=None, max_iter=None, M=None)` | GMRES(m) with Givens rotations and optional left preconditioning. |
-| `bicg` | `(A, b, x0=None, tol: float = 1e-10, max_iter=None)` | Biconjugate gradient for general nonsymmetric systems. |
-| `bicgstab` | `(A, b, x0=None, tol: float = 1e-10, max_iter=None, M=None)` | BiCGSTAB: smoother convergence than BiCG, no transpose required. |
-| `cgs` | `(A, b, x0=None, tol: float = 1e-10, max_iter=None)` | Conjugate gradient squared: BiCG's polynomial applied twice. |
-| `cgnr` | `(A, b, x0=None, tol: float = 1e-10, max_iter=None)` | CG on the normal equations ``A'A x = A'b`` (works for rectangular ``A``). |
-| `lsqr` | `(A, b, damp: float = 0.0, tol: float = 1e-12, max_iter=None)` | LSQR for least squares ``min \|\|Ax - b\|\|`` with optional Tikhonov damping. |
-| `jacobi_preconditioner` | `(A)` | Diagonal (Jacobi) preconditioner as a callable applying ``M^-1``. |
-| `ssor_preconditioner` | `(A, omega: float = 1.0)` | SSOR preconditioner as a callable applying ``M^-1``. |
-| `incomplete_cholesky` | `(A, drop_tol: float = 0.0)` | Zero-fill incomplete Cholesky ``A ~ L L'`` respecting the sparsity of ``A``. |
-| `ilu0` | `(A)` | Zero-fill incomplete LU; returns ``(L, U)`` with the sparsity of ``A``. |
-| `optimal_sor_omega` | `(A) -> float` | Optimal SOR relaxation factor from the Jacobi spectral radius. |
+| [`jacobi_iteration`](#api-jacobi_iteration) | function | Jacobi iteration ``x <- D^-1 (b - (L+U) x)``. |
+| [`gauss_seidel`](#api-gauss_seidel) | function | Gauss-Seidel: forward substitution against the lower triangle. |
+| [`sor`](#api-sor) | function | Successive over-relaxation; ``0 < omega < 2`` is required for convergence. |
+| [`ssor`](#api-ssor) | function | Symmetric SOR: a forward sweep followed by a backward sweep. |
+| [`richardson`](#api-richardson) | function | Richardson iteration ``x <- x + omega r``. |
+| [`chebyshev_iteration`](#api-chebyshev_iteration) | function | Chebyshev semi-iteration for SPD systems with a known spectral interval. |
+| [`steepest_descent`](#api-steepest_descent) | function | Steepest descent for SPD systems (CG without conjugacy). |
+| [`conjugate_gradient`](#api-conjugate_gradient) | function | Conjugate gradient for symmetric positive definite systems. |
+| [`preconditioned_cg`](#api-preconditioned_cg) | function | Preconditioned CG; ``M`` applies ``M^-1`` and defaults to Jacobi. |
+| [`minres`](#api-minres) | function | MINRES for symmetric (possibly indefinite) systems, via Lanczos + Givens. |
+| [`gmres`](#api-gmres) | function | GMRES(m) with Givens rotations and optional left preconditioning. |
+| [`bicg`](#api-bicg) | function | Biconjugate gradient for general nonsymmetric systems. |
+| [`bicgstab`](#api-bicgstab) | function | BiCGSTAB: smoother convergence than BiCG, no transpose required. |
+| [`cgs`](#api-cgs) | function | Conjugate gradient squared: BiCG's polynomial applied twice. |
+| [`cgnr`](#api-cgnr) | function | CG on the normal equations, accepting sparse and matrix-free maps. |
+| [`lsqr`](#api-lsqr) | function | Golub-Kahan LSQR for sparse/matrix-free least squares. |
+| [`jacobi_preconditioner`](#api-jacobi_preconditioner) | function | Diagonal (Jacobi) preconditioner as a callable applying ``M^-1``. |
+| [`ssor_preconditioner`](#api-ssor_preconditioner) | function | SSOR preconditioner as a callable applying ``M^-1``. |
+| [`incomplete_cholesky`](#api-incomplete_cholesky) | function | Zero-fill incomplete Cholesky ``A ~ L L'`` respecting the sparsity of ``A``. |
+| [`ilu0`](#api-ilu0) | function | Zero-fill incomplete LU; returns ``(L, U)`` with the sparsity of ``A``. |
+| [`optimal_sor_omega`](#api-optimal_sor_omega) | function | Optimal SOR relaxation factor from the Jacobi spectral radius. |
+
+### `jacobi_iteration` {#api-jacobi_iteration}
+
+```python
+jacobi_iteration(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Jacobi iteration `x <- D^-1 (b - (L+U) x)`.
+
+Converges for strictly diagonally dominant systems.
+
+
+    store_history=False retains only the latest residual; history_stride keeps
+    every Nth residual plus the first and last. callback(x) receives a private
+    iterate snapshot; return True or raise StopIteration to stop.
+
+### `gauss_seidel` {#api-gauss_seidel}
+
+```python
+gauss_seidel(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Gauss-Seidel: forward substitution against the lower triangle.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `sor` {#api-sor}
+
+```python
+sor(
+    A,
+    b,
+    omega: float = 1.5,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Successive over-relaxation; `0 < omega < 2` is required for convergence.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `ssor` {#api-ssor}
+
+```python
+ssor(
+    A,
+    b,
+    omega: float = 1.5,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Symmetric SOR: a forward sweep followed by a backward sweep.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `richardson` {#api-richardson}
+
+```python
+richardson(
+    A,
+    b,
+    omega=None,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Richardson iteration `x <- x + omega r`.
+
+With `omega=None` uses the optimal `2/(lmin+lmax)` for SPD systems.
+
+
+    store_history=False retains only the latest residual; history_stride keeps
+    every Nth residual plus the first and last. callback(x) receives a private
+    iterate snapshot; return True or raise StopIteration to stop.
+
+### `chebyshev_iteration` {#api-chebyshev_iteration}
+
+```python
+chebyshev_iteration(
+    A,
+    b,
+    lmin=None,
+    lmax=None,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Chebyshev semi-iteration for SPD systems with a known spectral interval.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `steepest_descent` {#api-steepest_descent}
+
+```python
+steepest_descent(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Steepest descent for SPD systems (CG without conjugacy).
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `conjugate_gradient` {#api-conjugate_gradient}
+
+```python
+conjugate_gradient(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Conjugate gradient for symmetric positive definite systems.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `preconditioned_cg` {#api-preconditioned_cg}
+
+```python
+preconditioned_cg(
+    A,
+    b,
+    M=None,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Preconditioned CG; `M` applies `M^-1` and defaults to Jacobi.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `minres` {#api-minres}
+
+```python
+minres(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+MINRES for symmetric (possibly indefinite) systems, via Lanczos + Givens.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `gmres` {#api-gmres}
+
+```python
+gmres(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    restart=None,
+    max_iter=None,
+    M=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+GMRES(m) with Givens rotations and optional left preconditioning.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `bicg` {#api-bicg}
+
+```python
+bicg(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Biconjugate gradient for general nonsymmetric systems.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `bicgstab` {#api-bicgstab}
+
+```python
+bicgstab(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    M=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+BiCGSTAB: smoother convergence than BiCG, no transpose required.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `cgs` {#api-cgs}
+
+```python
+cgs(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Conjugate gradient squared: BiCG's polynomial applied twice.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `cgnr` {#api-cgnr}
+
+```python
+cgnr(
+    A,
+    b,
+    x0=None,
+    tol: float = 1e-10,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+CG on the normal equations, accepting sparse and matrix-free maps.
+
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
+
+### `lsqr` {#api-lsqr}
+
+```python
+lsqr(
+    A,
+    b,
+    damp: float = 0.0,
+    tol: float = 1e-12,
+    max_iter=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Golub-Kahan LSQR for sparse/matrix-free least squares.
+
+Damping solves `min ||A x-b||² + damp² ||x||²`. Convergence is checked
+against the actual normal residual, including inconsistent systems, rather
+than assuming the data residual can reach zero.
+
+
+    store_history=False retains only the latest residual; history_stride keeps
+    every Nth residual plus the first and last. callback(x) receives a private
+    iterate snapshot; return True or raise StopIteration to stop.
+
+### `jacobi_preconditioner` {#api-jacobi_preconditioner}
+
+```python
+jacobi_preconditioner(A)
+```
+
+Diagonal (Jacobi) preconditioner as a callable applying `M^-1`.
+
+### `ssor_preconditioner` {#api-ssor_preconditioner}
+
+```python
+ssor_preconditioner(A, omega: float = 1.0)
+```
+
+SSOR preconditioner as a callable applying `M^-1`.
+
+### `incomplete_cholesky` {#api-incomplete_cholesky}
+
+```python
+incomplete_cholesky(A, drop_tol: float = 0.0)
+```
+
+Zero-fill incomplete Cholesky `A ~ L L'` respecting the sparsity of `A`.
+
+### `ilu0` {#api-ilu0}
+
+```python
+ilu0(A)
+```
+
+Zero-fill incomplete LU; returns `(L, U)` with the sparsity of `A`.
+
+### `optimal_sor_omega` {#api-optimal_sor_omega}
+
+```python
+optimal_sor_omega(A) -> float
+```
+
+Optimal SOR relaxation factor from the Jacobi spectral radius.
+
+Valid for consistently ordered matrices with a real Jacobi spectrum.
 
 ## `lstsq`
 
@@ -140,21 +1201,133 @@ Least squares and regularization.
 
 The four classical routes to ``min ||Ax-b||`` -- normal equations, QR, SVD and the iterative Krylov methods -- plus the regularizers used when the problem is rank deficient or ill-posed.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `normal_equations` | `(A, b) -> np.ndarray` | Solve ``A'A x = A'b`` via Cholesky. |
-| `qr_least_squares` | `(A, b) -> np.ndarray` | Least squares by Householder QR -- the numerically preferred default. |
-| `svd_least_squares` | `(A, b, rcond: float = 1e-15)` | Minimum-norm least squares via the SVD; handles rank deficiency. |
-| `pseudoinverse` | `(A, rcond: float = 1e-15) -> np.ndarray` | Moore-Penrose pseudoinverse from the SVD. |
-| `ridge_regression` | `(A, b, alpha: float = 1.0) -> np.ndarray` | L2-regularized solution ``(A'A + alpha I)^-1 A'b``. |
-| `tikhonov` | `(A, b, alpha: float = 1.0, L=None) -> np.ndarray` | General Tikhonov regularization ``min \|\|Ax-b\|\|^2 + alpha \|\|L x\|\|^2``. |
-| `truncated_svd` | `(A, b, k: int) -> np.ndarray` | Least squares keeping only the ``k`` largest singular values. |
-| `total_least_squares` | `(A, b)` | Total least squares: errors in both ``A`` and ``b`` (orthogonal regression). |
-| `weighted_least_squares` | `(A, b, weights) -> np.ndarray` | Weighted least squares ``min sum w_i (a_i'x - b_i)^2``. |
-| `constrained_least_squares` | `(A, b, C, d)` | Equality-constrained least squares: minimize ``\|\|Ax-b\|\|`` s.t. ``Cx = d``. |
-| `nonnegative_least_squares` | `(A, b, tol: float = 1e-10, max_iter: int = 300)` | Lawson-Hanson active set algorithm for ``min \|\|Ax-b\|\|`` with ``x >= 0``. |
-| `lsqr_least_squares` | `(A, b, damp: float = 0.0, **kwargs)` | Iterative least squares through LSQR (large or sparse problems). |
-| `residual_analysis` | `(A, b, x)` | Diagnostics for a fitted model: residual, R^2, RMSE and standard errors. |
+| [`normal_equations`](#api-normal_equations) | function | Solve ``A'A x = A'b`` via Cholesky. |
+| [`qr_least_squares`](#api-qr_least_squares) | function | Least squares by Householder QR -- the numerically preferred default. |
+| [`svd_least_squares`](#api-svd_least_squares) | function | Minimum-norm least squares via the SVD; handles rank deficiency. |
+| [`pseudoinverse`](#api-pseudoinverse) | function | Moore-Penrose pseudoinverse from the SVD. |
+| [`ridge_regression`](#api-ridge_regression) | function | L2-regularized solution ``(A'A + alpha I)^-1 A'b``. |
+| [`tikhonov`](#api-tikhonov) | function | General Tikhonov regularization ``min \|\|Ax-b\|\|^2 + alpha \|\|L x\|\|^2``. |
+| [`truncated_svd`](#api-truncated_svd) | function | Least squares keeping only the ``k`` largest singular values. |
+| [`total_least_squares`](#api-total_least_squares) | function | Total least squares: errors in both ``A`` and ``b`` (orthogonal regression). |
+| [`weighted_least_squares`](#api-weighted_least_squares) | function | Weighted least squares ``min sum w_i (a_i'x - b_i)^2``. |
+| [`constrained_least_squares`](#api-constrained_least_squares) | function | Equality-constrained least squares: minimize ``\|\|Ax-b\|\|`` s.t. ``Cx = d``. |
+| [`nonnegative_least_squares`](#api-nonnegative_least_squares) | function | Lawson-Hanson active set algorithm for ``min \|\|Ax-b\|\|`` with ``x >= 0``. |
+| [`lsqr_least_squares`](#api-lsqr_least_squares) | function | Iterative least squares through LSQR (large or sparse problems). |
+| [`residual_analysis`](#api-residual_analysis) | function | Diagnostics for a fitted model: residual, R^2, RMSE and standard errors. |
+
+### `normal_equations` {#api-normal_equations}
+
+```python
+normal_equations(A, b) -> np.ndarray
+```
+
+Solve `A'A x = A'b` via Cholesky.
+
+Fast but squares the condition number; prefer QR when `A` is ill-conditioned.
+
+### `qr_least_squares` {#api-qr_least_squares}
+
+```python
+qr_least_squares(A, b) -> np.ndarray
+```
+
+Least squares by Householder QR -- the numerically preferred default.
+
+Applies the reflectors directly to `b`, using `O(m*n)` workspace for
+an `m` by `n` matrix instead of forming an `m` by `m` Q. Requires
+at least as many observations as columns and full column rank.
+
+### `svd_least_squares` {#api-svd_least_squares}
+
+```python
+svd_least_squares(A, b, rcond: float = 1e-15)
+```
+
+Minimum-norm least squares via the SVD; handles rank deficiency.
+
+### `pseudoinverse` {#api-pseudoinverse}
+
+```python
+pseudoinverse(A, rcond: float = 1e-15) -> np.ndarray
+```
+
+Moore-Penrose pseudoinverse from the SVD.
+
+### `ridge_regression` {#api-ridge_regression}
+
+```python
+ridge_regression(A, b, alpha: float = 1.0) -> np.ndarray
+```
+
+L2-regularized solution `(A'A + alpha I)^-1 A'b`.
+
+### `tikhonov` {#api-tikhonov}
+
+```python
+tikhonov(A, b, alpha: float = 1.0, L=None) -> np.ndarray
+```
+
+General Tikhonov regularization `min ||Ax-b||^2 + alpha ||L x||^2`.
+
+### `truncated_svd` {#api-truncated_svd}
+
+```python
+truncated_svd(A, b, k: int) -> np.ndarray
+```
+
+Least squares keeping only the `k` largest singular values.
+
+### `total_least_squares` {#api-total_least_squares}
+
+```python
+total_least_squares(A, b)
+```
+
+Total least squares: errors in both `A` and `b` (orthogonal regression).
+
+### `weighted_least_squares` {#api-weighted_least_squares}
+
+```python
+weighted_least_squares(A, b, weights) -> np.ndarray
+```
+
+Weighted least squares `min sum w_i (a_i'x - b_i)^2`.
+
+### `constrained_least_squares` {#api-constrained_least_squares}
+
+```python
+constrained_least_squares(A, b, C, d)
+```
+
+Equality-constrained least squares: minimize `||Ax-b||` s.t. `Cx = d`.
+
+Solved through the KKT system.
+
+### `nonnegative_least_squares` {#api-nonnegative_least_squares}
+
+```python
+nonnegative_least_squares(A, b, tol: float = 1e-10, max_iter: int = 300)
+```
+
+Lawson-Hanson active set algorithm for `min ||Ax-b||` with `x >= 0`.
+
+### `lsqr_least_squares` {#api-lsqr_least_squares}
+
+```python
+lsqr_least_squares(A, b, damp: float = 0.0, **kwargs)
+```
+
+Iterative least squares through LSQR (large or sparse problems).
+
+### `residual_analysis` {#api-residual_analysis}
+
+```python
+residual_analysis(A, b, x)
+```
+
+Diagnostics for a fitted model: residual, R^2, RMSE and standard errors.
 
 ## `matfun`
 
@@ -164,31 +1337,444 @@ Matrix functions, matrix equations and randomized decompositions.
 
 Three related themes that the classical factorizations leave uncovered: evaluating ``f(A)`` for a matrix argument, solving equations whose unknown is a matrix (Sylvester, Lyapunov, Riccati), and building low-rank approximations by random projection.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `sqrtm` | `(A, tol: float = 1e-13, max_iter: int = 100)` | Principal matrix square root ``X`` with ``X @ X == A``. |
-| `logm` | `(A, tol: float = 1e-13, max_iter: int = 64)` | Principal matrix logarithm by inverse scaling and squaring. |
-| `signm` | `(A, **kwargs)` | Matrix sign function (alias for ``matrix_sign_iteration``). |
-| `matrix_sign_iteration` | `(A, tol: float = 1e-13, max_iter: int = 100)` | Matrix sign function by the scaled Newton iteration. |
-| `sylvester` | `(A, B, C)` | Solve the Sylvester equation ``A X + X B = C``. |
-| `lyapunov` | `(A, Q)` | Solve the continuous Lyapunov equation ``A X + X A' + Q = 0``. |
-| `discrete_lyapunov` | `(A, Q, tol: float = 1e-14, max_iter: int = 200)` | Solve the discrete Lyapunov (Stein) equation ``A X A' - X + Q = 0``. |
-| `care_newton` | `(A, B, Q, R, X0=None, tol: float = 1e-12, max_iter: int = 100)` | Continuous algebraic Riccati equation ``A'X + XA - XBR^-1B'X + Q = 0``. |
-| `kron` | `(A, B)` | Kronecker product. |
-| `vec` | `(A)` | Column-major (Fortran) vectorization, the convention Kronecker identities use. |
-| `unvec` | `(v, shape)` | Inverse of ``vec``. |
-| `condition_estimate` | `(A, max_iter: int = 20)` | Estimate the 1-norm condition number without forming the inverse. |
-| `randomized_range_finder` | `(A, size: int, power_iterations: int = 2, rng=None)` | Orthonormal basis for an approximate range of ``A``, by random projection. |
-| `randomized_svd` | `(A, k: int, oversampling: int = 10, power_iterations: int = 2, rng=None)` | Approximate truncated SVD by random projection (Halko-Martinsson-Tropp). |
-| `randomized_eigh` | `(A, k: int, oversampling: int = 10, power_iterations: int = 2, rng=None)` | Approximate dominant eigenpairs of a symmetric matrix by random projection. |
-| `nystrom_approximation` | `(A, k: int, rng=None)` | Nystrom low-rank approximation of a symmetric positive semidefinite matrix. |
-| `interpolative_decomposition` | `(A, k: int)` | Interpolative decomposition ``A ~ A[:, cols] @ Z``. |
-| `cur_decomposition` | `(A, k: int, rng=None)` | CUR decomposition ``A ~ C U R`` from actual columns and rows. |
-| `subspace_iteration` | `(A, k: int = 1, tol: float = 1e-10, max_iter: int = 1000, V0=None, rng=None)` | Orthogonal (simultaneous) iteration for the ``k`` dominant eigenpairs. |
-| `lobpcg` | `(A, k: int = 1, B=None, X0=None, tol: float = 1e-10, max_iter: int = 500, precond=None, rng=None)` | Locally optimal block preconditioned conjugate gradient. |
-| `generalized_eigh` | `(A, B, tol: float = 1e-12)` | Symmetric-definite generalized eigenproblem ``A x = lambda B x``. |
-| `qz_decomposition` | `(A, B, tol: float = 1e-12, max_iter: int = 2000)` | Generalized Schur (QZ) form of the pencil ``A - lambda B``. |
-| `qz_eigenvalues` | `(S, T, tol: float = 1e-12)` | Generalized eigenvalues from a QZ pair ``(S, T)``. |
+| [`sqrtm`](#api-sqrtm) | function | Principal matrix square root ``X`` with ``X @ X == A``. |
+| [`logm`](#api-logm) | function | Principal matrix logarithm by inverse scaling and squaring. |
+| [`signm`](#api-signm) | function | Matrix sign function (alias for ``matrix_sign_iteration``). |
+| [`matrix_sign_iteration`](#api-matrix_sign_iteration) | function | Matrix sign function by the scaled Newton iteration. |
+| [`sylvester`](#api-sylvester) | function | Solve the Sylvester equation ``A X + X B = C``. |
+| [`lyapunov`](#api-lyapunov) | function | Solve the continuous Lyapunov equation ``A X + X A' + Q = 0``. |
+| [`discrete_lyapunov`](#api-discrete_lyapunov) | function | Solve the discrete Lyapunov (Stein) equation ``A X A' - X + Q = 0``. |
+| [`care_newton`](#api-care_newton) | function | Continuous algebraic Riccati equation ``A'X + XA - XBR^-1B'X + Q = 0``. |
+| [`kron`](#api-kron) | function | Kronecker product. |
+| [`vec`](#api-vec) | function | Column-major (Fortran) vectorization, the convention Kronecker identities use. |
+| [`unvec`](#api-unvec) | function | Inverse of ``vec``. |
+| [`condition_estimate`](#api-condition_estimate) | function | Estimate the 1-norm condition number without forming the inverse. |
+| [`randomized_range_finder`](#api-randomized_range_finder) | function | Orthonormal basis for an approximate range of ``A``, by random projection. |
+| [`randomized_svd`](#api-randomized_svd) | function | Approximate truncated SVD by random projection (Halko-Martinsson-Tropp). |
+| [`randomized_eigh`](#api-randomized_eigh) | function | Approximate dominant eigenpairs of a symmetric matrix by random projection. |
+| [`nystrom_approximation`](#api-nystrom_approximation) | function | Nystrom low-rank approximation of a symmetric positive semidefinite matrix. |
+| [`interpolative_decomposition`](#api-interpolative_decomposition) | function | Interpolative decomposition ``A ~ A[:, cols] @ Z``. |
+| [`cur_decomposition`](#api-cur_decomposition) | function | CUR decomposition ``A ~ C U R`` from actual columns and rows. |
+| [`subspace_iteration`](#api-subspace_iteration) | function | Orthogonal (simultaneous) iteration for the ``k`` dominant eigenpairs. |
+| [`lobpcg`](#api-lobpcg) | function | Locally optimal block preconditioned conjugate gradient. |
+| [`generalized_eigh`](#api-generalized_eigh) | function | Symmetric-definite generalized eigenproblem ``A x = lambda B x``. |
+| [`qz_decomposition`](#api-qz_decomposition) | function | Generalized Schur (QZ) form of the pencil ``A - lambda B``. |
+| [`qz_eigenvalues`](#api-qz_eigenvalues) | function | Generalized eigenvalues from a QZ pair ``(S, T)``. |
+
+### `sqrtm` {#api-sqrtm}
+
+```python
+sqrtm(A, tol: float = 1e-13, max_iter: int = 100)
+```
+
+Principal matrix square root `X` with `X @ X == A`.
+
+Uses the Denman-Beavers iteration in its *scaled* form.  The unscaled
+iteration converges quadratically but can take hundreds of steps on a
+badly scaled matrix; the determinant-based scaling below equalizes the
+eigenvalue magnitudes each step and typically finishes in under ten.
+
+A matrix with a negative real eigenvalue has no real square root, and the
+result is then complex.
+
+### `logm` {#api-logm}
+
+```python
+logm(A, tol: float = 1e-13, max_iter: int = 64)
+```
+
+Principal matrix logarithm by inverse scaling and squaring.
+
+Repeated square roots pull the spectrum toward 1, where the Pade
+approximant to `log(I + X)` is accurate; each root taken costs one
+doubling of the answer at the end.  Squaring *up* front instead would
+magnify rounding error, which is why the scaling runs in this direction.
+
+### `signm` {#api-signm}
+
+```python
+signm(A, **kwargs)
+```
+
+Matrix sign function (alias for `matrix_sign_iteration`).
+
+### `matrix_sign_iteration` {#api-matrix_sign_iteration}
+
+```python
+matrix_sign_iteration(A, tol: float = 1e-13, max_iter: int = 100)
+```
+
+Matrix sign function by the scaled Newton iteration.
+
+`sign(A)` maps each eigenvalue to `+-1` by the sign of its real part,
+so it splits the spectrum across the imaginary axis.  Purely imaginary
+eigenvalues make it undefined, and the iteration will fail to converge.
+
+### `sylvester` {#api-sylvester}
+
+```python
+sylvester(A, B, C)
+```
+
+Solve the Sylvester equation `A X + X B = C`.
+
+Uses the Bartels-Stewart algorithm: reduce `A` and `B` to real Schur
+form, solve the resulting quasi-triangular system one column block at a
+time, then transform back.  This costs `O(n^3)`, against the `O(n^6)`
+of forming the `n^2`-by-`n^2` Kronecker system directly -- the reason
+the algorithm exists.
+
+A solution exists and is unique iff `A` and `-B` share no eigenvalue.
+
+### `lyapunov` {#api-lyapunov}
+
+```python
+lyapunov(A, Q)
+```
+
+Solve the continuous Lyapunov equation `A X + X A' + Q = 0`.
+
+A special case of Sylvester with `B = A'` and `C = -Q`.  For stable
+`A` and positive semidefinite `Q` the solution is the controllability
+Gramian and is itself positive semidefinite.
+
+### `discrete_lyapunov` {#api-discrete_lyapunov}
+
+```python
+discrete_lyapunov(A, Q, tol: float = 1e-14, max_iter: int = 200)
+```
+
+Solve the discrete Lyapunov (Stein) equation `A X A' - X + Q = 0`.
+
+Squaring ("doubling") iteration: `X <- X + A X A'` with `A <- A A`
+doubles the number of terms of the series `sum A^k Q (A')^k` per step,
+so it converges in `O(log(1/eps))` steps rather than linearly.  Requires
+`A` to have spectral radius below 1.
+
+### `care_newton` {#api-care_newton}
+
+```python
+care_newton(A, B, Q, R, X0=None, tol: float = 1e-12, max_iter: int = 100)
+```
+
+Continuous algebraic Riccati equation `A'X + XA - XBR^-1B'X + Q = 0`.
+
+Newton-Kleinman iteration: each step solves one Lyapunov equation for the
+closed-loop matrix, and converges quadratically once inside the basin.
+Returns `(X, K)` with the stabilizing gain `K = R^-1 B' X`.
+
+### `kron` {#api-kron}
+
+```python
+kron(A, B)
+```
+
+Kronecker product.
+
+### `vec` {#api-vec}
+
+```python
+vec(A)
+```
+
+Column-major (Fortran) vectorization, the convention Kronecker identities use.
+
+### `unvec` {#api-unvec}
+
+```python
+unvec(v, shape)
+```
+
+Inverse of `vec`.
+
+### `condition_estimate` {#api-condition_estimate}
+
+```python
+condition_estimate(A, max_iter: int = 20)
+```
+
+Estimate the 1-norm condition number without forming the inverse.
+
+Hager's algorithm treats `max ||A^-1 x||_1 / ||x||_1` as a convex
+maximization over the unit ball and hill-climbs on the vertices.  It costs
+a handful of solves instead of the `n` needed to build `A^-1`, and in
+practice lands within a factor of three of the true value.
+
+### `randomized_range_finder` {#api-randomized_range_finder}
+
+```python
+randomized_range_finder(A, size: int, power_iterations: int = 2, rng=None)
+```
+
+Orthonormal basis for an approximate range of `A`, by random projection.
+
+`A @ Omega` with Gaussian `Omega` captures the dominant subspace with
+high probability.  The power iterations `(A A')^q` sharpen the spectral
+gap -- essential when the singular values decay slowly -- and the
+re-orthogonalization between them is what keeps that step from collapsing
+numerically onto the leading singular vector.
+
+### `randomized_svd` {#api-randomized_svd}
+
+```python
+randomized_svd(A, k: int, oversampling: int = 10, power_iterations: int = 2, rng=None)
+```
+
+Approximate truncated SVD by random projection (Halko-Martinsson-Tropp).
+
+Costs one pass over `A` per power iteration rather than a full `O(mn^2)`
+factorization.  `oversampling` extra columns make the probability of
+missing part of the dominant subspace negligible; they are discarded at the
+end.
+
+### `randomized_eigh` {#api-randomized_eigh}
+
+```python
+randomized_eigh(A, k: int, oversampling: int = 10, power_iterations: int = 2, rng=None)
+```
+
+Approximate dominant eigenpairs of a symmetric matrix by random projection.
+
+### `nystrom_approximation` {#api-nystrom_approximation}
+
+```python
+nystrom_approximation(A, k: int, rng=None)
+```
+
+Nystrom low-rank approximation of a symmetric positive semidefinite matrix.
+
+Cheaper than `randomized_svd` -- one matrix product, no power
+iterations -- and, unlike a general low-rank truncation, the result stays
+positive semidefinite, which matters when it is used as a kernel or a
+preconditioner.
+
+### `interpolative_decomposition` {#api-interpolative_decomposition}
+
+```python
+interpolative_decomposition(A, k: int)
+```
+
+Interpolative decomposition `A ~ A[:, cols] @ Z`.
+
+Picks `k` actual columns of `A` by pivoted QR, so the basis vectors are
+real columns of the data rather than abstract singular vectors -- the point
+of the decomposition when interpretability matters.  Returns `(cols, Z)`.
+
+### `cur_decomposition` {#api-cur_decomposition}
+
+```python
+cur_decomposition(A, k: int, rng=None)
+```
+
+CUR decomposition `A ~ C U R` from actual columns and rows.
+
+Both factors are sub-matrices of `A`, so sparsity and non-negativity
+survive the approximation -- neither of which an SVD preserves.  Returns
+`(cols, rows, U)`.
+
+### `subspace_iteration` {#api-subspace_iteration}
+
+```python
+subspace_iteration(
+    A,
+    k: int = 1,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    V0=None,
+    rng=None,
+)
+```
+
+Orthogonal (simultaneous) iteration for the `k` dominant eigenpairs.
+
+The block generalization of the power method: re-orthonormalizing the whole
+block each step is what stops every column collapsing onto the same
+dominant eigenvector.
+
+### `lobpcg` {#api-lobpcg}
+
+```python
+lobpcg(
+    A,
+    k: int = 1,
+    B=None,
+    X0=None,
+    tol: float = 1e-10,
+    max_iter: int = 500,
+    precond=None,
+    rng=None,
+)
+```
+
+Locally optimal block preconditioned conjugate gradient.
+
+Finds the `k` *smallest* eigenvalues of a symmetric (generalized) problem
+`A x = lambda B x`.  Each step minimizes the Rayleigh quotient over the
+span of the current block, its residual and the previous step -- the last
+of these is what supplies the conjugate-gradient acceleration and makes it
+much faster than plain inverse iteration without needing any factorization.
+
+### `generalized_eigh` {#api-generalized_eigh}
+
+```python
+generalized_eigh(A, B, tol: float = 1e-12)
+```
+
+Symmetric-definite generalized eigenproblem `A x = lambda B x`.
+
+Reduces to a standard problem through the Cholesky factor of `B`:
+`A x = lambda B x` becomes `(L^-1 A L^-T) y = lambda y` with `y = L' x`.
+Forming `B^-1 A` instead would destroy the symmetry and with it the
+guarantee of real eigenvalues.  `B` must be positive definite.
+
+### `qz_decomposition` {#api-qz_decomposition}
+
+```python
+qz_decomposition(A, B, tol: float = 1e-12, max_iter: int = 2000)
+```
+
+Generalized Schur (QZ) form of the pencil `A - lambda B`.
+
+Returns `(Q, Z, S, T)` with `Q' A Z = S` and `Q' B Z = T`, both
+upper triangular (quasi-triangular in the real case).  The generalized
+eigenvalues are the ratios `S_ii / T_ii`; an infinite eigenvalue shows
+up as `T_ii = 0`, which is exactly the case a plain `B^-1 A` reduction
+cannot represent.
+
+### `qz_eigenvalues` {#api-qz_eigenvalues}
+
+```python
+qz_eigenvalues(S, T, tol: float = 1e-12)
+```
+
+Generalized eigenvalues from a QZ pair `(S, T)`.
+
+Reading `diag(S) / diag(T)` is correct only where `S` is genuinely
+triangular.  A real pencil with a complex-conjugate pair leaves a 2-by-2
+block, and there the eigenvalues come from `det(S_blk - lambda T_blk) = 0`
+instead.  A zero diagonal entry of `T` is an infinite eigenvalue and is
+returned as `inf`.
+
+The 2-by-2 blocks are identified by a *relative* test.  `S` is formed as
+a matrix product, so its subdiagonal carries round-off of order 1e-17 where
+the exact value is zero; an exact `!= 0` test reads every one of those as
+a spurious complex pair and returns nonsense.
+
+## `operators`
+
+<small>`quadrivium.linalg.operators`</small>
+
+Composable matrix-free linear maps with explicit adjoint products.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`LinearOperator`](#api-LinearOperator) | class | A linear map that stores functions instead of matrix entries. |
+| [`aslinearoperator`](#api-aslinearoperator) | function | Wrap a dense array or sparse/matrix-free object without densifying it. |
+
+### `LinearOperator` {#api-LinearOperator}
+
+```python
+LinearOperator(shape, matvec, rmatvec=None, matmat=None, dtype=float)
+```
+
+A linear map that stores functions instead of matrix entries.
+
+`rmatvec` applies the conjugate transpose, as required by least-squares
+solvers. `T` is the ordinary transpose and `H` the adjoint. Products,
+sums and scalar multiples remain lazy. A supplied `matmat` can batch
+columns; otherwise only one column-sized temporary is needed at a time.
+
+#### `LinearOperator.matvec` {#api-LinearOperator.matvec}
+
+```python
+LinearOperator.matvec(self, x)
+```
+
+#### `LinearOperator.rmatvec` {#api-LinearOperator.rmatvec}
+
+```python
+LinearOperator.rmatvec(self, x)
+```
+
+#### `LinearOperator.matmat` {#api-LinearOperator.matmat}
+
+```python
+LinearOperator.matmat(self, x)
+```
+
+#### `LinearOperator.__call__` {#api-LinearOperator.__call__}
+
+```python
+LinearOperator.__call__(self, x)
+```
+
+Call self as a function.
+
+#### `LinearOperator.__matmul__` {#api-LinearOperator.__matmul__}
+
+```python
+LinearOperator.__matmul__(self, other)
+```
+
+#### `LinearOperator.H` {#api-LinearOperator.H}
+
+Read-only property.
+
+#### `LinearOperator.T` {#api-LinearOperator.T}
+
+Read-only property.
+
+#### `LinearOperator.transpose` {#api-LinearOperator.transpose}
+
+```python
+LinearOperator.transpose(self)
+```
+
+#### `LinearOperator.adjoint` {#api-LinearOperator.adjoint}
+
+```python
+LinearOperator.adjoint(self)
+```
+
+#### `LinearOperator.__mul__` {#api-LinearOperator.__mul__}
+
+```python
+LinearOperator.__mul__(self, scalar)
+```
+
+#### `LinearOperator.__rmul__` {#api-LinearOperator.__rmul__}
+
+```python
+LinearOperator.__rmul__(self, scalar)
+```
+
+#### `LinearOperator.__neg__` {#api-LinearOperator.__neg__}
+
+```python
+LinearOperator.__neg__(self)
+```
+
+#### `LinearOperator.__add__` {#api-LinearOperator.__add__}
+
+```python
+LinearOperator.__add__(self, other)
+```
+
+#### `LinearOperator.__sub__` {#api-LinearOperator.__sub__}
+
+```python
+LinearOperator.__sub__(self, other)
+```
+
+### `aslinearoperator` {#api-aslinearoperator}
+
+```python
+aslinearoperator(A)
+```
+
+Wrap a dense array or sparse/matrix-free object without densifying it.
 
 ## `sparse`
 
@@ -198,17 +1784,632 @@ Sparse matrix formats and sparse-specific algorithms.
 
 Implements COO / CSR / CSC / DIA storage with the operations the iterative solvers need, plus reordering and sparse direct factorization.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`COOMatrix` | `(rows, cols, data, shape=None)` | Coordinate format: parallel ``(row, col, data)`` arrays. Cheap to build. |
-| *class*&nbsp;`CSRMatrix` | `(indptr, indices, data, shape)` | Compressed sparse row: the workhorse format for matrix-vector products. |
-| *class*&nbsp;`CSCMatrix` | `(indptr, indices, data, shape)` | Compressed sparse column: efficient column slicing and transposed products. |
-| *class*&nbsp;`DIAMatrix` | `(data, offsets, shape)` | Diagonal storage: the natural format for finite-difference stencils. |
-| `from_dense` | `(A, tol: float = 0.0, fmt: str = 'csr')` | Convert a dense array to a sparse container, dropping entries <= ``tol``. |
-| `identity_sparse` | `(n: int, fmt: str = 'csr')` | Sparse identity of order ``n``. |
-| `diags` | `(diagonals, offsets, shape=None)` | Build a ``DIAMatrix`` from diagonals and their offsets. |
-| `spmv` | `(A, v)` | Sparse matrix-vector product for any container in this module. |
-| `sparse_solve` | `(A, b, method: str = 'cg', **kwargs)` | Solve a sparse system with a matrix-free Krylov method. |
-| `reverse_cuthill_mckee` | `(A)` | Reverse Cuthill-McKee ordering; returns a permutation reducing bandwidth. |
-| `bandwidth` | `(A) -> tuple` | Lower and upper bandwidths of a (dense or sparse) matrix. |
-| `sparsity` | `(A) -> float` | Fraction of entries that are exactly zero (one for an empty matrix). |
+| [`COOMatrix`](#api-COOMatrix) | class | Coordinate format: parallel ``(row, col, data)`` arrays. Cheap to build. |
+| [`CSRMatrix`](#api-CSRMatrix) | class | Compressed sparse row: the workhorse format for matrix-vector products. |
+| [`CSCMatrix`](#api-CSCMatrix) | class | Compressed sparse column: efficient column slicing and transposed products. |
+| [`DIAMatrix`](#api-DIAMatrix) | class | Diagonal storage: the natural format for finite-difference stencils. |
+| [`from_dense`](#api-from_dense) | function | Convert a dense array to a sparse container, dropping entries <= ``tol``. |
+| [`identity_sparse`](#api-identity_sparse) | function | Sparse identity of order ``n``. |
+| [`diags`](#api-diags) | function | Build a ``DIAMatrix`` from diagonals and their offsets. |
+| [`spmv`](#api-spmv) | function | Sparse matrix-vector product for any container in this module. |
+| [`sparse_solve`](#api-sparse_solve) | function | Solve a sparse system with a matrix-free Krylov method. |
+| [`reverse_cuthill_mckee`](#api-reverse_cuthill_mckee) | function | Reverse Cuthill-McKee ordering; returns a permutation reducing bandwidth. |
+| [`bandwidth`](#api-bandwidth) | function | Lower and upper bandwidths of a (dense or sparse) matrix. |
+| [`sparsity`](#api-sparsity) | function | Fraction of entries that are exactly zero (one for an empty matrix). |
+| [`spmm`](#api-spmm) | function | Sparse/sparse or sparse/dense matrix product without dense conversion. |
+| [`sparse_triangular_solve`](#api-sparse_triangular_solve) | function | Solve a CSR/CSC triangular system, including multiple right-hand sides. |
+| [`ilu_preconditioner`](#api-ilu_preconditioner) | function | Factor sparse A with ILU(0), returning a reusable inverse application. |
+| [`ichol_preconditioner`](#api-ichol_preconditioner) | function | Factor sparse SPD A with IC(0), returning a reusable inverse application. |
+
+### `COOMatrix` {#api-COOMatrix}
+
+```python
+COOMatrix(rows, cols, data, shape=None)
+```
+
+Coordinate format: parallel `(row, col, data)` arrays. Cheap to build.
+
+Base classes: `_SparseBase`.
+
+#### `COOMatrix.nnz` {#api-COOMatrix.nnz}
+
+Read-only property.
+
+#### `COOMatrix.matvec` {#api-COOMatrix.matvec}
+
+```python
+COOMatrix.matvec(self, v)
+```
+
+#### `COOMatrix.tocsr` {#api-COOMatrix.tocsr}
+
+```python
+COOMatrix.tocsr(self)
+```
+
+#### `COOMatrix.transpose` {#api-COOMatrix.transpose}
+
+```python
+COOMatrix.transpose(self)
+```
+
+#### `COOMatrix.__matmul__` {#api-COOMatrix.__matmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.__matmul__(self, v)
+```
+
+#### `COOMatrix.dtype` {#api-COOMatrix.dtype}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `COOMatrix.T` {#api-COOMatrix.T}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `COOMatrix.H` {#api-COOMatrix.H}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `COOMatrix.rmatvec` {#api-COOMatrix.rmatvec}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.rmatvec(self, v)
+```
+
+#### `COOMatrix.matmat` {#api-COOMatrix.matmat}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.matmat(self, v)
+```
+
+#### `COOMatrix.__rmatmul__` {#api-COOMatrix.__rmatmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.__rmatmul__(self, v)
+```
+
+#### `COOMatrix.tocsc` {#api-COOMatrix.tocsc}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.tocsc(self)
+```
+
+#### `COOMatrix.diagonal` {#api-COOMatrix.diagonal}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.diagonal(self)
+```
+
+#### `COOMatrix.sum_duplicates` {#api-COOMatrix.sum_duplicates}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.sum_duplicates(self)
+```
+
+Return sorted canonical CSR storage, combining duplicate entries.
+
+#### `COOMatrix.todense` {#api-COOMatrix.todense}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.todense(self) -> np.ndarray
+```
+
+#### `COOMatrix.density` {#api-COOMatrix.density}
+
+Inherited from `_SparseBase`.
+
+```python
+COOMatrix.density(self) -> float
+```
+
+### `CSRMatrix` {#api-CSRMatrix}
+
+```python
+CSRMatrix(indptr, indices, data, shape)
+```
+
+Compressed sparse row: the workhorse format for matrix-vector products.
+
+Base classes: `_SparseBase`.
+
+#### `CSRMatrix.nnz` {#api-CSRMatrix.nnz}
+
+Read-only property.
+
+#### `CSRMatrix.matvec` {#api-CSRMatrix.matvec}
+
+```python
+CSRMatrix.matvec(self, v)
+```
+
+#### `CSRMatrix.rmatvec` {#api-CSRMatrix.rmatvec}
+
+```python
+CSRMatrix.rmatvec(self, v)
+```
+
+Product with the transpose, `A' v`.
+
+#### `CSRMatrix.diagonal` {#api-CSRMatrix.diagonal}
+
+```python
+CSRMatrix.diagonal(self)
+```
+
+#### `CSRMatrix.tocoo` {#api-CSRMatrix.tocoo}
+
+```python
+CSRMatrix.tocoo(self)
+```
+
+#### `CSRMatrix.__matmul__` {#api-CSRMatrix.__matmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.__matmul__(self, v)
+```
+
+#### `CSRMatrix.dtype` {#api-CSRMatrix.dtype}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `CSRMatrix.T` {#api-CSRMatrix.T}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `CSRMatrix.H` {#api-CSRMatrix.H}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `CSRMatrix.transpose` {#api-CSRMatrix.transpose}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.transpose(self)
+```
+
+#### `CSRMatrix.matmat` {#api-CSRMatrix.matmat}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.matmat(self, v)
+```
+
+#### `CSRMatrix.__rmatmul__` {#api-CSRMatrix.__rmatmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.__rmatmul__(self, v)
+```
+
+#### `CSRMatrix.tocsr` {#api-CSRMatrix.tocsr}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.tocsr(self)
+```
+
+#### `CSRMatrix.tocsc` {#api-CSRMatrix.tocsc}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.tocsc(self)
+```
+
+#### `CSRMatrix.sum_duplicates` {#api-CSRMatrix.sum_duplicates}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.sum_duplicates(self)
+```
+
+Return sorted canonical CSR storage, combining duplicate entries.
+
+#### `CSRMatrix.todense` {#api-CSRMatrix.todense}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.todense(self) -> np.ndarray
+```
+
+#### `CSRMatrix.density` {#api-CSRMatrix.density}
+
+Inherited from `_SparseBase`.
+
+```python
+CSRMatrix.density(self) -> float
+```
+
+### `CSCMatrix` {#api-CSCMatrix}
+
+```python
+CSCMatrix(indptr, indices, data, shape)
+```
+
+Compressed sparse column: efficient column slicing and transposed products.
+
+Base classes: `_SparseBase`.
+
+#### `CSCMatrix.nnz` {#api-CSCMatrix.nnz}
+
+Read-only property.
+
+#### `CSCMatrix.matvec` {#api-CSCMatrix.matvec}
+
+```python
+CSCMatrix.matvec(self, v)
+```
+
+#### `CSCMatrix.rmatvec` {#api-CSCMatrix.rmatvec}
+
+```python
+CSCMatrix.rmatvec(self, v)
+```
+
+Product with the transpose, `A' v`.
+
+#### `CSCMatrix.__matmul__` {#api-CSCMatrix.__matmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.__matmul__(self, v)
+```
+
+#### `CSCMatrix.dtype` {#api-CSCMatrix.dtype}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `CSCMatrix.T` {#api-CSCMatrix.T}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `CSCMatrix.H` {#api-CSCMatrix.H}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `CSCMatrix.transpose` {#api-CSCMatrix.transpose}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.transpose(self)
+```
+
+#### `CSCMatrix.matmat` {#api-CSCMatrix.matmat}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.matmat(self, v)
+```
+
+#### `CSCMatrix.__rmatmul__` {#api-CSCMatrix.__rmatmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.__rmatmul__(self, v)
+```
+
+#### `CSCMatrix.tocsr` {#api-CSCMatrix.tocsr}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.tocsr(self)
+```
+
+#### `CSCMatrix.tocsc` {#api-CSCMatrix.tocsc}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.tocsc(self)
+```
+
+#### `CSCMatrix.diagonal` {#api-CSCMatrix.diagonal}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.diagonal(self)
+```
+
+#### `CSCMatrix.sum_duplicates` {#api-CSCMatrix.sum_duplicates}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.sum_duplicates(self)
+```
+
+Return sorted canonical CSR storage, combining duplicate entries.
+
+#### `CSCMatrix.todense` {#api-CSCMatrix.todense}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.todense(self) -> np.ndarray
+```
+
+#### `CSCMatrix.density` {#api-CSCMatrix.density}
+
+Inherited from `_SparseBase`.
+
+```python
+CSCMatrix.density(self) -> float
+```
+
+### `DIAMatrix` {#api-DIAMatrix}
+
+```python
+DIAMatrix(data, offsets, shape)
+```
+
+Diagonal storage: the natural format for finite-difference stencils.
+
+Base classes: `_SparseBase`.
+
+#### `DIAMatrix.nnz` {#api-DIAMatrix.nnz}
+
+Read-only property.
+
+#### `DIAMatrix.matvec` {#api-DIAMatrix.matvec}
+
+```python
+DIAMatrix.matvec(self, v)
+```
+
+#### `DIAMatrix.__matmul__` {#api-DIAMatrix.__matmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.__matmul__(self, v)
+```
+
+#### `DIAMatrix.dtype` {#api-DIAMatrix.dtype}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `DIAMatrix.T` {#api-DIAMatrix.T}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `DIAMatrix.H` {#api-DIAMatrix.H}
+
+Inherited from `_SparseBase`.
+
+Read-only property.
+
+#### `DIAMatrix.transpose` {#api-DIAMatrix.transpose}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.transpose(self)
+```
+
+#### `DIAMatrix.rmatvec` {#api-DIAMatrix.rmatvec}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.rmatvec(self, v)
+```
+
+#### `DIAMatrix.matmat` {#api-DIAMatrix.matmat}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.matmat(self, v)
+```
+
+#### `DIAMatrix.__rmatmul__` {#api-DIAMatrix.__rmatmul__}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.__rmatmul__(self, v)
+```
+
+#### `DIAMatrix.tocsr` {#api-DIAMatrix.tocsr}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.tocsr(self)
+```
+
+#### `DIAMatrix.tocsc` {#api-DIAMatrix.tocsc}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.tocsc(self)
+```
+
+#### `DIAMatrix.diagonal` {#api-DIAMatrix.diagonal}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.diagonal(self)
+```
+
+#### `DIAMatrix.sum_duplicates` {#api-DIAMatrix.sum_duplicates}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.sum_duplicates(self)
+```
+
+Return sorted canonical CSR storage, combining duplicate entries.
+
+#### `DIAMatrix.todense` {#api-DIAMatrix.todense}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.todense(self) -> np.ndarray
+```
+
+#### `DIAMatrix.density` {#api-DIAMatrix.density}
+
+Inherited from `_SparseBase`.
+
+```python
+DIAMatrix.density(self) -> float
+```
+
+### `from_dense` {#api-from_dense}
+
+```python
+from_dense(A, tol: float = 0.0, fmt: str = 'csr')
+```
+
+Convert a dense array to a sparse container, dropping entries <= `tol`.
+
+### `identity_sparse` {#api-identity_sparse}
+
+```python
+identity_sparse(n: int, fmt: str = 'csr')
+```
+
+Sparse identity of order `n`.
+
+### `diags` {#api-diags}
+
+```python
+diags(diagonals, offsets, shape=None)
+```
+
+Build a `DIAMatrix` from diagonals and their offsets.
+
+### `spmv` {#api-spmv}
+
+```python
+spmv(A, v)
+```
+
+Sparse matrix-vector product for any container in this module.
+
+### `sparse_solve` {#api-sparse_solve}
+
+```python
+sparse_solve(A, b, method: str = 'cg', **kwargs)
+```
+
+Solve a sparse system with a matrix-free Krylov method.
+
+### `reverse_cuthill_mckee` {#api-reverse_cuthill_mckee}
+
+```python
+reverse_cuthill_mckee(A)
+```
+
+Reverse Cuthill-McKee ordering; returns a permutation reducing bandwidth.
+
+### `bandwidth` {#api-bandwidth}
+
+```python
+bandwidth(A) -> tuple
+```
+
+Lower and upper bandwidths of a (dense or sparse) matrix.
+
+### `sparsity` {#api-sparsity}
+
+```python
+sparsity(A) -> float
+```
+
+Fraction of entries that are exactly zero (one for an empty matrix).
+
+### `spmm` {#api-spmm}
+
+```python
+spmm(A, B)
+```
+
+Sparse/sparse or sparse/dense matrix product without dense conversion.
+
+Sparse products return canonical CSR and need storage proportional to the
+result plus one accumulator dictionary for the current output row.
+
+### `sparse_triangular_solve` {#api-sparse_triangular_solve}
+
+```python
+sparse_triangular_solve(A, b, lower=True, unit_diagonal=False, out=None)
+```
+
+Solve a CSR/CSC triangular system, including multiple right-hand sides.
+
+### `ilu_preconditioner` {#api-ilu_preconditioner}
+
+```python
+ilu_preconditioner(A)
+```
+
+Factor sparse A with ILU(0), returning a reusable inverse application.
+
+### `ichol_preconditioner` {#api-ichol_preconditioner}
+
+```python
+ichol_preconditioner(A, drop_tol=0.0)
+```
+
+Factor sparse SPD A with IC(0), returning a reusable inverse application.

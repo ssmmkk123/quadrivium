@@ -6,6 +6,29 @@
 PyObject *QNP_LinAlgError = NULL;
 static PyObject *qnp_printer = NULL;   /* set by the Python layer */
 
+/* An opaque, GC-aware owner for imported buffer exports. Exposing a memoryview
+ * as the actual owner would let callers release it while array data stay live.
+ * The public .base is the exporter; this private object pins its Py_buffer. */
+typedef struct { PyObject_HEAD Py_buffer view; } QBufferOwner;
+static int buffer_owner_traverse(QBufferOwner *self,visitproc visit,void *arg) {
+    Py_VISIT(self->view.obj); return 0;
+}
+static int buffer_owner_clear(QBufferOwner *self) {
+    if(self->view.obj)PyBuffer_Release(&self->view); return 0;
+}
+static void buffer_owner_dealloc(QBufferOwner *self) {
+    PyObject_GC_UnTrack(self);buffer_owner_clear(self);PyObject_GC_Del(self);
+}
+static PyTypeObject QBufferOwner_Type={
+    PyVarObject_HEAD_INIT(NULL,0)
+    .tp_name="quadrivium._qnp._BufferOwner",
+    .tp_basicsize=sizeof(QBufferOwner),
+    .tp_flags=Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_GC,
+    .tp_dealloc=(destructor)buffer_owner_dealloc,
+    .tp_traverse=(traverseproc)buffer_owner_traverse,
+    .tp_clear=(inquiry)buffer_owner_clear,
+};
+
 /* ---------------------------------------------------------------- dtype */
 
 typedef struct {
@@ -13,9 +36,9 @@ typedef struct {
     int num;
 } QDtype;
 
-static const char *dtype_names[QNP_NTYPES] = {"bool", "int64", "float64", "complex128"};
-static const char dtype_kinds[QNP_NTYPES] = {'b', 'i', 'f', 'c'};
-static const char *dtype_formats[QNP_NTYPES] = {"?", "q", "d", "Zd"};
+static const char *dtype_names[QNP_NTYPES] = {"bool", "int64", "float64", "complex128", "float32", "complex64"};
+static const char dtype_kinds[QNP_NTYPES] = {'b', 'i', 'f', 'c', 'f', 'c'};
+static const char *dtype_formats[QNP_NTYPES] = {"?", "q", "d", "Zd", "f", "Zf"};
 static QDtype *dtype_singletons[QNP_NTYPES];
 
 static PyObject *dtype_repr(QDtype *self) {
@@ -37,7 +60,7 @@ static PyObject *dtype_get_itemsize(QDtype *self, void *c) {
 }
 static PyObject *dtype_get_char(QDtype *self, void *c) {
     (void)c;
-    static const char chars[QNP_NTYPES] = {'?', 'l', 'd', 'D'};
+    static const char chars[QNP_NTYPES] = {'?', 'l', 'd', 'D', 'f', 'F'};
     return PyUnicode_FromStringAndSize(&chars[self->num], 1);
 }
 static PyObject *dtype_get_type(QDtype *self, void *c) {
@@ -46,7 +69,7 @@ static PyObject *dtype_get_type(QDtype *self, void *c) {
     switch (self->num) {
         case QNP_BOOL: t = (PyObject *)&PyBool_Type; break;
         case QNP_INT64: t = (PyObject *)&PyLong_Type; break;
-        case QNP_FLOAT64: t = (PyObject *)&PyFloat_Type; break;
+        case QNP_FLOAT32: case QNP_FLOAT64: t = (PyObject *)&PyFloat_Type; break;
         default: t = (PyObject *)&PyComplex_Type; break;
     }
     Py_INCREF(t);
@@ -125,6 +148,8 @@ int qnp_dtype_from_object(PyObject *obj, int *ok) {
     if (PyUnicode_Check(obj)) {
         const char *s = PyUnicode_AsUTF8(obj);
         if (!s) { *ok = 0; return -1; }
+        if (!strcmp(s, "float32") || !strcmp(s, "f4") || !strcmp(s, "f") || !strcmp(s, "single")) return QNP_FLOAT32;
+        if (!strcmp(s, "complex64") || !strcmp(s, "c8") || !strcmp(s, "F") || !strcmp(s, "csingle")) return QNP_COMPLEX64;
         if (!strcmp(s, "float64") || !strcmp(s, "float") || !strcmp(s, "d") ||
             !strcmp(s, "f8") || !strcmp(s, "double")) return QNP_FLOAT64;
         if (!strcmp(s, "complex128") || !strcmp(s, "complex") || !strcmp(s, "D") ||
@@ -153,32 +178,77 @@ int qnp_dtype_from_object(PyObject *obj, int *ok) {
     return -1;
 }
 
-int qnp_promote(int a, int b) { return a > b ? a : b; }
+int qnp_promote(int a, int b) {
+    if (a < 0) return b;
+    if (b < 0) return a;
+    if (a == b) return a;
+    if (a == QNP_BOOL) return b;
+    if (b == QNP_BOOL) return a;
+    if (a == QNP_COMPLEX128 || b == QNP_COMPLEX128) return QNP_COMPLEX128;
+    if (a == QNP_COMPLEX64 || b == QNP_COMPLEX64)
+        return a == QNP_FLOAT64 || b == QNP_FLOAT64 || a == QNP_INT64 || b == QNP_INT64 ? QNP_COMPLEX128 : QNP_COMPLEX64;
+    if (a == QNP_FLOAT64 || b == QNP_FLOAT64) return QNP_FLOAT64;
+    if (a == QNP_INT64 || b == QNP_INT64) return QNP_FLOAT64;
+    return QNP_FLOAT32;
+}
 
 /* ------------------------------------------------------- array plumbing */
 
+/* Logical byte counts must fit Py_ssize_t as well as the allocator's size_t:
+ * the buffer protocol and array.nbytes expose them as signed Python sizes.
+ * Check for empty dimensions first, including after huge virtual dimensions. */
+static int checked_shape_size(int nd, const qintp *shape, int dtype, qintp *size) {
+    if (nd < 0 || nd > QNP_MAXDIMS) {
+        PyErr_Format(PyExc_ValueError, "maximum supported dimension is %d", QNP_MAXDIMS);
+        return -1;
+    }
+    int empty = 0;
+    for (int i = 0; i < nd; i++) {
+        if (shape[i] < 0) {
+            PyErr_SetString(PyExc_ValueError, "negative dimensions are not allowed");
+            return -1;
+        }
+        if (shape[i] == 0) empty = 1;
+    }
+    qintp total = empty ? 0 : 1;
+    if (!empty) {
+        qintp limit = PY_SSIZE_T_MAX / QNP_ITEMSIZE(dtype);
+        for (int i = 0; i < nd; i++) {
+            if (total > limit / shape[i]) {
+                PyErr_SetString(PyExc_ValueError, "array is too big");
+                return -1;
+            }
+            total *= shape[i];
+        }
+    }
+    *size = total;
+    return 0;
+}
+
 qintp qnp_size(const QArray *a) {
-    qintp n = 1;
-    for (int i = 0; i < a->nd; i++) n *= a->shape[i];
-    return n;
+    /* Constructors check every nonempty shape. Unsigned intermediates also
+     * make the product defined when an empty view has huge preceding axes. */
+    size_t n = 1;
+    for (int i = 0; i < a->nd; i++) n *= (size_t)a->shape[i];
+    return (qintp)n;
 }
 
 int qnp_is_c_contiguous(const QArray *a) {
-    qintp expected = QNP_ITEMSIZE(a->dtype);
+    size_t expected = (size_t)QNP_ITEMSIZE(a->dtype);
     for (int i = a->nd - 1; i >= 0; i--) {
         if (a->shape[i] == 1) continue;
-        if (a->strides[i] != expected) return 0;
-        expected *= a->shape[i];
+        if (a->strides[i] < 0 || (size_t)a->strides[i] != expected) return 0;
+        expected *= (size_t)a->shape[i];
     }
     return 1;
 }
 
 static int is_f_contiguous(const QArray *a) {
-    qintp expected = QNP_ITEMSIZE(a->dtype);
+    size_t expected = (size_t)QNP_ITEMSIZE(a->dtype);
     for (int i = 0; i < a->nd; i++) {
         if (a->shape[i] == 1) continue;
-        if (a->strides[i] != expected) return 0;
-        expected *= a->shape[i];
+        if (a->strides[i] < 0 || (size_t)a->strides[i] != expected) return 0;
+        expected *= (size_t)a->shape[i];
     }
     return 1;
 }
@@ -214,31 +284,19 @@ static QArray *array_alloc_header(int nd) {
 }
 
 QArray *qnp_new(int nd, const qintp *shape, int dtype) {
+    qintp total;
+    if (checked_shape_size(nd, shape, dtype, &total) < 0) return NULL;
     QArray *self = array_alloc_header(nd);
     if (self == NULL) return NULL;
     self->dtype = dtype;
-    qintp total = 1;
     int itemsize = QNP_ITEMSIZE(dtype);
-    for (int i = 0; i < nd; i++) {
-        if (shape[i] < 0) {
-            PyErr_SetString(PyExc_ValueError, "negative dimensions are not allowed");
-            PyMem_Free(self->shape);
-            PyObject_GC_Del(self);
-            return NULL;
-        }
-        self->shape[i] = shape[i];
-        if (shape[i] != 0 && total > PY_SSIZE_T_MAX / shape[i]) {
-            PyErr_SetString(PyExc_ValueError, "array is too big");
-            PyMem_Free(self->shape);
-            PyObject_GC_Del(self);
-            return NULL;
-        }
-        total *= shape[i];
-    }
-    qintp stride = itemsize;
+    for (int i = 0; i < nd; i++) self->shape[i] = shape[i];
+    size_t stride = (size_t)itemsize;
     for (int i = nd - 1; i >= 0; i--) {
-        self->strides[i] = stride;
-        stride *= self->shape[i];
+        /* Only an empty shape can exceed the signed stride range after the
+         * byte-count check. Its unrepresentable strides can safely be zero. */
+        self->strides[i] = stride <= PY_SSIZE_T_MAX ? (qintp)stride : 0;
+        stride *= (size_t)self->shape[i];
     }
     /* One spare item keeps zero-sized arrays with a valid, unique pointer. */
     size_t nbytes = (size_t)(total ? total : 1) * (size_t)itemsize;
@@ -260,6 +318,8 @@ QArray *qnp_new_like(QArray *proto, int dtype) {
 
 QArray *qnp_new_view_as(PyTypeObject *type, QArray *base, char *data, int nd,
                         const qintp *shape, const qintp *strides, int dtype) {
+    qintp total;
+    if (checked_shape_size(nd, shape, dtype, &total) < 0) return NULL;
     QArray *self;
     if (type == &QArray_Type) {
         self = array_alloc_header(nd);
@@ -309,6 +369,8 @@ QArray *qnp_new_view_as(PyTypeObject *type, QArray *base, char *data, int nd,
 
 QArray *qnp_new_view(QArray *base, char *data, int nd, const qintp *shape,
                      const qintp *strides, int dtype) {
+    qintp total;
+    if (checked_shape_size(nd, shape, dtype, &total) < 0) return NULL;
     QArray *self = array_alloc_header(nd);
     if (self == NULL) return NULL;
     self->dtype = dtype;
@@ -357,6 +419,8 @@ PyObject *qnp_getitem_ptr(int dtype, const char *ptr) {
     switch (dtype) {
         case QNP_BOOL: return PyBool_FromLong(*(const unsigned char *)ptr);
         case QNP_INT64: return PyLong_FromLongLong(*(const int64_t *)ptr);
+        case QNP_FLOAT32: return PyFloat_FromDouble(*(const float *)ptr);
+        case QNP_COMPLEX64: return PyComplex_FromDoubles(((const float *)ptr)[0], ((const float *)ptr)[1]);
         case QNP_FLOAT64: return PyFloat_FromDouble(*(const double *)ptr);
         default: {
             const qcomplex *z = (const qcomplex *)ptr;
@@ -366,6 +430,14 @@ PyObject *qnp_getitem_ptr(int dtype, const char *ptr) {
 }
 
 int qnp_setitem_ptr(int dtype, char *ptr, PyObject *value) {
+    if (dtype == QNP_FLOAT32 || dtype == QNP_COMPLEX64) {
+        Py_complex z = PyComplex_AsCComplex(value);
+        if (PyErr_Occurred()) return -1;
+        if (dtype == QNP_FLOAT32 && z.imag != 0.0) {
+            PyErr_SetString(PyExc_TypeError, "cannot convert complex value to float32"); return -1;
+        }
+        qnp_write_number(ptr, dtype, qc(z.real, z.imag)); return 0;
+    }
     switch (dtype) {
         case QNP_BOOL: {
             int truth = PyObject_IsTrue(value);
@@ -435,6 +507,11 @@ void qnp_cast_strided(char *dst, qintp dstride, int ddt,
         }
         for (i = 0; i < n; i++, dst += dstride, src += sstride)
             memcpy(dst, src, (size_t)isz);
+        return;
+    }
+    if (ddt >= QNP_FLOAT32 || sdt >= QNP_FLOAT32) {
+        for (i = 0; i < n; i++, dst += dstride, src += sstride)
+            qnp_write_number(dst, ddt, qnp_read_number(src, sdt));
         return;
     }
 #define CAST_LOOP(DTYPE, STYPE, EXPR)                                        \
@@ -556,6 +633,9 @@ int qnp_overlap_needs_copy(QArray *out, QArray *in) {
 /* Element-by-element copy from `src` into `dst`, broadcasting `src` up to the
  * destination shape and casting on the way. */
 int qnp_copy_into(QArray *dst, QArray *src) {
+    if (!(dst->flags & QNP_WRITEABLE)) {
+        PyErr_SetString(PyExc_ValueError,"assignment destination is read-only");return -1;
+    }
     QArray *bsrc = NULL;
     if (!(dst->nd == src->nd &&
           qnp_same_shape(dst->nd, dst->shape, src->shape))) {
@@ -758,7 +838,8 @@ static QArray *from_buffer_object(PyObject *obj, int *unsupported) {
         else if (!strcmp(f, "?")) dtype = QNP_BOOL;
         else if (!strcmp(f, "q") || !strcmp(f, "l") || !strcmp(f, "n")) dtype = QNP_INT64;
         else if (!strcmp(f, "i")) dtype = -2;      /* 32-bit int: convert below */
-        else if (!strcmp(f, "f")) dtype = -3;      /* float32: convert below */
+        else if (!strcmp(f, "Zf")) dtype = QNP_COMPLEX64;
+        else if (!strcmp(f, "f")) dtype = QNP_FLOAT32;      /* float32: convert below */
     }
     if (dtype == -1 || view.ndim > QNP_MAXDIMS || view.suboffsets != NULL) {
         PyBuffer_Release(&view);
@@ -944,8 +1025,18 @@ static PyObject *array_get_shape(QArray *self, void *c) { (void)c; return qnp_sh
 static int array_set_shape(QArray *self, PyObject *value, void *c) {
     (void)c;
     if (value == NULL) { PyErr_SetString(PyExc_AttributeError, "cannot delete shape"); return -1; }
+    if (self->exports) {
+        PyErr_SetString(PyExc_BufferError, "cannot change shape while buffers are exported");
+        return -1;
+    }
     PyObject *reshaped = qnp_reshape(self, value);
     if (reshaped == NULL) return -1;
+    /* Shape coercion may run __index__ and export a buffer reentrantly. */
+    if (self->exports) {
+        Py_DECREF(reshaped);
+        PyErr_SetString(PyExc_BufferError, "cannot change shape while buffers are exported");
+        return -1;
+    }
     QArray *r = (QArray *)reshaped;
     if (r->data != self->data) {
         Py_DECREF(reshaped);
@@ -953,13 +1044,16 @@ static int array_set_shape(QArray *self, PyObject *value, void *c) {
                         "Incompatible shape for in-place modification. Use `.reshape()`");
         return -1;
     }
+    qintp *new_shape = PyMem_Malloc(2 * (size_t)(r->nd ? r->nd : 1) * sizeof(qintp));
+    if (new_shape == NULL) { Py_DECREF(reshaped); PyErr_NoMemory(); return -1; }
     PyMem_Free(self->shape);
-    self->shape = (qintp *)PyMem_Malloc(2 * (size_t)(r->nd ? r->nd : 1) * sizeof(qintp));
-    if (self->shape == NULL) { Py_DECREF(reshaped); PyErr_NoMemory(); return -1; }
+    self->shape = new_shape;
     self->strides = self->shape + (r->nd ? r->nd : 1);
     self->nd = r->nd;
-    memcpy(self->shape, r->shape, (size_t)r->nd * sizeof(qintp));
-    memcpy(self->strides, r->strides, (size_t)r->nd * sizeof(qintp));
+    if (r->nd) {
+        memcpy(self->shape, r->shape, (size_t)r->nd * sizeof(qintp));
+        memcpy(self->strides, r->strides, (size_t)r->nd * sizeof(qintp));
+    }
     Py_DECREF(reshaped);
     qnp_update_flags(self);
     return 0;
@@ -990,6 +1084,10 @@ static PyObject *array_get_T(QArray *self, void *c) { (void)c; return qnp_transp
 static PyObject *array_get_base(QArray *self, void *c) {
     (void)c;
     PyObject *b = self->base ? self->base : Py_None;
+    if(Py_TYPE(b)==&QBufferOwner_Type) {
+        b=((QBufferOwner *)b)->view.obj;
+        if(!b)b=Py_None;
+    }
     Py_INCREF(b);
     return b;
 }
@@ -998,21 +1096,21 @@ static PyObject *array_get_base(QArray *self, void *c) {
  * exactly as in NumPy, so `a.real += 1` writes through. */
 static PyObject *array_get_real(QArray *self, void *c) {
     (void)c;
-    if (self->dtype != QNP_COMPLEX128) { Py_INCREF(self); return (PyObject *)self; }
+    if (!qnp_is_complex(self->dtype)) { Py_INCREF(self); return (PyObject *)self; }
     return (PyObject *)qnp_new_view(self, self->data, self->nd, self->shape,
-                                    self->strides, QNP_FLOAT64);
+                                    self->strides, self->dtype == QNP_COMPLEX64 ? QNP_FLOAT32 : QNP_FLOAT64);
 }
 
 static PyObject *array_get_imag(QArray *self, void *c) {
     (void)c;
-    if (self->dtype != QNP_COMPLEX128) {
+    if (!qnp_is_complex(self->dtype)) {
         QArray *out = qnp_new(self->nd, self->shape, self->dtype);
         if (out == NULL) return NULL;
         memset(out->data, 0, (size_t)qnp_size(out) * (size_t)QNP_ITEMSIZE(out->dtype));
         return (PyObject *)out;
     }
-    return (PyObject *)qnp_new_view(self, self->data + sizeof(double), self->nd,
-                                    self->shape, self->strides, QNP_FLOAT64);
+    return (PyObject *)qnp_new_view(self, self->data + QNP_ITEMSIZE(self->dtype) / 2, self->nd,
+                                    self->shape, self->strides, self->dtype == QNP_COMPLEX64 ? QNP_FLOAT32 : QNP_FLOAT64);
 }
 
 static int array_set_real(QArray *self, PyObject *value, void *c) {
@@ -1028,7 +1126,7 @@ static int array_set_real(QArray *self, PyObject *value, void *c) {
 
 static int array_set_imag(QArray *self, PyObject *value, void *c) {
     (void)c;
-    if (self->dtype != QNP_COMPLEX128) {
+    if (!qnp_is_complex(self->dtype)) {
         PyErr_SetString(PyExc_TypeError, "array does not have imaginary part to set");
         return -1;
     }
@@ -1085,7 +1183,17 @@ static int flags_setattro(PyObject *self, PyObject *name, PyObject *value) {
         if (truth < 0) return -1;
         QArray *array = ((QFlags *)self)->array;
         if (truth) {
-            if (array->base != NULL && !(((QArray *)array->base)->flags & QNP_WRITEABLE)) {
+            int permitted=1;
+            if(array->base) {
+                PyObject *base=array->base;
+                if(QArray_Check(base))permitted=(((QArray *)base)->flags & QNP_WRITEABLE)!=0;
+                else if(Py_TYPE(base)==&QBufferOwner_Type) {
+                    Py_buffer *view=&((QBufferOwner *)base)->view;
+                    permitted=view->obj!=NULL && !view->readonly;
+                } else if(PyMemoryView_Check(base))permitted=!PyMemoryView_GET_BUFFER(base)->readonly;
+                else permitted=0;
+            }
+            if (!permitted) {
                 PyErr_SetString(PyExc_ValueError,
                                 "cannot set WRITEABLE flag on a view of a read-only array");
                 return -1;
@@ -1550,13 +1658,41 @@ int qnp_shape_from_object(PyObject *obj, qintp *shape, int *nd) {
     return 0;
 }
 
+static PyObject *py_frombuffer(PyObject *self, PyObject *args, PyObject *kwds) {
+    (void)self;PyObject *obj,*dtype_obj=Py_None;Py_ssize_t count=-1,offset=0;
+    static char *names[]={"buffer","dtype","count","offset",NULL};
+    if(!PyArg_ParseTupleAndKeywords(args,kwds,"O|Onn:frombuffer",names,&obj,&dtype_obj,&count,&offset))return NULL;
+    int ok=1,dt=dtype_obj==Py_None?QNP_FLOAT64:qnp_dtype_from_object(dtype_obj,&ok);if(!ok)return NULL;
+    QBufferOwner *storage=PyObject_GC_New(QBufferOwner,&QBufferOwner_Type);
+    if(!storage)return NULL;
+    memset(&storage->view,0,sizeof(Py_buffer));
+    if(PyObject_GetBuffer(obj,&storage->view,PyBUF_FULL_RO)<0){PyObject_GC_Del(storage);return NULL;}
+    PyObject_GC_Track(storage);
+    PyObject *owner=(PyObject *)storage;
+    Py_buffer *view=&storage->view;
+    if(!PyBuffer_IsContiguous(view,'C')){Py_DECREF(owner);PyErr_SetString(PyExc_BufferError,"frombuffer requires a C-contiguous buffer");return NULL;}
+    int isz=QNP_ITEMSIZE(dt);
+    if(offset<0||offset>view->len||count< -1){Py_DECREF(owner);PyErr_SetString(PyExc_ValueError,"invalid buffer offset or count");return NULL;}
+    Py_ssize_t remaining=view->len-offset;
+    if(count==-1){if(remaining%isz){Py_DECREF(owner);PyErr_SetString(PyExc_ValueError,"buffer size must be a multiple of item size");return NULL;}count=remaining/isz;}
+    if(count>remaining/isz){Py_DECREF(owner);PyErr_SetString(PyExc_ValueError,"buffer is smaller than requested count");return NULL;}
+    int alignment=dt==QNP_BOOL?1:(dt==QNP_FLOAT32||dt==QNP_COMPLEX64)?4:8;
+    if(count && ((uintptr_t)view->buf+(uintptr_t)offset)%(uintptr_t)alignment){Py_DECREF(owner);PyErr_SetString(PyExc_ValueError,"buffer data must be aligned to its scalar dtype");return NULL;}
+    QArray *a=array_alloc_header(1);if(!a){Py_DECREF(owner);return NULL;}
+    a->data=(char *)view->buf+offset;a->base=owner;a->dtype=dt;a->shape[0]=count;a->strides[0]=isz;
+    if(view->readonly)a->flags &= ~QNP_WRITEABLE;
+    qnp_update_flags(a);PyObject_GC_Track(a);return (PyObject *)a;
+}
+
 PyMethodDef qnp_array_core_methods[] = {
+    {"frombuffer", (PyCFunction)py_frombuffer, METH_VARARGS|METH_KEYWORDS, "Zero-copy array view holding a buffer export for its entire lifetime."},
     {"set_printer", set_printer, METH_O,
      "Install the Python callable used to render arrays."},
     {NULL}
 };
 
 int qnp_init_types(PyObject *module) {
+    if (PyType_Ready(&QBufferOwner_Type) < 0) return -1;
     if (PyType_Ready(&QDtype_Type) < 0) return -1;
     if (PyType_Ready(&QArray_Type) < 0) return -1;
     if (PyType_Ready(&QArrayIter_Type) < 0) return -1;

@@ -20,3 +20,6 @@ from .monte_carlo import *  # noqa: F401,F403,E402
 from .multidim import *  # noqa: F401,F403,E402
 from .newton_cotes import *  # noqa: F401,F403,E402
 from .romberg import *  # noqa: F401,F403,E402
+
+from .vector import quad_vec
+__all__ += ["quad_vec"]

@@ -12,12 +12,13 @@ from . import proximal as _proximal
 from . import quasinewton as _quasinewton
 from . import scalar as _scalar
 from . import trustregion as _trustregion
+from . import least_squares as _least_squares
 
 __all__ = (_scalar.__all__ + _linesearch.__all__ + _gradient.__all__
            + _quasinewton.__all__ + _trustregion.__all__
            + _derivative_free.__all__ + _global_opt.__all__
            + _constrained.__all__ + _proximal.__all__ + _linprog.__all__
-           + ["minimize"])
+           + _least_squares.__all__ + ["minimize"])
 
 from .constrained import *  # noqa: F401,F403,E402
 from .derivative_free import *  # noqa: F401,F403,E402
@@ -29,6 +30,7 @@ from .proximal import *  # noqa: F401,F403,E402
 from .quasinewton import *  # noqa: F401,F403,E402
 from .scalar import *  # noqa: F401,F403,E402
 from .trustregion import *  # noqa: F401,F403,E402
+from .least_squares import *  # noqa: F401,F403,E402
 
 
 def minimize(f, x0, method: str = "bfgs", grad_f=None, **kwargs):

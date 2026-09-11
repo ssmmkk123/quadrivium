@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.exceptions import BracketError
@@ -195,7 +197,7 @@ def newton_minimize_1d(f, x0: float, df=None, d2f=None, tol: float = 1e-12,
     """Newton's method applied to ``f'(x) = 0``, with a curvature safeguard."""
     fc = CountedFunction(f)
     x = float(x0)
-    history = [x]
+    history = History([x])
     for k in range(1, max_iter + 1):
         g = df(x) if df is not None else numerical_derivative(fc, x, order=1)
         h = d2f(x) if d2f is not None else numerical_derivative(fc, x, order=2)
@@ -221,3 +223,8 @@ def line_minimize(f, a=None, b=None, method: str = "brent", **kwargs):
     return {"brent": brent_minimize, "golden": golden_section,
             "ternary": ternary_search,
             "parabolic": parabolic_interpolation}[method](f, a, b, **kwargs)
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['newton_minimize_1d']:
+    globals()[_name] = monitor(globals()[_name])

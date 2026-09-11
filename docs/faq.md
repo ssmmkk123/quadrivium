@@ -1,121 +1,133 @@
 # Frequently asked questions
 
-## Should I use this instead of SciPy?
+## What is Quadrivium for?
 
-For production numerics on large problems, no — use SciPy, which wraps decades
-of tuned Fortran and C. Use quadrivium when you want to *see* the method, when
-you want the iteration history and the diagnostics rather than just the answer,
-or when you need one of the many methods a general-purpose library does not
-expose: Bairstow's method, Sturm sequences, ITP, Filon quadrature, Hadamard
-finite parts, PEFRL, adaptive rejection sampling, the dual lattice spectral
-test.
+It provides inspectable numerical methods and scientific workflows: solve an
+equation, examine the iterations, compare discretizations, and connect a model
+to fitting or uncertainty analysis. Choose based on the method's documented
+contract and your own accuracy and scale requirements. The [home page](index.md)
+organizes the guides by problem.
 
-The two coexist happily: everything here takes and returns NumPy arrays.
+## Does it depend on NumPy or SciPy?
 
-## Does it depend on anything besides NumPy?
+No runtime package dependency is declared. The package's C extension supplies
+arrays and numerical kernels. NumPy is used as an independent test reference,
+and Matplotlib is optional for regenerating documentation figures.
 
-No. NumPy 1.20 or newer is the only runtime dependency, and there is no
-compiled code, so installation is a single pure-Python wheel on every platform.
+## Why do examples import something called np?
 
-## Which Python versions are supported?
+The convention is `from quadrivium import numeric as np`. The alias is local
+to the example. Results are Quadrivium arrays, not NumPy arrays. Many familiar
+operations exist, but [the array guide](guides/numeric.md) describes compatibility
+boundaries. Use explicit conversion at external-library boundaries.
 
-3.9 through 3.14, all tested in CI on every push.
+## Why is _qnp missing after cloning the repository?
 
-## How fast is it?
+The required C extension has not been built for that interpreter. From the
+checkout, run `python -m pip install -e .`. If the build fails, inspect the
+compiler error. See [installation troubleshooting](installation.md#troubleshoot-an-installation).
 
-Slower than a compiled library, by a factor that depends on the shape of the
-work — small for quadrature and optimization where your own callback dominates,
-large (10–100×) for ODE and PDE time stepping, which loops in Python once per
-step. [Performance](getting-started.md#performance) gives the breakdown.
+## Why is an API in these docs absent from my installation?
 
-## Why did my solve return `converged=False` instead of raising?
+The site and repository documentation describe the checkout they were built
+from, which may contain unreleased APIs. Inspect `qd.__file__` and
+`qd.__version__`, then compare with the [changelog](changelog.md). The version
+string alone does not distinguish an unreleased working tree from its base
+release. Use matching source and documentation.
 
-By design. A method that runs out of iterations still has a best estimate, an
-iteration history, and a residual, and those are usually what tells you what
-went wrong. Check `result.converged` and read `result.message`. Exceptions are
-reserved for input that cannot be worked with at all — see
-[how failure is reported](getting-started.md#how-failure-is-reported).
+## Can I disable the compiled backend?
 
-## How do I make a stochastic result reproducible?
+You can select Python reference implementations of accelerated methods with
+`qd.accel.disabled()` or `QUADRIVIUM_NO_ACCEL=1`. The C array engine remains
+required. `qd.accel.show_config()` reports backend information.
 
-Pass `rng=` — an integer seed or a `numpy.random.Generator`. Every routine that
-uses randomness accepts it, and the same seed gives the same answer.
+## Why does a small residual not guarantee a good answer?
+
+It indicates that the computed answer nearly satisfies the supplied equation.
+Ill-conditioning can amplify a small data or arithmetic perturbation into a
+large solution change. Inspect both residuals and sensitivity. See
+[linear algebra](guides/linalg.md) and [design and validation](design.md).
+
+## What should I do with converged=False?
+
+Read the message and inspect finite output and available histories. Confirm
+the problem's assumptions, input scale, initial guess or bracket, and stopping
+budget. Some methods instead raise an exception; there is no universal
+failure-return policy across every API. The [getting-started guide](getting-started.md#how-failure-is-reported)
+shows both cases.
+
+## Why did tighter tolerance stop improving my result?
+
+You may have reached rounding limits, noisy callbacks, poor conditioning,
+interpolation error, or a different source of discretization error. ODE
+`tolerance` is not a global error certificate. Refine one source of error at a
+time and compare a quantity of interest with an independent reference.
+
+## Does solve_ivp return the same array layout as other libraries?
+
+Its `y` has shape `(stored_times, state_dimension)`. Querying a vector of times
+returns `(query_times, state_dimension)`. Use `y_final` for the final computed
+state when selected output times omit the endpoint. See [ODEs](guides/ode.md).
+
+## How can I avoid retaining a huge trajectory?
+
+Use supported `save_at`, `save_every`, or `final_only` controls before solving.
+A callback can observe copied states as integration advances. Retaining less
+output also reduces information available for later interpolation. The
+[workflow guide](guides/workflows.md) explains memory and checkpoint contracts.
+
+## Must I supply derivatives?
+
+Many methods provide finite-difference fallbacks, but not every derivative-based
+routine does. Check the exact signature. Supplying derivatives can reduce
+function calls and finite-difference error. [Automatic differentiation](guides/diff.md)
+works only through its supported operations; it is not a universal wrapper for
+arbitrary Python or external functions.
+
+## How do I make random calculations reproducible?
+
+Pass a documented integer seed or Quadrivium generator. An integer restarts the
+stream each time; a generator advances it across calls. Record the environment,
+source revision, method, and options as well as the seed.
 
 ```pycon
 >>> import quadrivium as qd
->>> a = qd.monte_carlo(lambda x: x**2, 0, 1, n=1000, rng=42)
->>> b = qd.monte_carlo(lambda x: x**2, 0, 1, n=1000, rng=42)
->>> float(a) == float(b)
+>>> first = qd.monte_carlo(lambda x: x*x, 0, 1, n=1000, rng=42)
+>>> again = qd.monte_carlo(lambda x: x*x, 0, 1, n=1000, rng=42)
+>>> float(first) == float(again)
 True
 
 ```
 
-## Which method should I use for X?
+Reproducibility is not independence. For uncertainty estimates, use appropriate
+independent streams or randomized replications and [diagnostics](guides/stochastic.md).
 
-Each guide opens with a table that maps a situation to a method:
-[linear systems and eigenvalues](guides/linalg.md),
-[roots](guides/rootfind.md), [interpolation](guides/interpolate.md),
-[fitting](guides/approx.md), [derivatives](guides/diff.md),
-[integrals](guides/integrate.md), [ODEs](guides/ode.md),
-[PDEs](guides/pde.md), [optimization](guides/optimize.md),
-[transforms](guides/transforms.md), [randomness](guides/stochastic.md),
-[special functions](guides/special.md).
+## How should I interpret the graphs?
 
-## Do I have to supply a gradient or Jacobian?
+Read the problem, axes, reference, and caption together. A convergence curve
+shows one experiment, not a guarantee for every input. A work count differs
+from elapsed time. The new figures use actual package calculations and
+analytic references or explicit statistical experiments; the
+[figure methodology](figures.md) explains regeneration and review.
 
-No. Every routine that can use one falls back to a finite-difference
-approximation. Supplying the exact derivative is faster and more accurate — the
-`function_calls` field will show you by how much — and
-[`quadrivium.diff`](guides/diff.md) can compute it exactly by automatic
-differentiation.
+## Can I use a special function at a pole or in an extreme tail?
 
-## Are the results NumPy arrays?
+Only according to its documented behavior. Some functions return infinities;
+others reject arguments. Subtracting a CDF from one can lose tail accuracy;
+use a supported survival function directly. Near zeros, compare absolute error.
+See [special functions](guides/special.md) and [stochastic distributions](guides/stochastic.md).
 
-Yes. Inputs may be lists or tuples and are converted internally; outputs are
-`numpy.ndarray`. The result records are plain dataclasses, so
-`dataclasses.asdict` serializes them and `matplotlib` plots their fields
-directly.
+## How do I cite an experiment using the package?
 
-## Can I import just one subpackage?
+Include Quadrivium, the repository URL, the release or commit, and the numerical
+method and options used. For example, a reproducibility note can give the
+source revision, Python version, backend, dtype, tolerance, and random seed.
+Do not identify an unreleased working tree only by its base version number.
 
-Yes: `from quadrivium.linalg import householder_qr`. Importing `quadrivium`
-imports all thirteen subpackages, which takes a fraction of a second and no
-meaningful memory.
+## Where should I report a problem?
 
-## Where do the figures on this site come from?
-
-They are generated from the library. `tools/gen_figures.py` runs the method
-each figure describes and plots what it returns — the residual histories are
-real residual histories, the convergence orders are measured by refining a
-discretization and fitting the slope, the shock was captured by the solver the
-page is about. Nothing is illustrated by hand, and the test suite checks that
-every figure a page shows exists and that every figure that exists is shown.
-
-Regenerating them needs Matplotlib, which is not a dependency of the library:
-
-```bash
-python -m pip install -e ".[figures]"
-python tools/gen_figures.py
-```
-
-## How do I cite this?
-
-There is no paper. Cite the repository and the version you used:
-
-```text
-Quadrivium 1.1.0. https://github.com/ssmmkk123/quadrivium
-```
-
-## Why is the answer's last digit different from SciPy's?
-
-Different algorithms, different orderings, different roundings — agreement to
-the last bit is not expected between independent implementations. If a result
-differs by more than the tolerance you asked for, that is worth
-[reporting](https://github.com/ssmmkk123/quadrivium/issues).
-
-## How do I contribute a method?
-
-Read [Contributing](contributing.md). The short version: open an issue first
-for anything substantial, keep the algorithm visible in the source, and test
-it against a property — a convergence order, an exactness result, an identity —
-rather than against a value the code itself produced.
+Use the repository's issue tracker for a minimal reproducible numerical or
+installation problem. Include the expected answer and how it was established.
+For private security or conduct reports, follow the root repository's
+`SECURITY.md` or `CODE_OF_CONDUCT.md`. See [Contributing](contributing.md) for
+development and documentation checks.

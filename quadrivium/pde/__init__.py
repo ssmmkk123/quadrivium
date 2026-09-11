@@ -21,3 +21,7 @@ from .hyperbolic import *  # noqa: F401,F403,E402
 from .multigrid import *  # noqa: F401,F403,E402
 from .parabolic import *  # noqa: F401,F403,E402
 from .spectral import *  # noqa: F401,F403,E402
+
+from . import adaptive_fem as _adaptive_fem
+from .adaptive_fem import *  # noqa: F401,F403
+__all__ += _adaptive_fem.__all__

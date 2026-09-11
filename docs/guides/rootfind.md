@@ -1,301 +1,273 @@
-# Root finding
+# Finding roots and following solution branches
 
-```python
-from quadrivium.rootfind import brent, newton_system, polynomial_roots
-import quadrivium as qd          # qd.brent, qd.newton, qd.newton_krylov, ...
-```
+Root finding solves an equation `f(x)=0` or a system `F(x)=0`. Before choosing
+an algorithm, decide whether you know an interval containing a root, a useful
+initial guess, a derivative, or the structure of a polynomial. These pieces of
+information determine both the method's speed and the reliability of its result.
 
-45 routines for `f(x) = 0`: eighteen for scalar equations, twelve for systems,
-and fifteen for polynomials, where the structure permits methods the general
-case cannot use. Full signatures are in the
-[`rootfind` reference](../api/rootfind.md).
-
-## Choosing a scalar method
-
-The first question is whether you have a bracket — an interval `[a, b]` with
-`f(a)` and `f(b)` of opposite signs. With one, convergence is guaranteed.
-
-```mermaid
-flowchart TD
-    A["f(x) = 0, one variable"] --> B{"bracket with a sign change?"}
-    B -- yes --> C{"how much do you care<br/>about the worst case?"}
-    C -- "guaranteed bound" --> D["bisection<br/>or itp"]
-    C -- "fast in practice" --> E["brent<br/>(the default)"]
-    B -- no --> F{"derivative available?"}
-    F -- "f' and f''" --> G["halley<br/>chebyshev_method"]
-    F -- "f' only" --> H["newton"]
-    F -- none --> I{"two starting points?"}
-    I -- yes --> J["secant, muller"]
-    I -- no --> K["steffensen"]
-    B -- "none known" --> L["bracket_root<br/>find_all_roots"]
-```
-
-| Situation | Method | Order |
-| --- | --- | --- |
-| you have a bracket and want the default | `brent` | superlinear, never worse than bisection |
-| bracket, want a modern alternative with a proved bound | `itp` | superlinear, bisection-competitive worst case |
-| bracket, want the simplest possible thing | `bisection` | 1 (linear, exactly one bit per step) |
-| bracket, `f` nearly linear | `illinois`, `pegasus` | ~1.44–1.7 |
-| bracket, `f` smooth and expensive | `ridders` | 2 |
-| no bracket, `f'` available | `newton` | 2 |
-| no bracket, `f'` and `f''` available | `halley`, `chebyshev_method` | 3 |
-| no bracket, no derivative | `secant` | 1.618 |
-| no derivative, no second point | `steffensen` | 2 |
-| complex roots wanted from real arithmetic | `muller` | 1.84 |
-| the problem is naturally `x = g(x)` | `fixed_point`, `aitken_accelerated` | 1, accelerated |
+Most iterative root solvers return `RootResult`. The root is in `.root` (also
+`.x`), the evaluated residual in `.f_root`, and termination information in
+`.converged` and `.message`. Helper routines such as `find_all_roots` and
+`polynomial_roots` instead return arrays. See the
+[root-finding reference](../api/rootfind.md) for every signature.
 
 ```pycon
 >>> from quadrivium import numeric as np
->>> import quadrivium as qd
->>> f = lambda x: x**3 - 2*x - 5
->>> r = qd.brent(f, 1, 3)
->>> round(r.root, 12), r.converged, r.iterations < 15
-(2.094551481542, True, True)
-
-```
-
-<figure markdown="span">
-  ![Error against iteration for five scalar root finders](../assets/figures/rootfind-convergence-rates.svg#only-light)
-  ![Error against iteration for five scalar root finders](../assets/figures/rootfind-convergence-rates-dark.svg#only-dark)
-  <figcaption>The `history` field of each result, on x³ − 2x − 5 = 0. Bisection is a straight line on a log scale — one bit per evaluation, always; the superlinear methods bend downwards, and the last step of a quadratic method roughly doubles the number of correct digits.</figcaption>
-</figure>
-
-Every method reports its cost, which is how you compare them honestly — by
-function evaluations, not by iterations:
-
-```pycon
->>> from quadrivium.rootfind import bisection, ridders, illinois, brent
->>> for method in (bisection, illinois, ridders, brent):
-...     res = method(f, 1, 3, tol=1e-12)
-...     print(f"{res.method:10s} {res.iterations:3d} iterations {res.function_calls:3d} calls")
-bisection   41 iterations  43 calls
-illinois     8 iterations  10 calls
-ridders      4 iterations  10 calls
-brent       10 iterations  11 calls
-
-```
-
-<figure markdown="span">
-  ![Function evaluations each method needs to reach a tolerance of 1e-12](../assets/figures/rootfind-cost.svg#only-light)
-  ![Function evaluations each method needs to reach a tolerance of 1e-12](../assets/figures/rootfind-cost-dark.svg#only-dark)
-  <figcaption>The same equation and the same tolerance for every method, counted in evaluations rather than iterations, because an iteration means something different in each. Newton is cheapest here and carries no guarantee; bisection is dearest and cannot fail.</figcaption>
-</figure>
-
-### Finding a bracket
-
-`bracket_root` expands an interval outward until it finds a sign change, and
-`find_all_roots` scans a grid and refines every sign change it sees — the
-practical way to start when you know nothing about the function:
-
-```pycon
->>> from quadrivium.rootfind import bracket_root, find_all_roots
->>> a, b = bracket_root(lambda x: x**2 - 9, 0.0, 1.0)
->>> float(a) <= 3.0 <= float(b)
+>>> from quadrivium import rootfind as rf
+>>> f = lambda x: x*x - 2.0
+>>> result = rf.brent(f, 0.0, 2.0)
+>>> result.converged, abs(result.root - np.sqrt(2.0)) < 1e-12
+(True, True)
+>>> abs(result.f_root) < 1e-12
 True
->>> roots = find_all_roots(lambda x: np.sin(x), 0.5, 10.0)
->>> [round(float(x), 8) for x in roots]
-[3.14159265, 6.28318531, 9.42477796]
 
 ```
 
-A grid scan finds only the sign changes it lands on. Two roots inside one grid
-cell, or a root the function only touches without crossing, will be missed —
-raise `n` when the function oscillates.
+## Choose the information you can trust
 
-### When Newton misbehaves
+| Information available | Method to try | What to check |
+| --- | --- | --- |
+| Continuous scalar function and a sign-changing bracket | `brent` | Endpoint signs and continuity |
+| Same bracket, simplest predictable interval reduction | `bisection` | Required bracket width |
+| Bracket with safeguarded interpolation | `itp`, `ridders`, `illinois`, `pegasus` | Work relative to Brent on your function |
+| Good initial guess and derivative | `newton` | Local basin and nonzero derivative |
+| Two guesses, derivative expensive | `secant` | Can leave the region of interest |
+| First and second derivatives available | `halley` | Extra derivative cost and denominator stability |
+| Contractive fixed-point map | `fixed_point`, `aitken_accelerated` | The chosen map actually contracts |
+| Vector residual and a reasonable initial state | `damped_newton_system` | Equation scaling and Jacobian quality |
+| Polynomial coefficients | `polynomial_roots` | Coefficient order and residuals |
+| Parameterized equilibrium branch, possibly with a fold | `pseudo_arclength` | Branch residuals and continuation step size |
 
-Newton's method converges quadratically near a simple root and can fail
-everywhere else. Two arguments handle the common failures:
+There is no general routine that guarantees discovery of every zero of an
+arbitrary callable from finitely many samples. Separate root discovery from
+root refinement: a good refinement method cannot recover roots never bracketed
+or initial guesses that lead to an unintended branch.
+
+## Brackets provide useful structure
+
+A sign change for a continuous real function guarantees at least one zero
+between the endpoints. An endpoint that evaluates exactly to zero is accepted.
+`BracketError` is raised when both nonzero endpoint values have the same sign.
+A sign change at a pole or jump is not evidence of a zero.
 
 ```pycon
->>> qd.newton(lambda x: x**3 - 2*x - 5, 2.0, lambda x: 3*x**2 - 2).iterations
-4
-
-```
-
-<figure markdown="span">
-  ![Which root Newton reaches, as a function of where it starts](../assets/figures/rootfind-newton-basins.svg#only-light)
-  ![Which root Newton reaches, as a function of where it starts](../assets/figures/rootfind-newton-basins-dark.svg#only-dark)
-  <figcaption>Every starting point in the strip below was run through `newton` on x³ − x, and coloured by the root it converged to. Near the points where f′ vanishes the answer stops being a continuous function of the start: a step from one side of a band lands on a different root.</figcaption>
-</figure>
-
-`damping=` scales the step, which tames the overshoot that sends a Newton
-iterate off to infinity. `multiplicity=m` restores quadratic convergence at a
-root of multiplicity `m`, where plain Newton degrades to linear:
-
-```pycon
->>> g = lambda x: (x - 1)**3               # a triple root
->>> dg = lambda x: 3*(x - 1)**2
->>> plain = qd.newton(g, 2.0, dg, tol=1e-12)
->>> fixed = qd.newton(g, 2.0, dg, tol=1e-12, multiplicity=3)
->>> fixed.iterations < plain.iterations
+>>> bracketed = rf.bisection(f, 0.0, 2.0, tol=1e-10)
+>>> bracketed.converged and abs(f(bracketed.root)) < 1e-8
 True
->>> round(fixed.root, 12)
-1.0
+>>> from quadrivium.core import BracketError
+>>> try:
+...     rf.brent(lambda x: x*x + 1, -1, 1)
+... except BracketError:
+...     print("The endpoints do not bracket a real zero.")
+The endpoints do not bracket a real zero.
 
 ```
 
+Bisection halves the bracket at each step. Brent uses interpolation when it is
+safe and falls back to interval reduction. False position can stagnate when
+one endpoint stays fixed; Illinois and Pegasus modify the endpoint weighting
+to reduce that problem. These methods preserve a bracket but can differ
+substantially in the number of function evaluations.
+
+`bracket_root` expands an initial interval until it finds a sign change or
+exhausts its budget. The expanded interval may leave the function's valid
+domain. Use it only when evaluation outside the initial interval is meaningful.
+
+### Tolerances do not all mean the same thing
+
+Root solvers can stop because the function value is small or because the
+location changes little. A residual tolerance is measured in units of `f`;
+a location tolerance is measured in units of `x`. Multiplying the equation by
+a constant leaves its roots unchanged but changes residual-based stopping.
+
+For a simple root, the local relation is approximately
+`location_error = residual / abs(derivative_at_root)`. A tiny residual can
+still correspond to an inaccurate location near a flat or multiple root.
+Report both the returned location and a freshly evaluated residual. When a
+location bound matters, use a trustworthy bracket or problem-specific analysis.
+
+## Newton and secant methods
+
+Newton updates the guess using the tangent line. Supplying `df` avoids finite
+difference evaluations and often improves both accuracy and cost. With
+`df=None`, Quadrivium approximates the derivative numerically.
+
+```pycon
+>>> analytic = rf.newton(f, 1.0, df=lambda x: 2*x)
+>>> numerical = rf.newton(f, 1.0)
+>>> analytic.converged and numerical.converged
+True
+>>> abs(analytic.root - numerical.root) < 1e-10
+True
+>>> analytic.function_calls < numerical.function_calls
+True
+
+```
+
+The `damping` parameter multiplies every Newton step by a fixed factor; it is
+not an adaptive line search. `multiplicity` applies a known multiplicity
+correction for repeated roots. A zero derivative returns a nonconverged
+result, and a distant guess can diverge or find a different root.
+
+```pycon
+>>> stalled = rf.newton(lambda x: x*x + 1, 0.0, df=lambda x: 2*x)
+>>> stalled.converged
+False
+>>> "zero derivative" in stalled.message
+True
+
+```
+
+Near a simple root and with a sufficiently good initial guess, Newton normally
+converges quadratically. That is a local asymptotic statement, not a guarantee
+for an arbitrary start. A repeated root changes the rate unless multiplicity
+is handled. Secant avoids an explicit derivative but also sacrifices the
+bracket safeguard. Muller can enter complex arithmetic to locate complex roots.
+
+### Compare work fairly
+
+An iteration may require one or several residual evaluations and additional
+derivatives or linear solves. `.function_calls` counts evaluations of the
+residual callable on the normal solver path; separately supplied derivative
+calls are not added to that count. Wrap expensive derivatives in
+`CountedFunction` when comparing total cost.
+
 <figure markdown="span">
-  ![Newton at a triple root, with and without the multiplicity correction](../assets/figures/rootfind-multiplicity.svg#only-light)
-  ![Newton at a triple root, with and without the multiplicity correction](../assets/figures/rootfind-multiplicity-dark.svg#only-dark)
-  <figcaption>At a root of multiplicity three, plain Newton converges linearly — it gains a fixed fraction of a digit per step — because the root-finding problem is no longer simple. Telling it <code>multiplicity=3</code> restores the quadratic rate.</figcaption>
+  ![Root error plotted against actual function evaluations for several scalar methods](../assets/figures/rootfind-accuracy-work.svg#only-light)
+  ![Root error plotted against actual function evaluations for several scalar methods](../assets/figures/rootfind-accuracy-work-dark.svg#only-dark)
+  <figcaption>Solvers locate √2 from the bracket [1,2], with Newton starting at 2, over a range of requested tolerances. Actual residual calls and Newton’s additional derivative calls expose work that iteration counts hide. Performance on this smooth problem does not establish robustness for arbitrary starts.</figcaption>
 </figure>
 
-Without a derivative, `newton` falls back to a finite difference, so it always
-runs; supplying `df` is faster and more accurate.
+## Histories and callbacks
 
-## Systems of equations
+Supported scalar and system solvers expose `store_history`, `history_stride`,
+and `callback`. Histories are enabled by default. `store_history=False` avoids
+retaining snapshots, while `history_stride=N` retains every Nth appended
+snapshot. Algorithms may include an initial state separately, so history length
+is not a universal iteration counter.
+
+```pycon
+>>> compact = rf.newton(f, 1.0, df=lambda x: 2*x, store_history=False)
+>>> compact.history, compact.converged
+([], True)
+>>> observed = []
+>>> def observe(x):
+...     observed.append(float(x))
+...     return False
+>>> monitored = rf.newton(f, 1.0, df=lambda x: 2*x, callback=observe)
+>>> monitored.converged and len(observed) > 0
+True
+
+```
+
+Callbacks receive a private iterate copy. Returning true or raising
+`StopIteration` requests a stop, reported with `converged=False` and a stop
+message. The callback runs when the algorithm appends an iterate, not on every
+function evaluation. Callback-stop results do not preserve complete ordinary
+call accounting, so use your own wrapper if an exact evaluation count matters.
+
+Histories are method-specific. Do not assume that all entries are scalar roots
+or that all methods store the same data. Read the API or inspect an entry
+before plotting a history. Re-evaluating `f` for a plot is extra diagnostic
+work and should not be attributed to the original solver's count.
+
+## Systems of nonlinear equations
+
+For `F: R^n -> R^n`, pass a state vector and return one residual per equation.
+An analytic Jacobian has shape `(n, n)`, with `J[i, j] = dF_i/dx_j`.
+Finite differences are used when `jac` is omitted.
 
 ```pycon
 >>> def F(x):
-...     return np.array([x[0]**2 + x[1]**2 - 4, x[0] - x[1]])
->>> res = qd.newton_system(F, [1.0, 0.5])
->>> [round(float(v), 10) for v in res.root]
-[1.4142135624, 1.4142135624]
->>> res.converged
+...     return np.array([x[0]**2 + x[1]**2 - 1.0, x[0] - x[1]])
+>>> def J(x):
+...     return np.array([[2*x[0], 2*x[1]], [1.0, -1.0]])
+>>> system = rf.damped_newton_system(F, [0.8, 0.6], jac=J)
+>>> system.converged and float(np.linalg.norm(F(system.root))) < 1e-10
+True
+>>> system.root.shape
+(2,)
+
+```
+
+Newton solves a linearized system at each step. Damped Newton searches for a
+step reducing the residual, which can improve behavior away from the solution.
+Broyden methods update a Jacobian or inverse-Jacobian approximation instead
+of rebuilding it. Newton-Krylov methods replace a dense Newton solve with an
+iterative product-based calculation where supported.
+
+Scale variables and equations before solving. If one residual is naturally
+one million times larger than another, an unscaled norm can effectively ignore
+the smaller equation. Validate an analytic Jacobian against
+`core.numerical_jacobian` at several representative states, including places
+where branches or domain constraints matter.
+
+For fixed-point methods, the residual is associated with `G(x)-x`. Rewriting
+an equation as `x=G(x)` changes the iteration even though the fixed points may
+be the same. Local contraction requires suitable derivatives; acceleration
+cannot turn every divergent map into a reliable solver.
+
+## Polynomial roots
+
+Polynomial root routines use coefficients in **descending powers**. For
+example, `[1, 0, -2]` represents `x**2 - 2`. This differs from the ascending
+Taylor coefficients used by Padé approximation.
+
+```pycon
+>>> coefficients = [1.0, 0.0, -2.0]
+>>> roots = rf.polynomial_roots(coefficients)
+>>> np.allclose(np.sort(np.real(roots)), [-np.sqrt(2.0), np.sqrt(2.0)])
+True
+>>> max(abs(rf.horner(coefficients, r)) for r in roots) < 1e-10
 True
 
 ```
 
-| Situation | Method |
-| --- | --- |
-| Jacobian available and cheap | `newton_system` |
-| Newton diverges from your starting point | `damped_newton_system` (backtracking line search) |
-| Jacobian expensive | `broyden_good` (rank-1 update), `broyden_bad` |
-| no Jacobian at all | `secant_system` |
-| structure is `x = G(x)` | `fixed_point_system`, `anderson_acceleration` |
-| the problem is decoupled by variable | `nonlinear_gauss_seidel` |
-| no good starting point exists | `continuation`, `homotopy` |
-| far from the solution, want global convergence | `trust_region_dogleg_root` |
-| Jacobian too large to form | `newton_krylov` |
+`polynomial_roots` defaults to companion-matrix roots. Durand-Kerner and
+Aberth-Ehrlich iterate on all roots; Laguerre targets one root; Bairstow works
+with quadratic factors. Horner evaluation, synthetic division, root bounds,
+and Sturm-chain helpers support diagnosis and real-root counting.
 
-Anderson acceleration is the general-purpose way to speed up any fixed-point
-iteration you already have, without changing it:
+Root locations can be extremely sensitive to coefficient perturbations,
+especially for repeated or clustered roots. A polynomial's degree alone does
+not describe its difficulty. Scale the independent variable when coefficients
+span a large range, and check residuals relative to
+`sum(abs(c[k]) * abs(root)**power_k)` rather than using an arbitrary absolute
+threshold. Deflation propagates root errors into subsequent factors.
+
+`find_all_roots` scans a callable on a uniform grid and refines sign changes.
+It can miss even-multiplicity roots, multiple roots inside one cell, and
+features narrower than the grid. Increase resolution and use polynomial
+structure or analytic information when completeness matters.
+
+## Continuation through parameter changes
+
+Solving independently at many parameter values can jump between branches or
+fail near a fold. `pseudo_arclength` follows `F(x, parameter)=0` in the combined
+state-parameter space, using predictor and corrector steps. The parameter is
+allowed to turn around, which is the defining advantage near folds.
 
 ```pycon
->>> G = lambda x: np.cos(x)                     # x = cos(x)
->>> plain = qd.rootfind.fixed_point_system(G, [1.0], tol=1e-12)
->>> fast = qd.anderson_acceleration(G, [1.0], tol=1e-12)
->>> fast.converged and fast.iterations < plain.iterations
+>>> branch = rf.pseudo_arclength(lambda x, p: [x[0]**2 - p], [1.0], 1.0,
+...                             ds=0.05, max_steps=4, direction=-1)
+>>> branch.converged
 True
->>> round(float(fast.root[0]), 10)
-0.7390851332
-
-```
-
-### Jacobian-free Newton-Krylov
-
-When the Jacobian is too large to form — a discretized PDE, say —
-`newton_krylov` never builds it. The Newton step is solved by restarted GMRES
-using only directional derivatives, each of which is one extra evaluation of
-`F`:
-
-```pycon
->>> n = 50                                    # 1-D Bratu problem
->>> h = 1.0 / (n + 1)
->>> def bratu(u):
-...     lap = np.zeros(n)
-...     up = np.concatenate(([0.0], u, [0.0]))
-...     lap = (up[:-2] - 2*up[1:-1] + up[2:]) / h**2
-...     return lap + 3.0 * np.exp(u)
->>> res = qd.newton_krylov(bratu, np.zeros(n), tol=1e-10)
->>> res.converged, float(np.max(np.abs(bratu(res.root)))) < 1e-8
-(True, True)
-
-```
-
-Unpreconditioned, the number of Krylov iterations grows as the mesh is
-refined; that is a property of the operator, not of the implementation. Pass
-`precond=` — a callable or matrix approximating `J⁻¹` — to fix it. On `n = 1000`
-Bratu, preconditioning takes the cost from 102,101 residual evaluations to 21.
-
-## Polynomials
-
-A polynomial's structure allows all roots at once, exact deflation, and
-counting real roots without finding them. Coefficients run highest degree
-first, matching `numpy.polyval`.
-
-```pycon
->>> coeffs = [1.0, -6.0, 11.0, -6.0]                # x³ - 6x² + 11x - 6
->>> roots = qd.polynomial_roots(coeffs)
->>> sorted(round(float(np.real(z)), 10) for z in roots)
-[1.0, 2.0, 3.0]
-
-```
-
-| Method | Finds | Note |
-| --- | --- | --- |
-| `companion_roots` | all roots | the standard approach; `polynomial_roots` default |
-| `durand_kerner` | all roots at once | simultaneous iteration, quadratic |
-| `aberth_ehrlich` | all roots at once | cubic; the fastest of the simultaneous methods |
-| `laguerre_root` | one root | cubic for simple roots, very robust |
-| `bairstow` | quadratic factors | complex pairs without complex arithmetic |
-| `jenkins_traub_like` | all roots | Laguerre plus deflation |
-| `newton_polynomial` | one root | Newton via Horner, two evaluations per step |
-
-<figure markdown="span">
-  ![Polynomial roots in the complex plane, inside the bounds on their moduli](../assets/figures/rootfind-polynomial-roots.svg#only-light)
-  ![Polynomial roots in the complex plane, inside the bounds on their moduli](../assets/figures/rootfind-polynomial-roots-dark.svg#only-dark)
-  <figcaption>Two methods on a degree-six polynomial: the companion-matrix eigenvalues and the simultaneous Aberth-Ehrlich iteration agree to plotting accuracy. The circles are `root_bounds`, computed from the coefficients alone, before any root is found.</figcaption>
-</figure>
-
-Supporting machinery: `horner` and `horner_derivative` evaluate in `n`
-multiplications, `synthetic_division` and `deflate` remove a known root,
-`root_bounds` gives Cauchy and Fujiwara bounds on the moduli, and Sturm
-sequences count real roots in an interval exactly:
-
-```pycon
->>> from quadrivium.rootfind import count_real_roots, root_bounds, horner
->>> count_real_roots(coeffs, 0.0, 2.5)              # roots at 1 and 2
-2
->>> round(float(horner(coeffs, 2.0)), 12)
-0.0
->>> bounds = root_bounds(coeffs)
->>> sorted(bounds)
-['cauchy', 'fujiwara', 'lower']
->>> all(bounds["lower"] - 1e-12 <= abs(z) <= bounds["cauchy"] + 1e-12 for z in roots)
+>>> float(np.max(branch.residuals)) < 1e-8
 True
+>>> branch.x.shape, branch.parameters.shape
+((5, 1), (5,))
 
 ```
 
-## Reading the result
+`ContinuationResult` stores states, parameters, tangents, residuals, call
+counts, and a termination message. Supply `jac` and `parameter_derivative`
+when available. Step bounds and the Newton correction budget govern how the
+method responds to difficult parts of a branch.
 
-`RootResult` carries the root, the residual there, the iteration count, the
-function-call count, the full iterate history, and a message:
-
-```pycon
->>> r = qd.brent(f, 1, 3)
->>> abs(r.f_root) < 1e-13
-True
->>> r.history[0] != r.history[-1] and len(r.history) == r.iterations
-True
->>> r.message
-'converged'
-
-```
-
-## Pitfalls
-
-- **A bracket is a promise; check it exists.** Bracketing methods raise
-  `BracketError` when `f(a)` and `f(b)` share a sign, rather than returning
-  nonsense.
-- **`f(a)·f(b) < 0` finds one root, not all of them.** An even number of roots
-  in the interval leaves the signs unchanged. Use `find_all_roots` or
-  `count_real_roots`.
-- **Newton without a bracket can leave the region entirely.** If it does, the
-  result comes back with `converged=False`; use `damped_newton_system` or a
-  bracketing method rather than a better initial guess you do not have.
-- **A tolerance on `x` is not a tolerance on `f(x)`.** Near a multiple root,
-  `f` is flat: `|f(x)| < 1e-16` can hold while `x` is wrong in the fourth
-  decimal. Check both, which is why `f_root` is returned.
-- **Steffensen squares the function's scale.** It evaluates `f(x + f(x))`, so
-  a large `f` takes it far away. It is best on functions already near their
-  root.
-
-## See also
-
-- [`rootfind` API reference](../api/rootfind.md) — every signature.
-- [Optimization guide](optimize.md) — minimizing `‖F(x)‖²` when a root does not
-  exist, and finding stationary points instead of roots.
-- [Approximation guide](approx.md) — `aaa` and Padé, whose poles and zeros are
-  found this way.
+With `stability=True`, the code treats `F` as a dynamical-system right-hand
+side and classifies negative real parts of Jacobian eigenvalues as stable.
+That interpretation is meaningful only if your residual actually represents
+that dynamics. Reported folds and stability changes are interpolated candidate
+locations, not certified bifurcation points. Refine and validate interesting
+locations independently. See [ODE methods](ode.md) for time evolution and
+[differentiation](diff.md) for constructing the required derivatives.

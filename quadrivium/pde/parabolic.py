@@ -10,7 +10,8 @@ from __future__ import annotations
 from .. import numeric as np
 
 from ..core.exceptions import DomainError
-from ..core.types import PDESolution
+from ..core.storage import (pde_solution as PDESolution, TimeGrid,
+                            Trajectory, output_control, OutputRecorder)
 from ..core.utils import as_vector
 from ..linalg.direct import thomas
 
@@ -37,7 +38,7 @@ def stability_ratio(alpha: float, dt: float, dx: float) -> float:
 
 def _grid(x_span, nx, t_span, nt):
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     return x, t, x[1] - x[0], t[1] - t[0]
 
 
@@ -56,9 +57,11 @@ def heat_ftcs(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 1000,
             "implicit scheme such as heat_btcs / heat_crank_nicolson"
         )
     u = np.array([u0(xi) for xi in x], dtype=float) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         un = u.copy()
         u[1:-1] = un[1:-1] + r * (un[2:] - 2 * un[1:-1] + un[:-2])
         if source is not None:
@@ -75,13 +78,15 @@ def heat_btcs(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 100,
     x, t, dx, dt = _grid(x_span, nx, t_span, nt)
     r = alpha * dt / dx**2
     u = np.array([u0(xi) for xi in x], dtype=float) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
     m = nx - 1
     lower = np.full(m - 1, -r)
     diag = np.full(m, 1 + 2 * r)
     upper = np.full(m - 1, -r)
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         rhs = u[1:-1].copy()
         if source is not None:
             rhs += dt * np.array([source(xi, t[k + 1]) for xi in x[1:-1]])
@@ -107,13 +112,15 @@ def heat_theta(u0, alpha: float, x_span, t_span, nx: int = 50, nt: int = 100,
     x, t, dx, dt = _grid(x_span, nx, t_span, nt)
     r = alpha * dt / dx**2
     u = np.array([u0(xi) for xi in x], dtype=float) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
     m = nx - 1
     lower = np.full(m - 1, -theta * r)
     diag = np.full(m, 1 + 2 * theta * r)
     upper = np.full(m - 1, -theta * r)
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         un = u[1:-1]
         rhs = un + (1 - theta) * r * (u[2:] - 2 * un + u[:-2])
         if source is not None:
@@ -139,7 +146,7 @@ def heat_2d_adi(u0, alpha: float, x_span, y_span, t_span, nx: int = 40, ny: int 
     """
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
     y = np.linspace(float(y_span[0]), float(y_span[1]), ny + 1)
-    t = np.linspace(float(t_span[0]), float(t_span[1]), nt + 1)
+    t = TimeGrid(t_span[0], t_span[1], nt + 1)
     dx, dy, dt = x[1] - x[0], y[1] - y[0], t[1] - t[0]
     rx = alpha * dt / (2 * dx**2)
     ry = alpha * dt / (2 * dy**2)
@@ -147,7 +154,7 @@ def heat_2d_adi(u0, alpha: float, x_span, y_span, t_span, nx: int = 40, ny: int 
         U = np.array([[u0(xi, yj) for yj in y] for xi in x])
     else:
         U = np.array(u0, dtype=float)
-    out = np.empty((nt + 1, nx + 1, ny + 1))
+    out = Trajectory(t)
     out[0] = U
     lx = np.full(nx - 2, -rx)
     dxg = np.full(nx - 1, 1 + 2 * rx)
@@ -159,6 +166,8 @@ def heat_2d_adi(u0, alpha: float, x_span, y_span, t_span, nx: int = 40, ny: int 
     # the lines go to the solver together: one factorization and one call per
     # half-step instead of one per line.
     for k in range(nt):
+        if out.recorder.stopped:
+            break
         half = U.copy()
         # implicit in x, explicit in y -- one column of `rhs` per interior j
         rhs = U[1:-1, 1:-1] + ry * (U[1:-1, 2:] - 2 * U[1:-1, 1:-1] + U[1:-1, :-2])
@@ -183,26 +192,48 @@ def method_of_lines(u0, rhs, x_span, t_span, nx: int = 50, solver="rk45",
                     bc=(0.0, 0.0), **kwargs):
     """Method of lines: discretize in space, then hand the ODE system to a solver.
 
-    ``rhs(t, u, x, dx)`` returns ``du/dt`` at the interior nodes.
+    ``rhs(t, u, x, dx)`` receives the full state and coordinate arrays,
+    both of length ``nx + 1``, including the two boundary nodes. It must
+    return a derivative array of that same length. Only ``rhs(...)[1:-1]``
+    is integrated; the endpoint derivative entries are ignored and may be
+    set to zero. Returning only the interior derivatives is incorrect.
+
+    Boundary values from ``bc`` are inserted before every RHS evaluation.
+    The returned ``PDESolution`` reconstructs the full state at each saved
+    time. ``solver="rk45"`` selects Dormand-Prince; other solver names and
+    additional keyword arguments are forwarded to ``solve_ivp``.
     """
-    from ..ode.explicit import dormand_prince, rk4
-    from ..ode.implicit import bdf, radau_iia
+    from ..ode import solve_ivp
+    from ..core.storage import SolverCheckpoint, _OPTIONS
 
     x = np.linspace(float(x_span[0]), float(x_span[1]), nx + 1)
     dx = x[1] - x[0]
     u_init = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0)
 
-    def f(t, u):
-        full = u.copy()
+    def expand(t, interior):
+        full = np.empty(nx + 1)
+        full[1:-1] = interior
         full[0] = bc[0](t) if callable(bc[0]) else bc[0]
         full[-1] = bc[1](t) if callable(bc[1]) else bc[1]
-        du = rhs(t, full, x, dx)
-        du[0] = du[-1] = 0.0
-        return du
+        return full
 
-    solvers = {"rk45": dormand_prince, "rk4": rk4, "radau": radau_iia, "bdf": bdf}
-    sol = solvers[solver](f, t_span, u_init, **kwargs)
-    return PDESolution(sol.y, (x,), sol.t, f"method_of_lines_{solver}")
+    def f(t, interior):
+        full = expand(t, interior)
+        return as_vector(rhs(t, full, x, dx))[1:-1]
+
+    callback = _OPTIONS.get().get("callback")
+    method = "dormand_prince" if solver == "rk45" else solver
+    sol = solve_ivp(f, t_span, u_init[1:-1], method=method,
+                    callback=None if callback is None else lambda t,y: callback(t,expand(t,y)),
+                    **kwargs)
+    states = np.array([expand(t,y) for t,y in zip(sol.t,sol.y)])
+    result = PDESolution(states, (x,), sol.t, f"method_of_lines_{solver}",
+                         converged=sol.success)
+    final_t = sol.checkpoint.t
+    result._final_state = expand(final_t, sol.y_final)
+    result.checkpoint = SolverCheckpoint(final_t,result._final_state.copy(),result.method,
+                                         sol.checkpoint.metadata)
+    return result
 
 
 def diffusion_reaction(u0, alpha: float, reaction, x_span, t_span, nx: int = 50,
@@ -215,13 +246,15 @@ def diffusion_reaction(u0, alpha: float, reaction, x_span, t_span, nx: int = 50,
     x, t, dx, dt = _grid(x_span, nx, t_span, nt)
     r = alpha * dt / dx**2
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
     m = nx - 1
     lower = np.full(m - 1, -r)
     diag = np.full(m, 1 + 2 * r)
     upper = np.full(m - 1, -r)
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         rhs = u[1:-1] + dt * np.array([reaction(v) for v in u[1:-1]])
         bl = bc[0](t[k + 1]) if callable(bc[0]) else bc[0]
         br = bc[1](t[k + 1]) if callable(bc[1]) else bc[1]
@@ -244,9 +277,11 @@ def advection_diffusion(u0, velocity: float, alpha: float, x_span, t_span,
     r = alpha * dt / dx**2
     c = velocity * dt / dx
     u = np.array([u0(xi) for xi in x]) if callable(u0) else as_vector(u0).copy()
-    U = np.empty((nt + 1, nx + 1))
+    U = Trajectory(t)
     U[0] = u
     for k in range(nt):
+        if U.recorder.stopped:
+            break
         un = u.copy()
         diff = r * (un[2:] - 2 * un[1:-1] + un[:-2])
         if upwind:
@@ -259,3 +294,10 @@ def advection_diffusion(u0, velocity: float, alpha: float, x_span, t_span,
         u[-1] = bc[1](t[k + 1]) if callable(bc[1]) else bc[1]
         U[k + 1] = u
     return PDESolution(U, (x,), t, "advection_diffusion")
+
+
+# Share output policy through nested method-of-lines and wrapper calls.
+for _name in __all__:
+    if "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

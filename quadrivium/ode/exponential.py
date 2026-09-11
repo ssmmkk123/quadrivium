@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import ODESolution
+from ..core.storage import (ode_solution as ODESolution, TimeGrid, Trajectory,
+                            OutputRecorder, output_control)
 from ..core.utils import CountedFunction, as_vector, check_square
 from ..linalg.eigen import matrix_exponential
 
@@ -74,10 +75,12 @@ def exponential_euler(A, g, t_span, y0, n: int = 100):
     E = matrix_exponential(h * A)
     P1 = phi_function(h * A, 1)
     gc = CountedFunction(lambda t, v: as_vector(g(t, v)))
-    ts = np.linspace(t0, tf, n + 1)
-    ys = np.empty((n + 1, y.size))
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
     ys[0] = y
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         y = E @ y + h * (P1 @ gc(ts[i], y))
         ys[i + 1] = y
     return ODESolution(ts, ys, "exponential_euler", n, n, 0, gc.calls, True, "completed")
@@ -93,10 +96,12 @@ def etd_rk2(A, g, t_span, y0, n: int = 100):
     P1 = phi_function(h * A, 1)
     P2 = phi_function(h * A, 2)
     gc = CountedFunction(lambda t, v: as_vector(g(t, v)))
-    ts = np.linspace(t0, tf, n + 1)
-    ys = np.empty((n + 1, y.size))
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
     ys[0] = y
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         gn = gc(ts[i], y)
         a = E @ y + h * (P1 @ gn)
         y = a + h * (P2 @ (gc(ts[i + 1], a) - gn))
@@ -122,10 +127,12 @@ def etd_rk4(A, g, t_span, y0, n: int = 100):
     beta = h * (2 * phi2 - 4 * phi3)
     gamma = h * (-phi2 + 4 * phi3)
     gc = CountedFunction(lambda t, v: as_vector(g(t, v)))
-    ts = np.linspace(t0, tf, n + 1)
-    ys = np.empty((n + 1, y.size))
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
     ys[0] = y
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         t = ts[i]
         Nu = gc(t, y)
         a = E2 @ y + 0.5 * h * (p1h @ Nu)
@@ -153,10 +160,12 @@ def exponential_rosenbrock(f, t_span, y0, n: int = 100, jac=None):
     y = as_vector(y0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    ys = np.empty((n + 1, y.size))
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
     ys[0] = y
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         t = ts[i]
         J = jac(t, y) if jac is not None else numerical_jacobian(lambda v: fc(t, v), y)
         P1 = phi_function(h * J, 1)
@@ -178,10 +187,12 @@ def magnus_second_order(A_of_t, t_span, y0, n: int = 100):
     y = as_vector(y0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    ys = np.empty((n + 1, y.size))
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
     ys[0] = y
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         Omega = h * np.asarray(A_of_t(ts[i] + h / 2), dtype=float)
         y = matrix_exponential(Omega) @ y
         ys[i + 1] = y
@@ -208,3 +219,9 @@ def krylov_expm_multiply(A, v, t: float = 1.0, m: int = 30):
     e1 = np.zeros(k)
     e1[0] = 1.0
     return beta * (Q[:, :k] @ (E @ e1))
+
+
+for _name in __all__:
+    if callable(globals()[_name]) and "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

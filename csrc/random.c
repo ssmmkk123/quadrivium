@@ -7,6 +7,7 @@
  */
 #include "qnp.h"
 #include "ziggurat_tables.h"
+#include <float.h>
 
 #if defined(__SIZEOF_INT128__)
 typedef unsigned __int128 qu128;
@@ -288,6 +289,7 @@ typedef double (*Sampler)(PCG64 *rng, void *ctx);
  * `uniform(low_array, high_array, size=...)` broadcasts the way NumPy's
  * generators do. */
 typedef double (*ParamSampler)(PCG64 *rng, const double *params);
+typedef int (*ParamValidator)(QArray **params);
 
 static PyObject *fill_samples(QGenerator *self, PyObject *size, Sampler fn, void *ctx) {
     qintp shape[QNP_MAXDIMS];
@@ -327,10 +329,80 @@ static int reject_negative(QArray *p, const char *message) {
     return 0;
 }
 
+static int validate_poisson(QArray **params) {
+    QArray *p = params[0];
+    if (qnp_size(p) == 0) return 0;
+    QIter it;
+    if (qnp_iter_init(&it, 1, params, p->shape, p->nd) < 0) return -1;
+    /* Leave ten standard deviations before int64 overflow, as in NumPy. */
+    const double largest = (double)INT64_MAX - 10.0 * sqrt((double)INT64_MAX);
+    while (qnp_iter_next(&it)) {
+        const char *q = it.ptr[0];
+        for (qintp i = 0; i < it.inner_len; i++, q += it.inner_stride[0]) {
+            double lam = *(const double *)q;
+            if (!isfinite(lam) || lam < 0.0 || lam > largest) {
+                PyErr_SetString(PyExc_ValueError,
+                                "lam must be finite, nonnegative and within the int64 sampling range");
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int validate_uniform(QArray **params) {
+    /* Check raw endpoints as well as their broadcast differences: even an
+     * empty requested output must not make a nonfinite scalar acceptable. */
+    for (int k = 0; k < 2; k++) {
+        QArray *p = params[k];
+        if (qnp_size(p) == 0) continue;
+        QArray *ops[1] = {p};
+        QIter it;
+        if (qnp_iter_init(&it, 1, ops, p->shape, p->nd) < 0) return -1;
+        while (qnp_iter_next(&it)) {
+            const char *q = it.ptr[0];
+            for (qintp i = 0; i < it.inner_len; i++, q += it.inner_stride[0]) {
+                if (!isfinite(*(const double *)q)) {
+                    PyErr_SetString(PyExc_ValueError, "uniform bounds must be finite");
+                    return -1;
+                }
+            }
+        }
+    }
+    qintp shape[QNP_MAXDIMS];
+    int nd;
+    if (qnp_broadcast_shapes(2, params, shape, &nd) < 0) return -1;
+    for (int d = 0; d < nd; d++) if (shape[d] == 0) return 0;
+    qintp count = 1;
+    for (int d = 0; d < nd; d++) {
+        if (shape[d] > PY_SSIZE_T_MAX / (qintp)sizeof(double) / count) {
+            PyErr_SetString(PyExc_ValueError, "broadcast parameter array is too big");
+            return -1;
+        }
+        count *= shape[d];
+    }
+    QIter it;
+    if (qnp_iter_init(&it, 2, params, shape, nd) < 0) return -1;
+    while (qnp_iter_next(&it)) {
+        const char *lo = it.ptr[0], *hi = it.ptr[1];
+        for (qintp i = 0; i < it.inner_len; i++) {
+            double width = *(const double *)hi - *(const double *)lo;
+            if (!isfinite(width) || width < 0.0) {
+                PyErr_SetString(PyExc_ValueError,
+                                "high - low must be finite and nonnegative");
+                return -1;
+            }
+            lo += it.inner_stride[0];
+            hi += it.inner_stride[1];
+        }
+    }
+    return 0;
+}
+
 static PyObject *fill_with_params(QGenerator *self, PyObject *size, int nparams,
                                   PyObject **param_objs, ParamSampler fn,
                                   int integral, int check_index,
-                                  const char *check_msg) {
+                                  const char *check_msg, ParamValidator validate) {
     QArray *params[2] = {NULL, NULL};
     for (int i = 0; i < nparams; i++) {
         params[i] = qnp_from_any(param_objs[i], QNP_FLOAT64, 1);
@@ -363,6 +435,14 @@ static PyObject *fill_with_params(QGenerator *self, PyObject *size, int nparams,
         }
         broadcast[i] = (QArray *)b;
         ops[i + 1] = broadcast[i];
+    }
+    /* Reject incompatible or unallocatable outputs before walking a possibly
+     * large parameter broadcast. Validation still precedes every RNG draw,
+     * and checks raw parameters even when the requested output is empty. */
+    if (validate != NULL && validate(params) < 0) {
+        for (int i = 0; i < nparams; i++) Py_CLEAR(broadcast[i]);
+        Py_DECREF(out);
+        goto fail;
     }
     QIter it;
     if (qnp_iter_init(&it, nparams + 1, ops, shape, nd) < 0) {
@@ -459,7 +539,7 @@ static PyObject *gen_normal(QGenerator *self, PyObject *args, PyObject *kwds) {
     PyObject *zero = PyFloat_FromDouble(0.0), *one = PyFloat_FromDouble(1.0);
     if (zero == NULL || one == NULL) { Py_XDECREF(zero); Py_XDECREF(one); return NULL; }
     PyObject *params[2] = {loc ? loc : zero, scale ? scale : one};
-    PyObject *result = fill_with_params(self, size, 2, params, param_normal, 0, 1, "scale < 0");
+    PyObject *result = fill_with_params(self, size, 2, params, param_normal, 0, 1, "scale < 0", NULL);
     Py_DECREF(zero);
     Py_DECREF(one);
     return result;
@@ -473,7 +553,8 @@ static PyObject *gen_uniform(QGenerator *self, PyObject *args, PyObject *kwds) {
     PyObject *zero = PyFloat_FromDouble(0.0), *one = PyFloat_FromDouble(1.0);
     if (zero == NULL || one == NULL) { Py_XDECREF(zero); Py_XDECREF(one); return NULL; }
     PyObject *params[2] = {low ? low : zero, high ? high : one};
-    PyObject *result = fill_with_params(self, size, 2, params, param_uniform, 0, -1, NULL);
+    PyObject *result = fill_with_params(self, size, 2, params, param_uniform, 0, -1, NULL,
+                                       validate_uniform);
     Py_DECREF(zero);
     Py_DECREF(one);
     return result;
@@ -487,7 +568,7 @@ static PyObject *gen_exponential(QGenerator *self, PyObject *args, PyObject *kwd
     PyObject *one = PyFloat_FromDouble(1.0);
     if (one == NULL) return NULL;
     PyObject *params[1] = {scale ? scale : one};
-    PyObject *result = fill_with_params(self, size, 1, params, param_expo, 0, 0, "scale < 0");
+    PyObject *result = fill_with_params(self, size, 1, params, param_expo, 0, 0, "scale < 0", NULL);
     Py_DECREF(one);
     return result;
 }
@@ -500,7 +581,8 @@ static PyObject *gen_poisson(QGenerator *self, PyObject *args, PyObject *kwds) {
     PyObject *one = PyFloat_FromDouble(1.0);
     if (one == NULL) return NULL;
     PyObject *params[1] = {lam ? lam : one};
-    PyObject *result = fill_with_params(self, size, 1, params, param_poisson, 1, 0, "lam < 0");
+    PyObject *result = fill_with_params(self, size, 1, params, param_poisson, 1, -1, NULL,
+                                       validate_poisson);
     Py_DECREF(one);
     return result;
 }
@@ -707,10 +789,28 @@ static PyObject *gen_choice(QGenerator *self, PyObject *args, PyObject *kwds) {
         QArray *pw = qnp_ascontiguous(p0);
         Py_DECREF(p0);
         if (pw == NULL) { Py_DECREF(idx); Py_XDECREF(population); return NULL; }
-        if (qnp_size(pw) != pop_size) {
+        if (pw->nd != 1 || qnp_size(pw) != pop_size) {
             Py_DECREF(pw); Py_DECREF(idx); Py_XDECREF(population);
-            PyErr_SetString(PyExc_ValueError, "a and p must have the same size");
+            PyErr_SetString(PyExc_ValueError, "p must be one-dimensional with the same size as a");
             return NULL;
+        }
+        double tolerance = sqrt(DBL_EPSILON);
+        if (!QArray_Check(p_obj) && PyObject_CheckBuffer(p_obj)) {
+            Py_buffer view;
+            if (PyObject_GetBuffer(p_obj, &view, PyBUF_FULL_RO) == 0) {
+                const char *format = view.format;
+                if (format != NULL) {
+                    if (*format == '@' || *format == '=' || *format == '<'
+                            || *format == '>' || *format == '|') format++;
+                    /* Widening a float32 probability array must not make
+                     * its original normalization rounding unacceptable. */
+                    if (!strcmp(format, "f") && view.itemsize == sizeof(float))
+                        tolerance = sqrt(FLT_EPSILON);
+                }
+                PyBuffer_Release(&view);
+            } else {
+                PyErr_Clear();
+            }
         }
         /* cumsum, normalise, then a right-side search: NumPy's exact recipe. */
         double *cdf = (double *)PyMem_Malloc((size_t)pop_size * sizeof(double));
@@ -719,8 +819,29 @@ static PyObject *gen_choice(QGenerator *self, PyObject *args, PyObject *kwds) {
             return PyErr_NoMemory();
         }
         const double *probs = (const double *)pw->data;
-        double acc = 0.0;
-        for (qintp i = 0; i < pop_size; i++) { acc += probs[i]; cdf[i] = acc; }
+        double acc = 0.0, sum = 0.0, correction = 0.0;
+        for (qintp i = 0; i < pop_size; i++) {
+            if (!isfinite(probs[i]) || probs[i] < 0.0) {
+                PyMem_Free(cdf);
+                Py_DECREF(pw); Py_DECREF(idx); Py_XDECREF(population);
+                PyErr_SetString(PyExc_ValueError, "probabilities must be finite and nonnegative");
+                return NULL;
+            }
+            /* Validate with compensated summation, but retain the original
+             * cumulative rounding so valid seeded choices stay identical. */
+            double adjusted = probs[i] - correction;
+            double next = sum + adjusted;
+            correction = (next - sum) - adjusted;
+            sum = next;
+            acc += probs[i];
+            cdf[i] = acc;
+        }
+        if (!isfinite(sum) || fabs(sum - 1.0) > tolerance) {
+            PyMem_Free(cdf);
+            Py_DECREF(pw); Py_DECREF(idx); Py_XDECREF(population);
+            PyErr_SetString(PyExc_ValueError, "probabilities must sum to one");
+            return NULL;
+        }
         double total = cdf[pop_size - 1];
         for (qintp i = 0; i < pop_size; i++) cdf[i] /= total;
         for (qintp i = 0; i < count; i++) {
@@ -767,7 +888,32 @@ static PyObject *gen_bit_generator(QGenerator *self, void *closure) {
     return PyUnicode_FromString("PCG64");
 }
 
+/* JSON-serializable state, with all cached bits included. Set atomically. */
+static PyObject *gen_get_state(QGenerator *self, void *closure) {
+    (void)closure;
+    return Py_BuildValue("{s:s,s:i,s:(KKKK),s:i,s:I}","bit_generator","PCG64","version",1,
+        "words",(unsigned long long)(self->rng.state>>64),(unsigned long long)self->rng.state,
+        (unsigned long long)(self->rng.inc>>64),(unsigned long long)self->rng.inc,
+        "has_uint32",self->rng.has_uint32,"uinteger",self->rng.uinteger);
+}
+static int gen_set_state(QGenerator *self,PyObject *value,void *closure) {
+    (void)closure;
+    if(!value||!PyDict_Check(value)){PyErr_SetString(PyExc_TypeError,"state must be a PCG64 state dictionary");return -1;}
+    PyObject *kind=PyDict_GetItemString(value,"bit_generator"),*words=PyDict_GetItemString(value,"words"),*version=PyDict_GetItemString(value,"version"),*has=PyDict_GetItemString(value,"has_uint32"),*cached=PyDict_GetItemString(value,"uinteger");
+    if(!kind||!PyUnicode_Check(kind)||PyUnicode_CompareWithASCIIString(kind,"PCG64")||!words||!version||!has||!cached){PyErr_SetString(PyExc_ValueError,"invalid PCG64 state");return -1;}
+    long ver=PyLong_AsLong(version),h=PyLong_AsLong(has);unsigned long c=PyLong_AsUnsignedLong(cached);
+    if(PyErr_Occurred())return -1;
+    if(ver!=1||(h!=0&&h!=1)||c>UINT32_MAX){PyErr_SetString(PyExc_ValueError,"invalid PCG64 state version or cached bits");return -1;}
+    PyObject *seq=PySequence_Fast(words,"state words must be a sequence");if(!seq)return -1;
+    if(PySequence_Fast_GET_SIZE(seq)!=4){Py_DECREF(seq);PyErr_SetString(PyExc_ValueError,"state requires four uint64 words");return -1;}
+    uint64_t w[4];for(int i=0;i<4;i++){w[i]=PyLong_AsUnsignedLongLong(PySequence_Fast_GET_ITEM(seq,i));if(PyErr_Occurred()){Py_DECREF(seq);return -1;}}
+    Py_DECREF(seq);
+    if(!(w[3]&1)){PyErr_SetString(PyExc_ValueError,"PCG64 increment must be odd");return -1;}
+    self->rng.state=((qu128)w[0]<<64)|w[1];self->rng.inc=((qu128)w[2]<<64)|w[3];self->rng.has_uint32=(int)h;self->rng.uinteger=(uint32_t)c;return 0;
+}
+
 static PyGetSetDef generator_getset[] = {
+    {"state", (getter)gen_get_state, (setter)gen_set_state, "Serializable complete PCG64 state.", NULL},
     {"bit_generator", (getter)gen_bit_generator, NULL, NULL, NULL},
     {NULL}
 };

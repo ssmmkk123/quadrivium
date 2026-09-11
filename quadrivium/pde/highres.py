@@ -10,7 +10,8 @@ from .. import numeric as np
 
 from .. import _accel
 
-from ..core.types import PDESolution
+from ..core.storage import (pde_solution as PDESolution, TimeGrid,
+                            Trajectory, output_control, OutputRecorder)
 
 __all__ = [
     "weno5_reconstruct",
@@ -114,16 +115,21 @@ def weno_conservation_law(u0, flux, wave_speed, x_span, t_span, nx: int = 200,
 
     t0, tf = float(t_span[0]), float(t_span[1])
     t = t0
-    times, states = [t], [u.copy()]
-    while t < tf:
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t, u)
+    while t < tf and not recorder.stopped:
+        if recorder.stopped:
+            break
         alpha = max(float(np.max(np.abs(wave_speed(u)))), 1e-12)
         dt = min(cfl * dx / alpha, tf - t)
         u = ssp_rk3(rhs, u, dt)
         t += dt
-        times.append(t)
-        states.append(u.copy())
-    return PDESolution(np.array(states), (x,), np.array(times),
-                       f"weno{order}_ssprk3")
+        recorder.append(t, u)
+    times, states, _ = recorder.finish()
+    result = PDESolution(states, (x,), times, f"weno{order}_ssprk3")
+    result.checkpoint = recorder.checkpoint(result.method)
+    result._final_state = result.checkpoint.y
+    return result
 
 
 def weno_burgers(u0, x_span, t_span, nx: int = 200, cfl: float = 0.4):
@@ -192,8 +198,8 @@ def navier_stokes_2d(u0, v0, nu: float, t_span, nx: int = 64, ny: int = 64,
     v = v0(X, Y) if callable(v0) else np.asarray(v0, float)
     t0, tf = float(t_span[0]), float(t_span[1])
     dt = (tf - t0) / nt
-    times = np.linspace(t0, tf, nt + 1)
-    out = np.empty((nt + 1, 2, ny, nx))
+    times = TimeGrid(t0, tf, nt + 1)
+    out = Trajectory(times)
     out[0] = np.stack([u, v])
 
     def ddx(a):
@@ -209,6 +215,8 @@ def navier_stokes_2d(u0, v0, nu: float, t_span, nx: int = 64, ny: int = 64,
 
 
     for k in range(nt):
+        if out.recorder.stopped:
+            break
         fx, fy = (forcing(X, Y, times[k]) if forcing is not None
                   else (np.zeros_like(u), np.zeros_like(v)))
         # Predictor: momentum without the pressure gradient.
@@ -252,8 +260,8 @@ def vorticity_streamfunction(omega0, nu: float, t_span, nx: int = 64, ny: int = 
            (np.abs(KY) < (2 / 3) * np.max(np.abs(ky)))
     t0, tf = float(t_span[0]), float(t_span[1])
     dt = (tf - t0) / nt
-    times = np.linspace(t0, tf, nt + 1)
-    out = np.empty((nt + 1, ny, nx))
+    times = TimeGrid(t0, tf, nt + 1)
+    out = Trajectory(times)
     out[0] = w
 
     def rhs(wh):
@@ -267,6 +275,8 @@ def vorticity_streamfunction(omega0, nu: float, t_span, nx: int = 64, ny: int = 
 
     wh = np.fft.fft2(w)
     for k in range(nt):
+        if out.recorder.stopped:
+            break
         k1 = rhs(wh)
         k2 = rhs(wh + 0.5 * dt * k1)
         k3 = rhs(wh + 0.5 * dt * k2)
@@ -327,3 +337,10 @@ def lid_driven_cavity(re: float = 100.0, n: int = 41, tol: float = 1e-6,
         if change < tol:
             break
     return psi, w, x
+
+
+# Share output policy through nested method-of-lines and wrapper calls.
+for _name in __all__:
+    if "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

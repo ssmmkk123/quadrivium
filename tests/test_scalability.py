@@ -27,7 +27,7 @@ class TestBackendIsolation(unittest.TestCase):
             return observed == expected
 
         probe = lambda: None
-        with patch.object(_accel, "_rs", SimpleNamespace(probe=probe)):
+        with patch.object(_accel, "_native", SimpleNamespace(probe=probe)):
             with ThreadPoolExecutor(max_workers=2) as pool:
                 off = pool.submit(worker, _accel.disabled, (False, None))
                 on = pool.submit(worker, _accel.enabled, (True, probe))
@@ -45,12 +45,12 @@ class TestBackendIsolation(unittest.TestCase):
                                      worker(_accel.enabled, True))
                 self.assertTrue(_accel.available())
 
-        with patch.object(_accel, "_rs", SimpleNamespace()):
+        with patch.object(_accel, "_native", SimpleNamespace()):
             asyncio.run(run())
 
     def test_nested_exception_restores_outer_context(self):
         before = _accel.available()
-        with patch.object(_accel, "_rs", SimpleNamespace()):
+        with patch.object(_accel, "_native", SimpleNamespace()):
             with _accel.disabled():
                 with self.assertRaisesRegex(RuntimeError, "test"):
                     with _accel.enabled():

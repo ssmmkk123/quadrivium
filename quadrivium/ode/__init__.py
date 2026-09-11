@@ -20,3 +20,11 @@ from .exponential import *  # noqa: F401,F403,E402
 from .implicit import *  # noqa: F401,F403,E402
 from .multistep import *  # noqa: F401,F403,E402
 from .symplectic import *  # noqa: F401,F403,E402
+
+from . import stiff as _stiff
+from .stiff import *  # noqa: F401,F403
+__all__ += _stiff.__all__
+
+from . import sensitivity as _sensitivity
+from .sensitivity import *  # noqa: F401,F403
+__all__ += _sensitivity.__all__

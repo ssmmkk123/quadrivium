@@ -69,6 +69,11 @@ typedef struct { const char *base; qintp stride; int dtype; } KeyRef;
 static int key_less(const KeyRef *k, qintp a, qintp b) {
     const char *pa = k->base + a * k->stride, *pb = k->base + b * k->stride;
     switch (k->dtype) {
+        case QNP_FLOAT32: return less_d(*(const float *)pa, *(const float *)pb);
+        case QNP_COMPLEX64: {
+            qcomplex za=qnp_read_number(pa,k->dtype),zb=qnp_read_number(pb,k->dtype);
+            return za.re!=zb.re ? less_d(za.re,zb.re) : less_d(za.im,zb.im);
+        }
         case QNP_FLOAT64: return less_d(*(const double *)pa, *(const double *)pb);
         case QNP_INT64: return *(const int64_t *)pa < *(const int64_t *)pb;
         case QNP_BOOL: return *(const qbool *)pa < *(const qbool *)pb;
@@ -139,8 +144,7 @@ static int sort_run(void *ctxv, const char *src, qintp sstride, char *dst,
         char *tmp = (char *)PyMem_Malloc((size_t)n * (size_t)isz);
         if (tmp == NULL) { PyErr_NoMemory(); return -1; }
         for (qintp i = 0; i < n; i++) memcpy(tmp + i * isz, dst + i * dstride, (size_t)isz);
-        if (ctx->dtype == QNP_FLOAT64) sort_run_d((double *)tmp, n);
-        else if (ctx->dtype == QNP_INT64) sort_run_i((int64_t *)tmp, n);
+        if (sort_run(ctxv,tmp,isz,tmp,isz,n)<0) { PyMem_Free(tmp); return -1; }
         for (qintp i = 0; i < n; i++) memcpy(dst + i * dstride, tmp + i * isz, (size_t)isz);
         PyMem_Free(tmp);
         return 0;
@@ -154,7 +158,7 @@ static int sort_run(void *ctxv, const char *src, qintp sstride, char *dst,
         memset(dst + (n - ones), 1, (size_t)ones);
     } else {
         /* Complex: lexicographic by (real, imag), via the index sort. */
-        KeyRef key = {dst, isz, QNP_COMPLEX128};
+        KeyRef key = {dst, isz, ctx->dtype};
         int64_t *idx = (int64_t *)PyMem_Malloc((size_t)n * sizeof(int64_t));
         int64_t *scratch = (int64_t *)PyMem_Malloc((size_t)n * sizeof(int64_t));
         char *copy = (char *)PyMem_Malloc((size_t)n * (size_t)isz);
@@ -300,7 +304,7 @@ static PyObject *py_searchsorted(PyObject *self, PyObject *args, PyObject *kwds)
     QArray *v0 = qnp_from_any(vo, QNP_FLOAT64, 0);
     if (a0 == NULL || v0 == NULL) { Py_XDECREF(a0); Py_XDECREF(v0); return NULL; }
     int dt = qnp_promote(a0->dtype, v0->dtype);
-    if (dt < QNP_FLOAT64) dt = QNP_FLOAT64;
+    dt = qnp_promote(dt, QNP_FLOAT64);
     QArray *af = qnp_astype(a0, dt, 0), *vf = qnp_astype(v0, dt, 0);
     Py_DECREF(a0); Py_DECREF(v0);
     if (af == NULL || vf == NULL) { Py_XDECREF(af); Py_XDECREF(vf); return NULL; }

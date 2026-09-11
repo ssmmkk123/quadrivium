@@ -1,248 +1,339 @@
-# Transforms
+# Transforms and signal processing
 
-```python
-from quadrivium.transforms import fft, wavedec, welch, cwt
-import quadrivium as qd          # qd.fft, qd.convolve, qd.power_spectrum, ...
-```
+A transform changes how a sampled signal is represented. The Fourier transform
+resolves oscillations across a record; short-time transforms and wavelets add
+localization; filtering and resampling change the signal itself. Useful analysis
+starts by recording the sampling interval, the signal units, and what happens
+outside the finite record.
 
-57 routines: the discrete Fourier family and its fast algorithms, signal
-processing built on them, and wavelets. Full signatures are in the
-[`transforms` reference](../api/transforms.md).
+The [transforms reference](../api/transforms.md) documents Fourier routines,
+spectral estimators, wavelets, and stateful signal-processing interfaces.
+The examples below use `quadrivium.numeric` arrays throughout.
 
-## The Fourier family
+## Choose the output you need
+
+| Question | Interface | Output to interpret |
+| --- | --- | --- |
+| Which frequency bins are present? | `fft`, `rfft` | Complex coefficients with magnitude and phase |
+| How is power distributed over frequency? | `power_spectrum`, `welch` | Frequency and power spectral density |
+| How does spectral power change over time? | `spectrogram` | Times, frequencies, nonnegative power array |
+| Can I edit coefficients and reconstruct? | `stft`, `istft` | Complex coefficients plus synthesis metadata |
+| Can I process successive data chunks? | `FIRFilter`, `IIRFilter`, `SOSFilter` | Filtered samples and retained filter state |
+| Can I change sample rate? | `resample_poly`, `PolyphaseResampler` | Offline or causal rational resampling |
+| Can I localize transient structure? | `wavedec`, `cwt` | Scale-dependent coefficients |
+| Do I need only one DFT bin? | `goertzel` | One coefficient without a complete spectrum |
+
+Magnitude, amplitude, power, and power spectral density have different units.
+A graph is interpretable only when its normalization matches the quantity named
+on the axis.
+
+## Fourier conventions and reconstruction
+
+The forward transform uses
+`X[k] = sum(x[j] * exp(-2*pi*i*j*k/n))`.
+The inverse includes division by `n`. Thus `X[0]` is the sample sum, and the
+mean is `X[0]/n`.
 
 ```pycon
 >>> from quadrivium import numeric as np
->>> import quadrivium as qd
->>> x = np.array([1.0, 2.0, 3.0, 4.0])
->>> X = qd.fft(x)
->>> float(np.max(np.abs(qd.ifft(X) - x))) < 1e-14
+>>> from quadrivium import transforms as tr
+>>> samples = np.array([1.0, 2.0, 3.0, 4.0])
+>>> spectrum = tr.fft(samples)
+>>> np.allclose(tr.ifft(spectrum), samples, atol=1e-12)
 True
->>> round(float(np.real(X[0])), 12)                 # the DC term is the sum
+>>> round(float(spectrum[0].real), 8)
 10.0
 
 ```
 
-`fft` chooses its algorithm from the length: radix-2 Cooley-Tukey for a power
-of two, mixed-radix when the length factorizes, and Bluestein's chirp-z
-otherwise — so a prime length is still `O(n log n)`, not `O(n²)`:
+`fft` handles arbitrary positive lengths. Radix-2, mixed-radix, and Bluestein
+implementations are also exposed for studying algorithm choices. `dft` and
+`dft_matrix` evaluate the direct definition at quadratic cost and are useful
+for small independent checks, not large records.
 
 ```pycon
->>> from quadrivium.transforms import dft, fft_bluestein
->>> y = np.random.default_rng(0).standard_normal(97)      # 97 is prime
->>> float(np.max(np.abs(qd.fft(y) - dft(y)))) < 1e-10
+>>> short = np.random.default_rng(5).standard_normal(17)
+>>> float(np.max(np.abs(tr.fft(short) - tr.dft(short)))) < 1e-10
+True
+>>> energy_time = float(np.sum(short**2))
+>>> energy_frequency = float(np.sum(np.abs(tr.fft(short))**2) / short.size)
+>>> abs(energy_time - energy_frequency) < 1e-10
 True
 
 ```
 
-| Transform | Function | For |
-| --- | --- | --- |
-| complex DFT | `fft`, `ifft` | general |
-| definition, `O(n²)` | `dft`, `idft`, `dft_matrix` | teaching, checking |
-| real input | `rfft`, `irfft` | half the work, half the storage |
-| 2-D | `fft2`, `ifft2` | images, 2-D PDEs |
-| cosine (4 kinds) | `dct`, `idct` | compression, Chebyshev methods |
-| sine (2 kinds) | `dst` | Dirichlet boundary problems |
-| Hartley | `hartley` | real-to-real, no complex arithmetic |
-| one frequency only | `goertzel` | `O(n)` per bin, cheaper than a whole FFT |
+The last comparison is Parseval's identity. It checks normalization across the
+whole signal rather than a single coefficient. A round-trip check alone can
+miss a shared scaling error in a forward/inverse pair.
 
-`fftfreq` gives the frequency of each bin and `fftshift` reorders them to put
-zero in the middle — both needed for any plot to mean anything.
+### Real transforms and odd lengths
+
+For real input, negative-frequency coefficients are conjugates of their
+positive-frequency partners. `rfft` retains `n//2 + 1` coefficients. Its input
+is real; use `fft` to preserve a complex-valued signal.
+
+```pycon
+>>> odd = np.array([0.0, 1.0, -1.0, 2.0, 0.5])
+>>> half = tr.rfft(odd)
+>>> half.shape
+(3,)
+>>> np.allclose(tr.irfft(half, n=odd.size), odd, atol=1e-12)
+True
+
+```
+
+Always pass the original `n` when reconstructing an odd-length real signal.
+Without it, `irfft` infers the even length `2*(len(half)-1)`, which cannot
+identify whether the original signal was odd or even.
+
+`fft2` and `ifft2` transform matrices along both spatial directions. For
+broader axis and batch operations, consult the array namespace in the
+[numeric guide](numeric.md); do not assume that the educational transform
+functions accept every keyword from another array library.
+
+## Attach physical frequencies and amplitude
+
+If samples are spaced by `dt`, their sample rate is `fs=1/dt`. The bin spacing
+is `fs/n`; the Nyquist frequency for a real signal is `fs/2`. A two-sided
+spectrum uses `fftfreq(n, d=dt)`. Apply `fftshift` consistently to both the
+frequencies and the coefficients if you want negative frequencies on the left.
+
+For an even-length, unwindowed real record, a one-sided amplitude spectrum is
+`abs(rfft(x))/n` with the **interior** bins doubled. DC and Nyquist bins are
+not doubled.
+
+```pycon
+>>> fs = 128.0
+>>> n = 256
+>>> time = np.arange(n) / fs
+>>> signal = 1.5 * np.sin(2*np.pi*8*time) + 0.4 * np.cos(2*np.pi*23*time)
+>>> coefficients = tr.rfft(signal)
+>>> frequency = np.arange(coefficients.size) * fs / n
+>>> amplitude = np.abs(coefficients) / n
+>>> amplitude[1:-1] *= 2.0
+>>> round(float(amplitude[16]), 6), round(float(amplitude[46]), 6)
+(1.5, 0.4)
+>>> float(frequency[16]), float(frequency[46])
+(8.0, 23.0)
+
+```
+
+Both tones complete an integer number of cycles in this record, so their energy
+lands on exact bins. With an odd-length record there is no Nyquist singleton:
+double all non-DC bins. Windowed amplitude estimates also need a correction for
+the window's coherent gain; PSD scaling is a different correction.
 
 <figure markdown="span">
-  ![A noisy two-tone signal and its magnitude spectrum](../assets/figures/transforms-signal-spectrum.svg#only-light)
-  ![A noisy two-tone signal and its magnitude spectrum](../assets/figures/transforms-signal-spectrum-dark.svg#only-dark)
-  <figcaption>Two sinusoids and a good deal of noise. In the time domain neither tone is obvious; in the transform both stand at their own frequency with the amplitude they were given, and the noise spreads across every bin.</figcaption>
+  ![Two-tone signals sampled at 64 and 16 Hz, with correctly normalized amplitude spectra](../assets/figures/transforms-sampling-spectrum.svg#only-light)
+  ![Two-tone signals sampled at 64 and 16 Hz, with correctly normalized amplitude spectra](../assets/figures/transforms-sampling-spectrum-dark.svg#only-dark)
+  <figcaption>The graph samples a 5 Hz sine of amplitude 1 and an 11 Hz sine of amplitude 0.4. At 64 Hz sampling, both tones are resolved. At 16 Hz, the 11 Hz component aliases to a negative 5 Hz sine and partially cancels the first tone, leaving amplitude 0.6. Correct amplitude normalization exposes this information loss; the FFT cannot recover the missing distinction.</figcaption>
 </figure>
 
-Parseval's identity holds to machine precision, which is the standard check
-that a transform is correctly normalized:
+## Leakage, windows, and spectral estimates
+
+A finite record is treated as a repeated segment by the DFT. If its ends do
+not join smoothly, power spreads into neighboring bins. A window reduces that
+boundary mismatch while broadening peaks. A longer observation interval can
+improve separation of nearby tones; zero-padding only samples the same finite
+record's spectrum more densely.
+
+`window(n, kind, sym=True)` creates symmetric windows by default.
+`kind` includes Hann, Hamming, Blackman, Kaiser, and other families; the
+parameter names are listed in the reference. Symmetric windows are useful
+for filter design; periodic variants can be selected for spectral analysis.
+
+`periodogram` computes an unwindowed, mean-detrended power estimate.
+`power_spectrum` adds window selection and a detrending option.
+`welch` averages overlapping windowed segment estimates. It trades segment
+frequency resolution for lower estimator variability.
 
 ```pycon
->>> n = 64
->>> sig = np.random.default_rng(1).standard_normal(n)
->>> lhs = float(np.sum(sig**2))
->>> rhs = float(np.sum(np.abs(qd.fft(sig))**2) / n)
->>> abs(lhs - rhs) < 1e-10
+>>> noisy = signal + 0.3 * np.random.default_rng(4).standard_normal(n)
+>>> frequencies, density = tr.welch(noisy, segment=128, overlap=0.5, dt=1/fs)
+>>> frequencies.shape == density.shape
+True
+>>> abs(float(frequencies[int(np.argmax(density))]) - 8.0) < 1.1
 True
 
 ```
 
-## Convolution and correlation
+The PSD has units of signal-units squared per frequency-unit. Integrating it
+over frequency estimates power after the routine's detrending and window
+normalization. A single noisy bin is not an amplitude estimate for an isolated
+tone. Use segment size, window, and the number of averages together when
+comparing two spectra.
 
-Direct convolution costs `O(nm)`; through the FFT it is `O(n log n)`, and the
-two agree:
+For `welch`, `overlap` is a fraction, not a sample count. It averages complete
+segments; if the input is shorter than a segment, it falls back to a full-record
+power spectrum. `spectrogram` behaves differently for a short record: it
+returns an empty time axis because there are no complete frames.
+
+## Reconstructable time-frequency analysis
+
+The older `spectrogram` returns `(times, frequencies, S)` with
+`S.shape == (frequency_bins, frames)`. Its entries are segment power estimates;
+phase is unavailable, so it is not input to an inverse transform.
+
+`stft` returns an `STFTResult` containing complex coefficients, frequencies,
+times, window, hop, FFT length, original length, and boundary-padding metadata.
+It takes sample rate `fs`, whereas `spectrogram` and `welch` take sample
+interval `dt`.
 
 ```pycon
->>> from quadrivium.transforms import convolve, convolve_fft
+>>> analysis = tr.stft(signal, segment=64, hop=16, fs=fs)
+>>> analysis.coefficients.shape[0]
+33
+>>> recovered = tr.istft(analysis)
+>>> recovered.shape == signal.shape
+True
+>>> float(np.max(np.abs(recovered - signal))) < 1e-12
+True
+>>> modified = analysis.coefficients.copy()
+>>> modified[analysis.frequencies > 16.0, :] = 0.0
+>>> filtered = tr.istft(analysis, coefficients=modified)
+>>> filtered.shape
+(256,)
+
+```
+
+STFT inversion uses normalized overlap-add. Default boundary padding and a
+final partial frame preserve original samples. Edited coefficients must retain
+the original shape. Windows and hops that leave any original sample uncovered
+are rejected during inversion; a plausible spectrogram is not enough to
+establish invertibility.
+
+Short windows localize events in time but blur frequency. Long windows resolve
+nearby frequencies while averaging over temporal change. Complex input or a
+complex window uses a full two-sided spectrum. Retain the `STFTResult` rather
+than saving only coefficient magnitudes when reconstruction is a requirement.
+
+## Convolution and stateful filtering
+
+Full linear convolution of lengths `n` and `m` has length `n+m-1`.
+`convolve_fft` pads internally to avoid circular wraparound; a raw product of
+same-length FFTs would instead produce circular convolution.
+
+```pycon
 >>> a = np.array([1.0, 2.0, 3.0])
 >>> b = np.array([0.0, 1.0, 0.5])
->>> float(np.max(np.abs(convolve(a, b) - convolve_fft(a, b)))) < 1e-12
-True
->>> convolve(a, b).round(10).tolist()
+>>> tr.convolve(a, b).round(8).tolist()
 [0.0, 1.0, 2.5, 4.0, 1.5]
-
-```
-
-`correlate`, `cross_correlation`, and `autocorrelation` are the correlation
-versions; `deconvolve` inverts a convolution with Wiener regularization, which
-is what keeps it from amplifying noise at the frequencies where the kernel is
-small.
-
-## Spectral estimation
-
-A raw periodogram is noisy and does not become less so as the record
-lengthens — its variance is independent of `n`. Welch's method averages
-overlapping windowed segments and trades resolution for that variance:
-
-```pycon
->>> from quadrivium.transforms import periodogram, welch
->>> fs = 512.0
->>> t = np.arange(2048) / fs
->>> sig = np.sin(2*np.pi*50*t) + 0.5*np.random.default_rng(0).standard_normal(t.size)
->>> f_w, p_w = welch(sig, segment=256, overlap=0.5, dt=1/fs)
->>> peak = float(f_w[int(np.argmax(p_w))])
->>> abs(peak - 50.0) < 2.0
+>>> np.allclose(tr.convolve(a, b), tr.convolve_fft(a, b), atol=1e-12)
 True
 
 ```
 
-`window(n, kind)` provides 18 window functions in symmetric and periodic
-forms — Hann, Hamming, Blackman, Kaiser, flat-top, Blackman-Harris, Nuttall,
-Bohman, Parzen and the rest. The choice is a trade between the width of the
-main lobe (resolution) and the height of the side lobes (leakage):
-rectangular resolves closest but leaks worst, flat-top has the most accurate
-amplitude, Kaiser is tunable through `beta`.
+`correlate` and `cross_correlation` measure alignment rather than convolution.
+Check lag ordering before interpreting a delay. `deconvolve` uses
+regularization because division by a small transfer coefficient can amplify
+noise dramatically; its regularization level changes the reconstructed signal.
 
-<figure markdown="span">
-  ![Four windows, in time and in frequency](../assets/figures/transforms-windows.svg#only-light)
-  ![Four windows, in time and in frequency](../assets/figures/transforms-windows-dark.svg#only-dark)
-  <figcaption>A window trades main-lobe width for side-lobe height: the rectangular window resolves two close tones best and leaks worst, Blackman and Kaiser leak least and blur most. The decibel axis is where leakage is visible at all.</figcaption>
-</figure>
-
-`spectrogram` computes the short-time transform for a signal whose content
-changes, and `hilbert` gives the analytic signal, from which instantaneous
-amplitude and phase follow.
-
-<figure markdown="span">
-  ![A raw periodogram against Welch's averaged estimate](../assets/figures/transforms-periodogram-welch.svg#only-light)
-  ![A raw periodogram against Welch's averaged estimate](../assets/figures/transforms-periodogram-welch-dark.svg#only-dark)
-  <figcaption>The periodogram's variance does not fall as the record lengthens — more data buys more frequency bins, each as noisy as before. Averaging overlapping segments trades resolution for a spectrum that can be read.</figcaption>
-</figure>
-
-## Filtering and resampling
+A causal filter can process arbitrary successive chunk lengths without
+retaining old inputs. Keep the same filter object, or restore its state into
+an identically configured object.
 
 ```pycon
->>> from quadrivium.transforms import lowpass_filter, resample, moving_average
->>> clean = np.sin(2*np.pi*3*t)
->>> noisy = clean + 0.3*np.sin(2*np.pi*120*t)
->>> filtered = lowpass_filter(noisy, cutoff=20.0, dt=1/fs)
->>> float(np.max(np.abs(filtered - clean))) < 0.1
+>>> taps = np.array([0.25, 0.5, 0.25])
+>>> stream = tr.FIRFilter(taps)
+>>> chunked = np.concatenate([stream.process(a[:1]), stream.process(a[1:])])
+>>> np.allclose(chunked, tr.convolve(a, taps)[:a.size])
+True
+>>> iir = tr.IIRFilter([0.3], [1.0, -0.7])
+>>> first = iir.process(a[:2])
+>>> restored = tr.IIRFilter([0.3], [1.0, -0.7], state=iir.state)
+>>> np.allclose(restored.process(a[2:]), iir.process(a[2:]))
 True
 
 ```
 
-`resample` changes the sample count through the frequency domain, which is
-exact for a band-limited signal; `moving_average` and `savitzky_golay_filter`
-smooth in the time domain, the latter preserving peak heights that a moving
-average flattens.
+`IIRFilter` coefficients use ascending powers of `z**-1`; `a[0]` must be
+nonzero and is normalized internally. `SOSFilter` stores biquad rows
+`[b0, b1, b2, a0, a1, a2]`. State getters return copies, and `reset()` clears
+state. Starting a new filter for every chunk inserts a new initial-condition
+transient at every chunk boundary.
 
-<figure markdown="span">
-  ![Sampling below the Nyquist rate](../assets/figures/transforms-aliasing.svg#only-light)
-  ![Sampling below the Nyquist rate](../assets/figures/transforms-aliasing-dark.svg#only-dark)
-  <figcaption>Both curves pass through every sample, so the samples cannot tell them apart and no transform applied afterwards can either. Aliasing is decided at the moment of sampling; a filter before the sampler is the only fix.</figcaption>
-</figure>
+`firwin` designs low-pass or high-pass windowed-sinc filters; high-pass designs
+require an odd tap count. `butterworth_sos` designs low-pass biquads.
+Their `cutoff` and `fs` must use the same units, with `0 < cutoff < fs/2`.
+The returned design is an input to the corresponding filter object.
 
-## Wavelets
+## Resampling and boundary assumptions
 
-A Fourier transform says which frequencies are present; a wavelet transform
-says which are present *when*. `wavedec` runs the multi-level decomposition and
-`waverec` inverts it exactly:
+`resample` is a Fourier-based change in sample count and therefore inherits
+periodic-record assumptions. `resample_poly(x, up, down)` uses a finite-support
+FIR and zero extension outside the record. Its output has
+`ceil(len(x)*up/down)` samples. Boundary transients are consequences of that
+extension, not evidence that the interior sample-rate conversion failed.
 
 ```pycon
->>> sig = np.random.default_rng(0).standard_normal(256)
->>> coeffs = qd.wavedec(sig, "db4", level=4)
->>> rec = qd.waverec(coeffs, "db4", length=sig.size)
->>> float(np.max(np.abs(rec - sig))) < 1e-10
+>>> converted = tr.resample_poly(np.ones(12), 2, 3)
+>>> converted.shape
+(8,)
+
+```
+
+`PolyphaseResampler` is causal and carries FIR overlap between chunks.
+Its `delay` is the group delay in input-sample units. It cannot use future
+samples to remove that delay as an offline routine can. Feed explicit zeros to
+flush a desired tail, and account for delay before comparing with an offline
+resample. Persist its state together with the ratio and filter configuration.
+
+Aliasing occurs when different continuous frequencies produce the same sampled
+sequence. A digital transform cannot recover information already lost at
+sampling. Downsampling also requires adequate low-pass filtering; simply
+selecting every kth sample is not a general resampler.
+
+## Wavelets and localized structure
+
+`dwt` returns one approximation band and one detail band; `wavedec` repeats the
+split and returns `[cA_level, cD_level, ..., cD_1]`. The implemented discrete
+wavelet transforms use periodic indexing. An odd input length is extended by
+one repeated sample, so pass the original length during reconstruction.
+
+```pycon
+>>> wave = np.random.default_rng(7).standard_normal(65)
+>>> bands = tr.wavedec(wave, wavelet="db4", level=3)
+>>> reconstructed = tr.waverec(bands, wavelet="db4", length=wave.size)
+>>> float(np.max(np.abs(reconstructed - wave))) < 1e-10
 True
 
 ```
 
-Twelve filter names covering the orthogonal families are available —
-`WAVELET_FILTERS` lists them:
+Available names include Haar, several Daubechies filters, Symlets, and Coiflets;
+`WAVELET_FILTERS` records the implemented choices. Longer filters can represent
+smooth structure with fewer significant detail coefficients, but affect a
+wider neighborhood near record boundaries. Deep levels are mathematically
+supported with wrapped filtering; their coefficients increasingly summarize
+global and boundary behavior rather than a well-localized transient.
 
->>> from quadrivium.transforms import WAVELET_FILTERS
->>> list(WAVELET_FILTERS)
-['haar', 'db1', 'db2', 'db3', 'db4', 'db5', 'db6', 'db8', 'sym2', 'sym4', 'coif1', 'coif2']
+`wavelet_denoise` thresholds detail coefficients. The default threshold is
+estimated from the data; it is not a universal guarantee that narrow peaks or
+small physical events survive. Soft thresholding shrinks retained coefficients,
+whereas hard thresholding leaves them unchanged above the cutoff. Compare
+against representative signals with known transients before choosing a level.
 
-Their defining property is the number of vanishing moments: a Daubechies-N
-wavelet annihilates every polynomial of degree below N, so its detail
-coefficients on smooth data are zero:
+`dwt2`/`idwt2` handle images, `swt`/`iswt` avoid downsampling, and `cwt`
+computes coefficients across specified scales. `scale_to_frequency` translates
+Morlet scales using the chosen `dt` and `w0`; scale is not itself frequency.
+Interpret coefficients near the record ends cautiously because the wavelet
+support extends beyond the available data.
+
+## Cosine and sine transforms
+
+`dct` provides types 1–4, with an unnormalized convention by default;
+`idct(..., kind=...)` supplies the matching inverse scaling.
+The `norm=True` option applies a simple scale and is not a drop-in replacement
+for another library's orthonormal DCT convention. Use the documented default
+forward/inverse pair when testing reconstruction.
 
 ```pycon
->>> from quadrivium.transforms import dwt
->>> ramp = np.arange(64, dtype=float)         # degree 1
->>> cA, cD = dwt(ramp, "db4")
->>> float(np.max(np.abs(cD[:-3]))) < 1e-10    # away from the periodic wrap
+>>> cosine = tr.dct(samples, kind=2)
+>>> np.allclose(tr.idct(cosine, kind=2), samples, atol=1e-12)
 True
 
 ```
 
-That property is what makes wavelets good at denoising: the signal is
-concentrated in a few large coefficients while noise spreads across all of
-them, so thresholding removes mostly noise.
-
-<figure markdown="span">
-  ![A Daubechies-N wavelet annihilates polynomials of degree below N](../assets/figures/transforms-vanishing-moments.svg#only-light)
-  ![A Daubechies-N wavelet annihilates polynomials of degree below N](../assets/figures/transforms-vanishing-moments-dark.svg#only-dark)
-  <figcaption>The largest interior detail coefficient, for four signals and four wavelets. Haar kills a constant; db2 kills a line as well; db4 kills everything up to a cubic. Away from the edges these are zeros to machine precision, not merely small numbers.</figcaption>
-</figure>
-
-```pycon
->>> from quadrivium.transforms import wavelet_denoise
->>> t2 = np.linspace(0, 1, 512)
->>> pure = np.sin(2*np.pi*5*t2)
->>> noisy2 = pure + 0.2*np.random.default_rng(0).standard_normal(t2.size)
->>> clean2 = wavelet_denoise(noisy2, wavelet="db4")
->>> float(np.std(clean2 - pure)) < float(np.std(noisy2 - pure))
-True
-
-```
-
-<figure markdown="span">
-  ![Wavelet thresholding of a signal with a step in it](../assets/figures/transforms-wavelet-denoise.svg#only-light)
-  ![Wavelet thresholding of a signal with a step in it](../assets/figures/transforms-wavelet-denoise-dark.svg#only-dark)
-  <figcaption>The signal occupies a few large coefficients and the noise spreads across all of them, so a threshold removes mostly noise. The step survives, which is what distinguishes this from a low-pass filter.</figcaption>
-</figure>
-
-`universal_threshold` computes Donoho and Johnstone's `σ√(2 log n)`; `swt` and
-`iswt` are the shift-invariant (undecimated) transform, which avoids the
-artefacts that decimation introduces at edges; `dwt2` and `idwt2` handle
-images; `cwt` is the continuous transform with Morlet and Ricker wavelets, and
-`scale_to_frequency` converts its scales to frequencies.
-
-<figure markdown="span">
-  ![A chirp: one transform for the whole record cannot say when](../assets/figures/transforms-spectrogram.svg#only-light)
-  ![A chirp: one transform for the whole record cannot say when](../assets/figures/transforms-spectrogram-dark.svg#only-dark)
-  <figcaption>The whole-record spectrum reports every frequency the signal ever contained, with no indication of order. The short-time transform trades frequency resolution for time resolution and shows both the sweep and the tone that starts halfway through.</figcaption>
-</figure>
-
-## Pitfalls
-
-- **Sampling below the Nyquist rate aliases, invisibly.** A component above
-  `fs/2` appears as a lower frequency, and no transform can undo it.
-- **A finite record leaks.** Unless the signal is exactly periodic in the
-  window, energy spreads across bins. Apply a window.
-- **Zero padding does not add information.** It interpolates the spectrum,
-  making it look smoother without improving resolution.
-- **The periodogram's variance does not decrease with more data.** Use `welch`.
-- **DWT levels are limited by the length.** Level `k` needs at least
-  `2ᵏ · (filter length)` samples; beyond that the coefficients are boundary
-  artefacts.
-
-## See also
-
-- [`transforms` API reference](../api/transforms.md) — every signature.
-- [PDE guide](pde.md) — spectral solvers built on these transforms.
-- [Approximation guide](approx.md) — Fourier series from the coefficient side.
-- `examples/05_pde_and_transforms.py` — a runnable tour.
+`dst` supplies sine-transform types 1 and 2. These transforms are useful for
+boundary-conditioned PDEs and approximation, but their endpoint conventions
+must match the spatial grid. See [PDEs](pde.md), [approximation](approx.md),
+and [scientific workflows](workflows.md) for applications.

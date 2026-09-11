@@ -14,3 +14,9 @@ from .mcmc import *  # noqa: F401,F403,E402
 from .sampling import *  # noqa: F401,F403,E402
 from .sde import *  # noqa: F401,F403,E402
 from .stats import *  # noqa: F401,F403,E402
+
+from . import distributions as _distributions, diagnostics as _diagnostics, qmc as _qmc
+from .distributions import *  # noqa: F401,F403
+from .diagnostics import *  # noqa: F401,F403
+from .qmc import *  # noqa: F401,F403
+__all__ += _distributions.__all__ + _diagnostics.__all__ + _qmc.__all__

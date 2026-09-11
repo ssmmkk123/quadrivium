@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import ODESolution
+from ..core.storage import (ode_solution as ODESolution, TimeGrid, Trajectory,
+                            OutputRecorder, output_control)
 from ..core.utils import CountedFunction, as_vector
 
 __all__ = [
@@ -38,20 +39,20 @@ def _run_separable(dHdq, dHdp, t_span, q0, p0, n, coeffs, name):
     p = as_vector(p0).copy()
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    qs = np.empty((n + 1, q.size))
-    ps = np.empty((n + 1, p.size))
-    qs[0], ps[0] = q, p
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
+    ys[0] = np.concatenate([q, p])
     calls = 0
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         for c, d in coeffs:
             if c != 0.0:
                 q = q + c * h * dHdp(p)
             if d != 0.0:
                 p = p - d * h * dHdq(q)
                 calls += 1
-        qs[i + 1], ps[i + 1] = q, p
-    ys = np.hstack([qs, ps])
+        ys[i + 1] = np.concatenate([q, p])
     return ODESolution(ts, ys, name, n, n, 0, calls, True, "completed")
 
 
@@ -71,19 +72,20 @@ def velocity_verlet(force, t_span, q0, v0, n: int = 1000, mass=1.0):
     m = np.asarray(mass, dtype=float)
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
-    qs = np.empty((n + 1, q.size))
-    vs = np.empty((n + 1, v.size))
-    qs[0], vs[0] = q, v
+    ts = TimeGrid(t0, tf, n + 1)
+    ys = Trajectory(ts)
+    ys[0] = np.concatenate([q, v])
     fc = CountedFunction(lambda x: as_vector(force(x)))
     a = fc(q) / m
     for i in range(n):
+        if ys.recorder.stopped:
+            break
         q = q + h * v + 0.5 * h * h * a
         a_new = fc(q) / m
         v = v + 0.5 * h * (a + a_new)
         a = a_new
-        qs[i + 1], vs[i + 1] = q, v
-    return ODESolution(ts, np.hstack([qs, vs]), "velocity_verlet", n, n, 0,
+        ys[i + 1] = np.concatenate([q, v])
+    return ODESolution(ts, ys, "velocity_verlet", n, n, 0,
                        fc.calls, True, "completed")
 
 
@@ -155,3 +157,9 @@ def energy_drift(solution, energy):
     E = np.array([energy(y) for y in solution.y])
     E0 = E[0]
     return float(np.max(np.abs(E - E0)) / (abs(E0) if E0 != 0 else 1.0))
+
+
+for _name in __all__:
+    if callable(globals()[_name]) and "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

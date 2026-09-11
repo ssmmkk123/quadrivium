@@ -1,263 +1,388 @@
-# Stochastic methods
+# Stochastic methods and statistical computation
 
-```python
-from quadrivium.stochastic import milstein, hamiltonian_mc, bootstrap
-import quadrivium as qd          # qd.metropolis_hastings, qd.euler_maruyama, ...
-```
+Randomized computation has two separate accuracy questions: whether the
+algorithm approximates the intended model, and whether enough random samples
+have been collected. A reproducible seed helps repeat an experiment, but does
+not answer either question. Quadrivium provides random streams, distribution
+objects, Monte Carlo tools, MCMC diagnostics, and stochastic differential
+equation solvers to make those checks explicit.
 
-75 routines: pseudorandom and low-discrepancy generators, sampling algorithms,
-MCMC with diagnostics, descriptive and inferential statistics, and SDE
-integrators. Full signatures are in the
-[`stochastic` reference](../api/stochastic.md).
+See the [stochastic API](../api/stochastic.md) for complete signatures and
+[Monte Carlo integration](integrate.md) for quadrature-specific methods.
 
-Every routine that consumes randomness takes `rng=`, which is passed to
-`np.random.default_rng`: an integer seed, a `Generator`, or `None` for fresh
-entropy. Seeding makes a run exactly reproducible.
+## Create reproducible random streams
 
-## Generators
-
-The classical generators are here to be studied, with their defects intact.
-RANDU-style linear congruential generators fail the spectral test — their
-triples lie on a small number of planes, which is invisible in one dimension
-and fatal in three:
+Most randomized interfaces accept `rng=` as an integer seed, a
+`quadrivium.numeric.random.Generator`, or `None`. Passing the same integer to
+two calls starts two copies of the same stream. Passing a generator continues
+its state across calls.
 
 ```pycon
 >>> from quadrivium import numeric as np
->>> from quadrivium.stochastic import LCG, MersenneTwister, spectral_test
->>> lcg = LCG(seed=1)
->>> round(float(lcg.random()), 12)
-0.513870078139
-
-```
-
-`ParkMiller`, `XorShift`, and `MersenneTwister` (a full MT19937) complete the
-set, alongside `middle_square` — von Neumann's method, included because
-watching it collapse into a short cycle is the clearest argument for the
-theory that followed it.
-
-<figure markdown="span">
-  ![RANDU's triples lie on a lattice; a modern generator's do not](../assets/figures/stochastic-spectral-test.svg#only-light)
-  ![RANDU's triples lie on a lattice; a modern generator's do not](../assets/figures/stochastic-spectral-test-dark.svg#only-dark)
-  <figcaption>Successive triples from each generator, restricted to a thin slab of the unit cube so the structure is visible edge on. `spectral_test` finds the lattice on its own and reports the coefficients (9, −6, 1) — RANDU satisfies x[i+2] = 6x[i+1] − 9x[i] exactly.</figcaption>
-</figure>
-
-For quasi-random points, `halton`, `sobol`, `van_der_corput`, and
-`latin_hypercube_sample` produce low-discrepancy sequences that cover a space
-more evenly than random points, which is what makes quasi-Monte Carlo
-converge faster.
-
-<figure markdown="span">
-  ![Pseudorandom points against Halton and Sobol points](../assets/figures/stochastic-low-discrepancy.svg#only-light)
-  ![Pseudorandom points against Halton and Sobol points](../assets/figures/stochastic-low-discrepancy-dark.svg#only-dark)
-  <figcaption>Random points clump, and a clump is a region the integrand is not sampled in. Low-discrepancy sequences fill the square by construction, which is what makes quasi-Monte Carlo converge faster than n<sup>−1/2</sup> on a smooth integrand.</figcaption>
-</figure>
-
-**Use these for study, not as your source of randomness.** For real work pass
-`rng=` and let NumPy's PCG64 generate.
-
-## Sampling from a distribution
-
-| Method | Function | Needs |
-| --- | --- | --- |
-| inverse transform | `inverse_transform` | the inverse CDF |
-| Box-Muller / polar | `box_muller`, `marsaglia_polar` | nothing (normals) |
-| rejection | `rejection_sampling` | a proposal and a bound `M` |
-| adaptive rejection | `adaptive_rejection` | a log-concave log-density |
-| ratio of uniforms | `ratio_of_uniforms` | a bounded density |
-| alias table | `alias_table`, `sample_discrete` | discrete probabilities; `O(1)` per draw |
-| multivariate normal | `multivariate_normal` | mean and covariance |
-
-```pycon
->>> from quadrivium.stochastic import box_muller, describe
->>> z = box_muller(n=20_000, rng=0)
->>> stats = describe(z)
->>> abs(stats["mean"]) < 0.05 and abs(stats["std"] - 1.0) < 0.05
+>>> from quadrivium import stochastic as st
+>>> first = st.box_muller(n=8, rng=17)
+>>> second = st.box_muller(n=8, rng=17)
+>>> np.array_equal(first, second)
+True
+>>> generator = np.random.default_rng(17)
+>>> saved = generator.state
+>>> draws = generator.standard_normal(5)
+>>> generator.state = saved
+>>> np.array_equal(draws, generator.standard_normal(5))
 True
 
 ```
 
-Adaptive rejection sampling (Gilks and Wild) builds its own envelope from the
-concavity of the log-density and tightens it as it goes, so it needs no tuning
-constant — the reason it is the standard choice inside Gibbs samplers.
+Save generator state when resuming a random calculation, together with the
+algorithm options and package version. A seed alone does not encode how many
+values have already been consumed. Reproducibility also depends on the order
+and shape of random calls and on any changes in the implementation.
 
-## MCMC
-
-When you can evaluate a density only up to a constant, sample it with a Markov
-chain:
+For separate experiments or workers, `spawn_rngs` derives deterministic child
+streams by index. Assign one child per task so results do not depend on the
+order in which workers finish.
 
 ```pycon
->>> from quadrivium.stochastic import random_walk_metropolis, acceptance_rate
->>> log_target = lambda x: -0.5 * float(x[0]**2)          # standard normal
->>> chain = random_walk_metropolis(log_target, [0.0], step=2.0, n=20_000,
-...                                burn=2000, rng=0)
->>> samples = chain[:, 0]              # Chain is an ndarray subclass
->>> abs(float(np.mean(samples))) < 0.1, abs(float(np.std(samples)) - 1.0) < 0.1
+>>> workers = st.spawn_rngs(42, 3)
+>>> values = workers[2].random(4)
+>>> np.array_equal(values, st.spawn_rngs(42, 3)[2].random(4))
+True
+
+```
+
+The classical `LCG`, `ParkMiller`, `XorShift`, `MersenneTwister`, and
+`middle_square` interfaces expose generator algorithms for comparison.
+`spectral_test` can expose short lattice relations in successive outputs.
+Use the standard `rng=` workflow for ordinary simulations instead of choosing
+a historical generator merely because its one-dimensional histogram looks
+uniform. None of these simulation interfaces is a cryptographic API.
+
+## Use distribution objects for probabilities and tails
+
+`Normal`, `Uniform`, `Exponential`, `Gamma`, `Beta`, `StudentT`, `ChiSquare`,
+`Poisson`, and `Binomial` have scalar parameters and support array observations.
+The parameter conventions are explicit: for example `Exponential(scale=...)`
+uses a scale, and `Gamma(shape, scale=...)` uses shape and scale.
+
+| Method | Meaning |
+| --- | --- |
+| `pdf`, `logpdf` | Density and log density; discrete classes also expose these conventions |
+| `pmf`, `logpmf` | Probability mass and log mass for discrete distributions |
+| `cdf(x)` | Probability at or below x |
+| `sf(x)` | Upper-tail probability directly |
+| `logcdf`, `logsf` | Log probabilities without first forming a tiny probability |
+| `ppf(q)` | Lower-tail quantile |
+| `isf(q)` | Inverse survival function |
+| `rvs(size=..., rng=...)` | Random samples |
+
+```pycon
+>>> normal = st.Normal(loc=0.0, scale=1.0)
+>>> round(normal.ppf(0.975), 6)
+1.959964
+>>> np.allclose(normal.cdf([-1.0, 0.0, 1.0]) + normal.sf([-1.0, 0.0, 1.0]), 1.0)
+True
+>>> normal.sf(40.0) == 0.0, normal.logsf(40.0) < -800.0
 (True, True)
->>> 0.2 < acceptance_rate(chain) < 0.7
+>>> np.array_equal(normal.rvs(size=5, rng=2), normal.rvs(size=5, rng=2))
 True
-
-The draws *are* the returned object — `Chain` subclasses `numpy.ndarray` and
-carries the sampler's diagnostics as attributes, so it indexes, slices, and
-plots like any array:
-
->>> chain.shape, round(float(chain.acceptance), 3)
-((20000, 1), 0.499)
 
 ```
 
-| Sampler | Function | Suited to |
+Compute a small upper tail with `sf`, rather than subtracting a CDF close to
+one from one. Use `logsf` when the probability itself is too small for float64.
+The logarithm can remain representable even when `sf` underflows to zero.
+`isf` similarly avoids first computing `1-q` for a tiny upper-tail probability.
+
+A discrete quantile is the first supported integer whose CDF reaches the
+requested probability. A continuous quantile round trip is checked by equality
+to numerical tolerance; a discrete one is checked by inequalities.
+
+```pycon
+>>> poisson = st.Poisson(mu=3.0)
+>>> k = poisson.ppf(0.8)
+>>> poisson.cdf(k - 1) < 0.8 <= poisson.cdf(k)
+True
+>>> round(float(st.Binomial(5, 0.5).pmf(2)), 6)
+0.3125
+
+```
+
+Parameter and quantile validation rejects invalid values. Distribution support
+still matters: a density outside support can correctly be zero and its log
+density negative infinity. Those values are not automatically numerical errors.
+
+## Choose a sampling algorithm
+
+| Available information | Interface | Main requirement |
 | --- | --- | --- |
-| Metropolis-Hastings | `metropolis_hastings` | any proposal you supply |
-| random-walk Metropolis | `random_walk_metropolis` | the default starting point |
-| Gibbs | `gibbs_sampler` | conditionals available in closed form |
-| Hamiltonian Monte Carlo | `hamiltonian_mc` | gradients available, high dimension |
-| NUTS-lite | `nuts_lite` | HMC without choosing a path length |
-| slice sampling | `slice_sampler` | no tuning at all |
-| parallel tempering | `parallel_tempering` | multimodal targets |
+| Inverse CDF | `inverse_transform` | Correct inverse over the unit interval |
+| Normal variates | `box_muller`, `marsaglia_polar` | Valid location and scale |
+| Target and proposal densities | `rejection_sampling` | Envelope `M*proposal_pdf >= target_pdf` |
+| Log-concave target | `adaptive_rejection` | Log concavity and a useful initial support |
+| Discrete weights | `sample_discrete`, `alias_table` | Valid probabilities |
+| Mean and covariance | `multivariate_normal` | Compatible shapes and suitable covariance |
+| Unnormalized density | MCMC methods | Exploration and mixing diagnostics |
 
-HMC uses the gradient to propose distant states that are still accepted, which
-is why it beats a random walk badly as dimension grows:
+A rejection sampler's envelope is a mathematical condition, not a speed knob.
+An underestimated `M` can invalidate the resulting distribution. Increasing it
+usually lowers acceptance. Adaptive rejection builds an envelope using log
+concavity; use a different method for a multimodal or non-log-concave target.
 
 ```pycon
->>> from quadrivium.stochastic import hamiltonian_mc, effective_sample_size
->>> grad = lambda x: -x
->>> hmc = hamiltonian_mc(lambda x: -0.5*float(x @ x), grad, np.zeros(1),
-...                      step=0.3, n_leapfrog=10, n=4000, burn=500, rng=0)
->>> rw = random_walk_metropolis(lambda x: -0.5*float(x @ x), np.zeros(1),
-...                             step=1.0, n=4000, burn=500, rng=0)
->>> float(effective_sample_size(hmc)[0]) > float(effective_sample_size(rw)[0])
+>>> sample = st.box_muller(n=5000, rng=3)
+>>> summary = st.describe(sample)
+>>> abs(summary["mean"]) < 0.08, abs(summary["std"] - 1.0) < 0.08
+(True, True)
+
+```
+
+A rough moment check is useful during development. It cannot establish that a
+sampler handles tails, dependence, or a multivariate geometry correctly.
+Check known distributional identities and repeated seeded experiments too.
+
+## Calibrate Monte Carlo error
+
+For independent observations with finite variance, the standard error of a
+sample mean is estimated by `sample_std/sqrt(n)`. It measures sampling
+variability, not discretization error or model bias. Roughly four times the
+independent samples are needed to halve that error.
+
+```pycon
+>>> uniform = np.random.default_rng(9).random(4000)
+>>> values = np.exp(uniform)
+>>> estimate = float(np.mean(values))
+>>> standard_error = float(np.std(values, ddof=1) / np.sqrt(values.size))
+>>> abs(estimate - float(np.e - 1)) < 5 * standard_error
 True
 
 ```
 
-**A chain must be diagnosed, not trusted.** `effective_sample_size` says how
-many independent draws the chain is worth, `autocorrelation_time` how long it
-takes to forget where it was, `gelman_rubin` compares several chains for
-agreement (`R̂` near 1), and `acceptance_rate` catches a proposal that is far
-too wide or too narrow.
+The broad bound in this example checks one seeded calculation. An error
+estimator is better assessed across repeated independent runs: compare its
+reported scale with the observed spread of estimates around an exact answer.
+A single unusually accurate run is weak evidence about estimator quality.
 
 <figure markdown="span">
-  ![Random-walk Metropolis against Hamiltonian Monte Carlo](../assets/figures/stochastic-mcmc-diagnostics.svg#only-light)
-  ![Random-walk Metropolis against Hamiltonian Monte Carlo](../assets/figures/stochastic-mcmc-diagnostics-dark.svg#only-dark)
-  <figcaption>The same ten-dimensional target and the same number of draws. The random walk explores in steps that undo each other, so six thousand draws are worth two hundred independent ones; HMC uses the gradient to propose distant states that are still accepted.</figcaption>
+  ![Observed Monte Carlo integration error compared with reported standard error](../assets/figures/stochastic-error-calibration.svg#only-light)
+  ![Observed Monte Carlo integration error compared with reported standard error](../assets/figures/stochastic-error-calibration-dark.svg#only-dark)
+  <figcaption>Independent seeded estimates of the integral of exp(x) on the unit interval provide an observable error distribution. The graph compares empirical root-mean-square error with the reported standard-error scale as the sample count grows. Agreement assesses calibration for this experiment; it is not a deterministic bound on every run.</figcaption>
 </figure>
 
-## Statistics
+## Stateful Sobol and randomized QMC
+
+Low-discrepancy sequences cover a box more evenly than independent random
+points in many useful settings. Their benefit depends on the integrand's
+smoothness, dimension, and effective structure. Deterministic net points are
+not independent random observations, so their pointwise sample variance is
+not an ordinary Monte Carlo uncertainty estimate.
 
 ```pycon
->>> from quadrivium.stochastic import describe, welford_mean_var
+>>> engine = st.Sobol(2, scramble=True, seed=8)
+>>> points = engine.random_base2(5)
+>>> points.shape, engine.num_generated
+((32, 2), 32)
+>>> state = engine.state
+>>> continued = st.Sobol.from_state(state)
+>>> np.array_equal(engine.random(4), continued.random(4))
+True
+
+```
+
+`random_base2(m)` adds `2**m` points and checks that the **cumulative** count
+remains a power of two. `random(n)` allows arbitrary counts, giving up that
+balance condition. The engine supports reset, fast-forward, JSON-compatible
+state, scrambling, and child engines; dimensions range from 1 to 1024.
+The higher-dimensional directions use generated primitive-polynomial tables,
+not optimized Joe–Kuo direction tables. Do not assume identical points or
+performance to a different Sobol implementation.
+
+`randomized_qmc` averages independent scrambled replicates and reports the
+standard error across their estimates. Each replicate contains `2**m` points;
+`replicates` must be at least two. `batch_size` bounds point storage without
+changing the intended integral.
+
+```pycon
+>>> integral = st.randomized_qmc(lambda x: x[0] * x[1], [0, 0], [1, 1],
+...                              m=7, replicates=4, seed=5, batch_size=32)
+>>> abs(float(integral.value) - 0.25) < 0.01
+True
+>>> integral.function_calls
+512
+
+```
+
+The callback receives a scalar in one dimension and a point vector in higher
+dimensions. `error_estimate` is a sampling estimate across replicates; it is
+not a certified quadrature bound. Increase both resolution and replication
+when validating a new problem.
+
+## Markov chain Monte Carlo
+
+MCMC uses dependent draws to explore a distribution available through a log
+density. A normalizing constant is unnecessary because it cancels in the
+acceptance ratio.
+
+```pycon
+>>> target = lambda x: -0.5 * float(x @ x)
+>>> chain = st.random_walk_metropolis(target, [0.0], step=1.5,
+...                                   n=1000, burn=200, thin=2, rng=4)
+>>> chain.shape
+(500, 1)
+>>> 0.0 < float(chain.acceptance) < 1.0
+True
+
+```
+
+`Chain` is an array subclass with diagnostic attributes. Its axes are
+`(retained_draws, parameters)`. Here `n` counts post-burn iterations; `thin=2`
+keeps every other one, so it returns 500 draws. Thinning reduces storage, but
+does not create more information from a fixed number of transitions.
+
+For custom Metropolis-Hastings proposals, `proposal(x, rng)` returns a
+candidate. `log_proposal_ratio(x, y)` is
+`log(q(x|y)) - log(q(y|x))`; omit it only for a symmetric proposal.
+`gibbs_sampler` takes conditional sampling callbacks. `hamiltonian_mc` needs a
+gradient of the **log target**, together with step size and leapfrog count.
+`nuts_lite` randomizes HMC trajectory length; it does not implement the full
+recursive no-U-turn algorithm. `slice_sampler` has a width and step-out budget,
+so it still has numerical settings to assess. Parallel tempering can help
+explore separated modes, but requires checking exchange and exploration.
+
+### Diagnose multiple chains
+
+Use chains with different initial states and independent streams.
+`mcmc_diagnostics` expects `(chains, draws, ...)`, with at least two chains
+and four draws per chain; remaining axes represent parameter dimensions.
+It returns rank-normalized split R-hat, bulk ESS, tail ESS, and mean MCSE.
+
+```pycon
+>>> independent = np.random.default_rng(0).standard_normal((4, 300, 2))
+>>> diagnostics = st.mcmc_diagnostics(independent)
+>>> sorted(diagnostics)
+['ess_bulk', 'ess_tail', 'mcse_mean', 'rhat']
+>>> diagnostics["rhat"].shape
+(2,)
+>>> bool(np.all(diagnostics["rhat"] < 1.1))
+True
+
+```
+
+This example checks the shape contract using independent normal observations;
+it is not a substitute for assessing actual sampler chains. R-hat near one
+checks agreement among split chains. ESS estimates the information loss due
+to dependence, and tail ESS focuses on quantile regions that can mix worse
+than the center. Acceptance rate alone cannot prove adequate exploration.
+
+Constant or degenerate chains can produce undefined diagnostics. The routines
+report NaN or infinity where appropriate rather than treating zero empirical
+spread as perfect certainty. Inspect traces, cross-chain agreement, and
+sensitivity to warm-up and tuning. A warm-up length is an experimental choice,
+not a universal fixed fraction that guarantees stationarity.
+
+## Statistics and resampling
+
+`describe` reports a descriptive summary. `variance` defaults to `ddof=1`,
+whereas array-level `np.var` defaults to population normalization. Use matching
+normalizations when comparing implementations.
+
+```pycon
 >>> data = np.array([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0])
->>> stats = describe(data)
->>> stats["mean"], stats["median"], round(stats["variance"], 6)
+>>> summary = st.describe(data)
+>>> summary["mean"], summary["median"], round(summary["variance"], 6)
 (5.0, 4.5, 4.571429)
+>>> location, variance = st.welford_mean_var(1e9 + np.arange(4.0))
+>>> round(float(variance), 6)
+1.666667
 
 ```
 
-`welford_mean_var` uses Welford's online algorithm rather than
-`E[x²] − E[x]²`, which loses all precision when the mean is large compared to
-the spread:
+Welford's update avoids cancellation in `mean(x*x)-mean(x)**2` when values
+have a large offset and small spread. `covariance_matrix` treats rows as
+observations and columns as variables. Regression and PCA build on these
+conventions; center or scale variables according to their units and the
+interpretation needed from the model.
+
+`bootstrap` resamples observations with replacement and returns a dictionary
+including the percentile interval under `"ci"`. `jackknife` leaves out each
+observation in turn. These procedures inherit assumptions about the sampling
+unit; independent row resampling is not automatically appropriate for a time
+series or clustered measurements.
 
 ```pycon
->>> big = 1e9 + np.array([1.0, 2.0, 3.0, 4.0])
->>> mean_w, var_w = welford_mean_var(big)
->>> abs(float(var_w) - float(np.var(big, ddof=1))) < 1e-9        # exact
-True
->>> naive = float(np.mean(big**2) - np.mean(big)**2)             # population form
->>> abs(naive - 1.25) > 1e-3                                     # and wrong
+>>> boot = st.bootstrap(np.arange(20.0), np.mean, n_resamples=500, rng=0)
+>>> lower, upper = boot["ci"]
+>>> lower < 9.5 < upper
 True
 
 ```
 
-Regression and multivariate: `linear_regression`, `polynomial_regression`,
-`logistic_regression` (Newton-IRLS), `pca`, `covariance_matrix`,
-`correlation_matrix`, `kernel_density`, `histogram_density`.
-
-Resampling and testing: `bootstrap` (percentile confidence intervals and a
-bias estimate), `jackknife`, `permutation_test`, `t_test`, `chi_square_test`,
-`ks_test`, `anova_one_way`, `confidence_interval`.
-
-<figure markdown="span">
-  ![The bootstrap distribution of a median, and the interval it gives](../assets/figures/stochastic-bootstrap.svg#only-light)
-  ![The bootstrap distribution of a median, and the interval it gives](../assets/figures/stochastic-bootstrap-dark.svg#only-dark)
-  <figcaption>Resampling the data with replacement four thousand times gives the sampling distribution of any statistic — here a median, which has no convenient closed form — and the 2.5% and 97.5% quantiles of that distribution are the interval.</figcaption>
-</figure>
-
-```pycon
->>> from quadrivium.stochastic import bootstrap
->>> boot = bootstrap(np.arange(20.0), np.mean, n_resamples=2000, rng=0)
->>> lo, hi = boot["ci"]
->>> lo < 9.5 < hi                                 # the sample mean is inside
-True
-
-```
+Hypothesis-test functions return numerical summaries, not a decision about
+scientific importance. Check the test's assumptions, sample construction, and
+which null distribution is being used before interpreting a p-value.
 
 ## Stochastic differential equations
 
-`dX = a(X, t) dt + b(X, t) dW`. The drift and diffusion are callables of
-`(x, t)`; the result is an `ODESolution` like any other trajectory:
+The SDE interfaces use drift and diffusion callbacks of **`(x, t)`**, whereas
+ordinary ODE callbacks use `(t, y)`. They approximate
+`dX = a(X,t)*dt + b(X,t)*dW` on a uniform increasing time grid.
+The returned `ODESolution` stores `(n+1, state_dimension)` under full retention.
 
 ```pycon
->>> from quadrivium.stochastic import euler_maruyama, milstein
->>> drift = lambda x, t: 1.5 * x
->>> diffusion = lambda x, t: 0.4 * x
->>> path = milstein(drift, diffusion, (0, 1), [1.0], n=1000, rng=0)
->>> path.y.shape, bool(np.all(path.y > 0))        # GBM stays positive
-((1001, 1), True)
+>>> drift = lambda x, t: 0.2 * x
+>>> diffusion = lambda x, t: 0.3 * x
+>>> trajectory = st.milstein(drift, diffusion, (0, 1), [1.0],
+...                           n=200, rng=6, db=lambda x, t: np.full_like(x, 0.3))
+>>> trajectory.y.shape
+(201, 1)
+>>> bool(np.all(np.isfinite(trajectory.y)))
+True
 
 ```
 
-| Solver | Strong order | Note |
-| --- | --- | --- |
-| `euler_maruyama` | 0.5 | the direct analogue of forward Euler |
-| `milstein` | 1.0 | adds the `b b′` correction term |
-| `implicit_milstein` | 1.0 | stable for stiff drift |
-| `stochastic_heun` | 1.0 | converges to the **Stratonovich** solution |
-| `stochastic_rk` | 1.0 | derivative-free Milstein |
+| Method | Main interpretation and limitation |
+| --- | --- |
+| Euler-Maruyama | Itô; typical strong order 1/2 and weak order 1 under regularity assumptions |
+| Milstein | Itô correction; scalar/diagonal noise form, not general Lévy-area simulation |
+| Implicit Milstein | Drift-implicit update; assess its inner iteration accuracy |
+| Stochastic Heun | Stratonovich interpretation |
+| Stochastic RK | Derivative-free order-one scheme in the documented noise setting |
+| `srk_strong_1_5` | Higher-order method restricted to additive noise |
+| Tamed Euler | Modified drift for superlinear-growth problems |
 
-| `srk_strong_1_5` | 1.5 | additive noise only |
-| `tamed_euler` | 0.5 | for superlinearly growing drift, where Euler diverges |
+The implemented diffusion multiplication is componentwise. A full matrix-valued
+noise model needs a formulation supported by the chosen method; it is not
+silently handled by passing an arbitrary diffusion matrix.
+For multiplicative noise, Itô and Stratonovich equations differ by a drift
+correction. Switching methods without changing the model interpretation can
+change the equation being solved.
 
-<figure markdown="span">
-  ![Geometric Brownian motion: paths, and the distribution they sample](../assets/figures/stochastic-sde-paths.svg#only-light)
-  ![Geometric Brownian motion: paths, and the distribution they sample](../assets/figures/stochastic-sde-paths-dark.svg#only-dark)
-  <figcaption>Each path is one realisation; the average over paths follows the deterministic exponential. The right panel is the answer to the question an SDE solver is usually asked — the law of the solution at a fixed time — against the exact lognormal density.</figcaption>
-</figure>
+Strong error compares trajectories driven by the **same** Brownian path.
+Generate fine increments and sum adjacent increments for a coarser grid;
+reusing a seed with a different `n` does not establish that coupling by itself.
+Methods accepting `dW` allow explicit control, with increment shape
+`(n, state_dimension)`. Weak error compares expectations and needs enough
+independent paths to separate sampling noise from time-discretization bias.
 
-Strong order 1/2 for Euler-Maruyama is not a weakness of the implementation:
-the Itô-Taylor expansion has a `b b′(ΔW² − Δt)/2` term that the method omits.
-Milstein keeps it. `strong_error` and `weak_error` measure both orders
-empirically against an exact solution.
+## Exact transitions, jumps, and retained output
 
-<figure markdown="span">
-  ![Measured strong convergence of Euler-Maruyama and Milstein](../assets/figures/stochastic-strong-order.svg#only-light)
-  ![Measured strong convergence of Euler-Maruyama and Milstein](../assets/figures/stochastic-strong-order-dark.svg#only-dark)
-  <figcaption>Both solvers are driven by the same Brownian increments as the exact solution, which is what makes this a pathwise (strong) comparison rather than a comparison of distributions. The measured slopes bracket the theoretical 1/2 and 1 within the Monte Carlo noise of 600 paths.</figcaption>
-</figure>
+`geometric_brownian_motion` and `ornstein_uhlenbeck` provide exact transition
+sampling with `exact=True`. Exact transitions remove grid discretization error
+at sampled times, but do not produce the entire continuous path between them.
+`cox_ingersoll_ross` uses an approximate positivity-handling discretization;
+it has no `exact=True` option. General Milstein or Euler updates do not
+universally preserve positivity merely because the continuous model does.
 
-`brownian_path` and `brownian_bridge` generate the driving noise;
-`geometric_brownian_motion`, `ornstein_uhlenbeck`, and `cox_ingersoll_ross`
-have exact samplers (`exact=True`) that step at any size without
-discretization error. For jump processes, `poisson_process`, `gillespie_ssa`
-(exact stochastic simulation of a reaction network), and `tau_leaping` (its
-approximate, faster cousin).
+`gillespie_ssa` advances reaction events from propensities and stoichiometry;
+`tau_leaping` approximates several firings per step. Check stoichiometric axes,
+nonnegative population behavior, and step refinement for a reaction model.
+Tau-leaping keeps its fixed step grid, which can finish past the requested
+endpoint. `poisson_process` returns event times, not a regularly sampled count
+trajectory.
 
-## Pitfalls
-
-- **Stochastic Heun solves the Stratonovich equation, not the Itô one.** For
-  multiplicative noise they have different solutions. This is a property of
-  the scheme, not an error.
-- **A chain that has converged in appearance may not have.** Check `R̂` across
-  several chains started far apart, not just one trace plot.
-- **Burn-in is not optional, and its length is not knowable in advance.**
-- **`euler_maruyama` diverges for superlinear drift.** Use `tamed_euler`.
-- **Monte Carlo error falls as `1/√n`.** Four times the samples for two times
-  the accuracy — see the [integration guide](integrate.md).
-- **The historical generators are not safe for simulation.** Use `rng=`.
-
-## See also
-
-- [`stochastic` API reference](../api/stochastic.md) — every signature.
-- [Integration guide](integrate.md) — Monte Carlo quadrature and variance
-  reduction.
-- [ODE guide](ode.md) — the deterministic integrators these extend.
-- `examples/06_extended_methods.py` — SDEs, wavelets, matrix equations, WENO.
+SDE and reaction solvers support `save_at`, `save_every`, `final_only`, and
+callbacks. Diffusion `save_at` values use interpolation of simulated states;
+they do not draw a conditional Brownian bridge. Jump outputs use
+right-continuous sampling to preserve discrete populations. `y_final` records
+the actual final state even when selected output omits it. SDE restart
+checkpoints are not supported; Brownian/Poisson path utilities keep their full
+output. See [scientific workflows](workflows.md) for shared output contracts.

@@ -1,7 +1,8 @@
 site_name: Quadrivium
 site_description: >-
-  A comprehensive, from-scratch library of the numerical methods used in
-  scientific computing. 836 functions and classes, depending only on NumPy.
+  Numerical methods explained through worked examples, complete API
+  references, and reproducible experiments. A bundled C array engine
+  with no runtime package dependencies.
 site_url: https://ssmmkk123.github.io/quadrivium/
 repo_url: https://github.com/ssmmkk123/quadrivium
 repo_name: ssmmkk123/quadrivium
@@ -59,13 +60,7 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences:
-      custom_fences:
-        # Flowcharts are written as ```mermaid fences and rendered in the
-        # browser by the copy of Mermaid that Material ships.
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences
 
 extra_css:
   - assets/extra.css
@@ -75,6 +70,7 @@ nav:
   - Installation: installation.md
   - Getting started: getting-started.md
   - Guides:
+      - Scientific workflows: guides/workflows.md
       - The array layer: guides/numeric.md
       - Core: guides/core.md
       - Linear algebra: guides/linalg.md
@@ -106,6 +102,7 @@ nav:
       - special: api/special.md
   - About:
       - Design and validation: design.md
+      - Figure methodology: figures.md
       - Known limitations: limitations.md
       - Examples: examples.md
       - FAQ: faq.md

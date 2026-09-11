@@ -6,6 +6,8 @@ they get near-Newton convergence without ever forming a Hessian.
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -60,7 +62,7 @@ def newton_method(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10,
     """Newton's method: solve ``H p = -g`` each step. Quadratic convergence."""
     fc, g = _prep(f, grad_f)
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         if np.linalg.norm(gk) < tol:
@@ -80,7 +82,7 @@ def newton_method(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10,
                                   fc.calls, k, "newton", history,
                                   "line search stalled at floating-point precision")
         x = x_new
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, float(fc(x)), g(x), None, max_iter, False, fc.calls,
                           max_iter, "newton", history, "maximum iterations reached")
 
@@ -94,7 +96,7 @@ def modified_newton(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10,
     """
     fc, g = _prep(f, grad_f)
     x = as_vector(x0).copy()
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         if np.linalg.norm(gk) < tol:
@@ -119,7 +121,7 @@ def modified_newton(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10,
                                   fc.calls, k, "modified_newton", history,
                                   "line search stalled at floating-point precision")
         x = x_new
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, float(fc(x)), g(x), None, max_iter, False, fc.calls,
                           max_iter, "modified_newton", history,
                           "maximum iterations reached")
@@ -134,7 +136,7 @@ def _quasi_newton_driver(f, x0, grad_f, update, name, tol, max_iter, H0=None,
     H = np.eye(n) if H0 is None else np.array(H0, dtype=float)
     gk = g(x)
     fk = float(fc(x))
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(gk) < tol:
             return OptimizeResult(x, fk, gk, H, k - 1, True, fc.calls, k,
@@ -157,7 +159,7 @@ def _quasi_newton_driver(f, x0, grad_f, update, name, tol, max_iter, H0=None,
         f_new = float(fc(x_new))
         if _at_precision_floor(fk, f_new, ftol):
             x, fk = x_new, f_new
-            history.append(x.copy())
+            history.append(x)
             return OptimizeResult(x, fk, g(x), H, k, True, fc.calls, k, name,
                                   history, "converged: objective change below ftol")
         g_new = g(x_new)
@@ -165,9 +167,41 @@ def _quasi_newton_driver(f, x0, grad_f, update, name, tol, max_iter, H0=None,
         y = g_new - gk
         H = update(H, s, y)
         x, gk, fk = x_new, g_new, f_new
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, fk, gk, H, max_iter, False, fc.calls,
                           max_iter, name, history, "maximum iterations reached")
+
+
+def _bfgs_update(H, s, y, sy):
+    """Apply ``(I - s y'/sy) H (I - y s'/sy) + s s'/sy`` in O(n^2).
+
+    Keep the two factored updates in their original order, avoiding both
+    dense matrix products and the squared reciprocal in the expanded formula.
+    Using y'H separately also preserves the formula for nonsymmetric H0.
+    Extreme contractions can overflow even when the dense factored expression
+    is finite, so retain that expression as a numerical fallback. H and the
+    correction vectors are never modified.
+    """
+    def factored():
+        rho = 1.0 / sy
+        v = np.eye(H.shape[0]) - rho * np.outer(s, y)
+        return v @ H @ v.T + rho * np.outer(s, s)
+
+    scaled_s = s / sy
+    # Dividing s first can erase a correction that outer(s, y) would retain.
+    # Include subnormals, whose lost precision can be amplified by H or y.
+    if np.any((s != 0) & (np.abs(scaled_s) < np.finfo(float).tiny)):
+        return factored()
+    yH = y @ H
+    if not np.all(np.isfinite(yH)):
+        return factored()
+    left = H - np.outer(scaled_s, yH)
+    left_y = left @ y
+    if not np.all(np.isfinite(left_y)):
+        return factored()
+    result = left - np.outer(left_y, scaled_s)
+    result += np.outer(scaled_s, s)
+    return result if np.all(np.isfinite(result)) else factored()
 
 
 def bfgs(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None):
@@ -181,11 +215,7 @@ def bfgs(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None):
         sy = float(s @ y)
         if sy <= 1e-12:
             return H                     # skip the update rather than corrupt it
-        rho = 1.0 / sy
-        n = H.shape[0]
-        I = np.eye(n)
-        V = I - rho * np.outer(s, y)
-        return V @ H @ V.T + rho * np.outer(s, s)
+        return _bfgs_update(H, s, y, sy)
 
     return _quasi_newton_driver(f, x0, grad_f, update, "bfgs", tol, max_iter, H0)
 
@@ -235,10 +265,7 @@ def broyden_class(f, x0, grad_f=None, phi: float = 0.5, tol: float = 1e-10,
         Hy = H @ y
         yHy = float(y @ Hy)
         dfp_term = H + np.outer(s, s) / sy - np.outer(Hy, Hy) / yHy
-        rho = 1.0 / sy
-        I = np.eye(H.shape[0])
-        V = I - rho * np.outer(s, y)
-        bfgs_term = V @ H @ V.T + rho * np.outer(s, s)
+        bfgs_term = _bfgs_update(H, s, y, sy)
         return phi * dfp_term + (1 - phi) * bfgs_term
 
     return _quasi_newton_driver(f, x0, grad_f, update, f"broyden_phi{phi}", tol,
@@ -258,7 +285,7 @@ def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1
     gk = g(x)
     fk = float(fc(x))
     S, Y, rho = [], [], []
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         if np.linalg.norm(gk) < tol:
             return OptimizeResult(x, fk, gk, None, k - 1, True, fc.calls,
@@ -290,7 +317,7 @@ def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1
         f_new = float(fc(x_new))
         if _at_precision_floor(fk, f_new, ftol):
             x, fk = x_new, f_new
-            history.append(x.copy())
+            history.append(x)
             return OptimizeResult(x, fk, g(x), None, k, True, fc.calls, k, "lbfgs",
                                   history, "converged: objective change below ftol")
         g_new = g(x_new)
@@ -306,7 +333,7 @@ def lbfgs(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1
                 Y.pop(0)
                 rho.pop(0)
         x, gk, fk = x_new, g_new, f_new
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, fk, gk, None, max_iter, False, fc.calls,
                           max_iter, "lbfgs", history, "maximum iterations reached")
 
@@ -350,11 +377,11 @@ def newton_cg(f, x0, grad_f=None, hess_vec=None, tol: float = 1e-8,
         h = np.sqrt(np.finfo(float).eps) * (1.0 + float(np.linalg.norm(xx))) / nv
         return (as_vector(gf(xx + h * v)) - g) / h
 
-    history = []
+    history = History()
     for k in range(1, max_iter + 1):
         g = as_vector(gf(x))
         gnorm = float(np.linalg.norm(g))
-        history.append(float(fc(x)))
+        history.append(float(fc(x)), x=x)
         if gnorm < tol:
             return OptimizeResult(x, float(fc(x)), g, None, k - 1, True,
                                   fc.calls, k, "newton_cg", history, "converged")
@@ -421,10 +448,10 @@ def lbfgsb(f, x0, grad_f=None, bounds=None, m: int = 10, tol: float = 1e-8,
         hi = np.array([np.inf if b[1] is None else b[1] for b in bounds], float)
     x = np.clip(x, lo, hi)
     S, Y, rho = [], [], []
-    history = []
+    history = History()
     g = as_vector(gf(x))
     for k in range(1, max_iter + 1):
-        history.append(float(fc(x)))
+        history.append(float(fc(x)), x=x)
         # Projected gradient: the true optimality measure under bounds.
         pg = np.where(((x <= lo) & (g > 0)) | ((x >= hi) & (g < 0)), 0.0, g)
         if float(np.linalg.norm(pg)) < tol:
@@ -477,3 +504,8 @@ def lbfgsb(f, x0, grad_f=None, bounds=None, m: int = 10, tol: float = 1e-8,
         x, g = x_try, g_new
     return OptimizeResult(x, float(fc(x)), g, None, max_iter, False, fc.calls,
                           max_iter, "lbfgsb", history, "maximum iterations reached")
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['newton_method', 'modified_newton', 'lbfgs', 'newton_cg', 'lbfgsb', 'bfgs', 'dfp', 'sr1', 'broyden_class']:
+    globals()[_name] = monitor(globals()[_name])

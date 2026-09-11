@@ -152,14 +152,16 @@ def halton_sequence(n: int, dim: int = 1, skip: int = 1):
 
 
 def sobol_sequence(n: int, dim: int = 1):
-    """Sobol-style low-discrepancy sequence.
+    """Sobol sequence, preserving historical points in the first six dimensions.
 
-    Uses direction numbers from primitive polynomials for the first few
-    dimensions and falls back to Halton beyond them.
+    Higher dimensions use primitive-polynomial direction numbers from the
+    stateful :class:`quadrivium.stochastic.Sobol` engine. For scrambling,
+    checkpoints and balanced power-of-two sampling, use that engine directly.
     """
     max_dim = 6
     if dim > max_dim:
-        return halton_sequence(n, dim)
+        from ..stochastic.qmc import Sobol
+        return Sobol(dim, scramble=False, bits=max(30, (n + 1).bit_length())).fast_forward(1).random(n)
     bits = max(int(np.ceil(np.log2(max(n, 2)))) + 1, 2)
     # primitive polynomial degrees and initial direction numbers
     poly = [1, 3, 7, 11, 13, 19]

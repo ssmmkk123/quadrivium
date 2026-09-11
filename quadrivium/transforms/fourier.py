@@ -297,10 +297,19 @@ def dct(x, kind: int = 2, norm: bool = False):
         ext = np.concatenate([x, x[-2:0:-1]])
         out = np.real(fft(ext))[:n]
     elif kind == 2:
-        ext = np.zeros(4 * n)
-        ext[1::2][:n] = x            # odd samples carry the signal
-        ext[2 * n + 1 :: 2] = x[::-1]
-        out = np.real(fft(ext))[:n]
+        # A reflected extension carries the half-sample symmetry in 2n
+        # samples. Undo its phase shift instead of inserting zeros between
+        # samples and performing a transform twice as long.
+        ext = np.concatenate([x, x[::-1]])
+        spectrum = fft(ext)[:n]
+        phase = np.arange(n, dtype=complex)
+        if n:
+            phase *= -1j * np.pi / (2 * n)
+        np.exp(phase, out=phase)
+        spectrum *= phase
+        # Return only the real coefficients, not a view retaining the full
+        # complex extension and its unused half.
+        out = np.real(spectrum).copy()
     elif kind == 3:
         # cos(pi k (2j+1) / 2n) = Re[ e^{i pi k /2n} e^{i 2 pi k j / 2n} ], so
         # pre-twiddling the input turns the sum into one length-2n inverse

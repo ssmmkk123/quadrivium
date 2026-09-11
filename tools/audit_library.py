@@ -130,8 +130,8 @@ def worker(group, seed, trials):
                 check(f"overlap {n} {mode}", overlap)
 
     elif group == "linalg":
-        for backend in ("rust", "python"):
-            with q.accel.enabled() if backend == "rust" else q.accel.disabled():
+        for backend in ("c", "python"):
+            with q.accel.enabled() if backend == "c" else q.accel.disabled():
                 for trial in range(min(trials, 100)):
                     n = int(rng.integers(2, 25))
                     cond = 10. ** (trial % 13)
@@ -202,8 +202,8 @@ def worker(group, seed, trials):
             "struve_h0": (lambda x: sp.struve(0, x), np.linspace(-100, 100, 500)),
             "logistic": (sp.expit, np.linspace(-1000, 1000, 500)),
         }
-        for backend in ("rust", "python"):
-            with q.accel.enabled() if backend == "rust" else q.accel.disabled():
+        for backend in ("c", "python"):
+            with q.accel.enabled() if backend == "c" else q.accel.disabled():
                 for name, (reference, x) in domains.items():
                     def compare():
                         expected = reference(x)
@@ -244,8 +244,8 @@ def worker(group, seed, trials):
                 check(f"{name} order={order}", compare)
 
     elif group == "transforms":
-        for backend in ("rust", "python"):
-            with q.accel.enabled() if backend == "rust" else q.accel.disabled():
+        for backend in ("c", "python"):
+            with q.accel.enabled() if backend == "c" else q.accel.disabled():
                 for n in list(range(1, 66)) + [97, 127, 257, 1000, 1024, 4093, 8192, 65536]:
                     x = rng.normal(size=n)
                     ax = a.array(x)
@@ -280,8 +280,8 @@ def worker(group, seed, trials):
             rate = float(rng.uniform(.1, 10))
             for name in ("adaptive_simpson", "adaptive_gauss_kronrod", "quad"):
                 check(f"integral {name} trial={trial}", lambda name=name: equal(getattr(q.integrate, name)(lambda x: math.exp(-rate*x), 0., 1.).value, -math.expm1(-rate)/rate, tol=1e-8))
-        for backend in ("rust", "python"):
-            with q.accel.enabled() if backend == "rust" else q.accel.disabled():
+        for backend in ("c", "python"):
+            with q.accel.enabled() if backend == "c" else q.accel.disabled():
                 for method in ("dormand_prince", "rkf45", "cash_karp", "bogacki_shampine"):
                     for rate in (.1, 1., 10., 100.):
                         for backwards in (False, True):
@@ -299,7 +299,7 @@ def worker(group, seed, trials):
         process = psutil.Process()
         def work(i):
             with q.accel.disabled() if i % 2 else q.accel.enabled():
-                expected_backend = "python" if i % 2 else "rust"
+                expected_backend = "python" if i % 2 else "c"
                 assert q.accel.backend() == expected_backend
                 v = a.arange(257, dtype=float) / 100
                 equal(q.transforms.ifft(q.transforms.fft(v)).real, native(v))

@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from .. import numeric as np
 
-from ..core.types import ODESolution
+from ..core.storage import (ode_solution as ODESolution, TimeGrid, Trajectory,
+                            OutputRecorder, output_control)
 from ..core.utils import CountedFunction, as_vector
 
 __all__ = [
@@ -56,7 +57,8 @@ def _bootstrap(f, t0, h, y0, k):
 
     if k <= 1:
         return [as_vector(y0)]
-    sol = rk4(f, (t0, t0 + (k - 1) * h), y0, n=(k - 1) * 10)
+    sol = rk4(f, (t0, t0 + (k - 1) * h), y0, n=(k - 1) * 10,
+              final_only=False, save_at=None, save_every=1, callback=None)
     return [as_vector(sol(t0 + i * h)) for i in range(k)]
 
 
@@ -66,13 +68,20 @@ def adams_bashforth(f, t_span, y0, n: int = 100, order: int = 4):
     fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
+    ts = TimeGrid(t0, tf, n + 1)
     hist_y = _bootstrap(f, t0, h, y0, order)
-    ys = np.empty((n + 1, hist_y[0].size))
+    ys = Trajectory(ts)
     for i, v in enumerate(hist_y[: min(order, n + 1)]):
+        if ys.recorder.stopped:
+            break
         ys[i] = v
+    if ys.recorder.stopped:
+        return ODESolution(ts, ys, f"adams_bashforth{order}", n, n, 0, fc.calls, True,
+        "completed")
     fs = [fc(ts[i], ys[i]) for i in range(min(order, n + 1))]
     for i in range(order - 1, n):
+        if ys.recorder.stopped:
+            break
         y_new = ys[i] + h * sum(coef[j] * fs[-1 - j] for j in range(order))
         ys[i + 1] = y_new
         fs.append(fc(ts[i + 1], y_new))
@@ -89,14 +98,21 @@ def adams_moulton(f, t_span, y0, n: int = 100, order: int = 4, tol: float = 1e-1
     fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
+    ts = TimeGrid(t0, tf, n + 1)
     k = max(order - 1, 1)
     hist = _bootstrap(f, t0, h, y0, k)
-    ys = np.empty((n + 1, hist[0].size))
+    ys = Trajectory(ts)
     for i, v in enumerate(hist[: min(k, n + 1)]):
+        if ys.recorder.stopped:
+            break
         ys[i] = v
+    if ys.recorder.stopped:
+        return ODESolution(ts, ys, f"adams_moulton{order}", n, n, 0, fc.calls, True,
+        "completed")
     fs = [fc(ts[i], ys[i]) for i in range(min(k, n + 1))]
     for i in range(k - 1, n):
+        if ys.recorder.stopped:
+            break
         past = sum(coef[j] * fs[-j] for j in range(1, order)) if order > 1 else 0.0
         y_guess = ys[i] + h * fc(ts[i], ys[i])
         for _ in range(max_iter):
@@ -125,13 +141,20 @@ def predictor_corrector(f, t_span, y0, n: int = 100, order: int = 4,
     fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
+    ts = TimeGrid(t0, tf, n + 1)
     hist = _bootstrap(f, t0, h, y0, order)
-    ys = np.empty((n + 1, hist[0].size))
+    ys = Trajectory(ts)
     for i, v in enumerate(hist[: min(order, n + 1)]):
+        if ys.recorder.stopped:
+            break
         ys[i] = v
+    if ys.recorder.stopped:
+        return ODESolution(ts, ys, f"predictor_corrector{order}", n, n, 0, fc.calls,
+        True, "completed")
     fs = [fc(ts[i], ys[i]) for i in range(min(order, n + 1))]
     for i in range(order - 1, n):
+        if ys.recorder.stopped:
+            break
         y_p = ys[i] + h * sum(ab[j] * fs[-1 - j] for j in range(order))
         y_c = y_p
         for _ in range(corrections):
@@ -156,11 +179,13 @@ def nystrom(f, t_span, y0, n: int = 100):
     fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
+    ts = TimeGrid(t0, tf, n + 1)
     hist = _bootstrap(f, t0, h, y0, 2)
-    ys = np.empty((n + 1, hist[0].size))
+    ys = Trajectory(ts)
     ys[0], ys[1] = hist[0], hist[1]
     for i in range(1, n):
+        if ys.recorder.stopped:
+            break
         ys[i + 1] = ys[i - 1] + 2 * h * fc(ts[i], ys[i])
     return ODESolution(ts, ys, "nystrom", n, n, 0, fc.calls, True, "completed")
 
@@ -174,13 +199,17 @@ def milne_simpson(f, t_span, y0, n: int = 100):
     fc = CountedFunction(lambda t, y: as_vector(f(t, y)))
     t0, tf = float(t_span[0]), float(t_span[1])
     h = (tf - t0) / n
-    ts = np.linspace(t0, tf, n + 1)
+    ts = TimeGrid(t0, tf, n + 1)
     hist = _bootstrap(f, t0, h, y0, 4)
-    ys = np.empty((n + 1, hist[0].size))
+    ys = Trajectory(ts)
     for i in range(min(4, n + 1)):
+        if ys.recorder.stopped:
+            break
         ys[i] = hist[i]
     fs = [fc(ts[i], ys[i]) for i in range(min(4, n + 1))]
     for i in range(3, n):
+        if ys.recorder.stopped:
+            break
         y_p = ys[i - 3] + 4 * h / 3 * (2 * fs[-1] - fs[-2] + 2 * fs[-3])
         f_p = fc(ts[i + 1], y_p)
         y_c = ys[i - 1] + h / 3 * (f_p + 4 * fs[-1] + fs[-2])
@@ -207,23 +236,25 @@ def variable_step_adams(f, t_span, y0, rtol: float = 1e-8, atol: float = 1e-10,
     t0, tf = float(t_span[0]), float(t_span[1])
     y = as_vector(y0).copy()
     h = (tf - t0) / 100.0 if h0 is None else float(h0)
-    ts, ys = [t0], [y.copy()]
+    recorder = OutputRecorder.current((t0, tf))
+    recorder.append(t0, y)
     t = t0
     ab = adams_coefficients(order, "bashforth")
     am = adams_coefficients(min(order, 5), "moulton")
     hist_f = []            # f values at t, t-h, t-2h, ... (constant h)
     accepted = rejected = 0
     for _ in range(max_steps):
+        if recorder.stopped:
+            break
         if t >= tf - 1e-15 * max(1.0, abs(tf)):
             break
         h = min(h, tf - t)
         if len(hist_f) < order:
             # self-starting RK4 while the history is being (re)built
-            y_new = rk4(f, (t, t + h), y, n=4).y[-1]
+            y_new = rk4(f, (t, t + h), y, n=4, final_only=True, save_at=None, save_every=1, callback=None).y[-1]
             t += h
             y = y_new
-            ts.append(t)
-            ys.append(y.copy())
+            recorder.append(t, y)
             hist_f.append(fc(t, y))
             accepted += 1
             continue
@@ -236,8 +267,7 @@ def variable_step_adams(f, t_span, y0, rtol: float = 1e-8, atol: float = 1e-10,
         if err <= 1.0:
             t += h
             y = y_new
-            ts.append(t)
-            ys.append(y.copy())
+            recorder.append(t, y)
             hist_f.append(fc(t, y))
             if len(hist_f) > order:
                 hist_f.pop(0)
@@ -250,6 +280,18 @@ def variable_step_adams(f, t_span, y0, rtol: float = 1e-8, atol: float = 1e-10,
             rejected += 1
             h *= max(0.2, 0.9 * err ** (-1.0 / (order + 1)))
             hist_f = []
-    return ODESolution(np.array(ts), np.array(ys), f"variable_adams{order}",
+    ts, ys, _ = recorder.finish()
+    result = ODESolution(ts, ys, f"variable_adams{order}",
                        accepted + rejected, accepted, rejected, fc.calls, True,
                        "completed")
+    result.checkpoint = recorder.checkpoint(result.method, {"h_next": h})
+    result._final_state = result.checkpoint.y
+    if recorder.stopped:
+        result.success, result.message = False, "callback stopped"
+    return result
+
+
+for _name in __all__:
+    if callable(globals()[_name]) and "t_span" in __import__("inspect").signature(globals()[_name]).parameters:
+        globals()[_name] = output_control(globals()[_name])
+del _name

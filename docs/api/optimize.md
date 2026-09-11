@@ -7,12 +7,13 @@ Line searches, quasi-Newton, trust region, derivative-free, global, constrained,
 
 For worked examples and guidance on choosing between these routines, see the [optimization guide](../guides/optimize.md).
 
-**95 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**96 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.optimize import golden_section
-import quadrivium as qd            # qd.golden_section, if re-exported
+from quadrivium import optimize
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
@@ -21,6 +22,7 @@ import quadrivium as qd            # qd.golden_section, if re-exported
 - [`derivative_free`](#derivative_free) &mdash; derivative-free optimization: search using function values alone (8)
 - [`global_opt`](#global_opt) &mdash; global optimization: stochastic and population-based search (9)
 - [`gradient`](#gradient) &mdash; gradient-based unconstrained minimization (12)
+- [`least_squares`](#least_squares) &mdash; bounded robust least squares using matrix-free damped gauss-newton steps (1)
 - [`linesearch`](#linesearch) &mdash; line searches: choose a step length along a descent direction (6)
 - [`linprog`](#linprog) &mdash; linear programming (8)
 - [`proximal`](#proximal) &mdash; proximal algorithms for composite objectives ``min f(x) + g(x)`` (14)
@@ -34,9 +36,27 @@ import quadrivium as qd            # qd.golden_section, if re-exported
 
 Optimization: line searches, scalar minimization, gradient and quasi-Newton methods, trust regions, derivative-free search, global optimization, constrained and proximal algorithms, and linear programming.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `minimize` | `(f, x0, method: str = 'bfgs', grad_f=None, **kwargs)` | Minimize a scalar objective with the named method. |
+| [`minimize`](#api-minimize) | function | Minimize a scalar objective with the named method. |
+
+### `minimize` {#api-minimize}
+
+```python
+minimize(f, x0, method: str = 'bfgs', grad_f=None, **kwargs)
+```
+
+Minimize a scalar objective with the named method.
+
+Gradient-based: `bfgs`, `lbfgs`, `dfp`, `sr1`, `newton`,
+`modified_newton`, `cg_fr`, `cg_pr`, `cg_hs`, `gradient_descent`,
+`momentum`, `nesterov`, `adam`, `adagrad`, `rmsprop`,
+`barzilai_borwein`, `trust_region`.
+Derivative-free: `nelder_mead`, `powell`, `hooke_jeeves`,
+`compass_search`, `coordinate_descent`.
+Global (these take `bounds` rather than `x0`): `differential_evolution`,
+`particle_swarm`, `simulated_annealing`, `genetic_algorithm`,
+`basin_hopping`, `cma_es`, `dual_annealing_lite`.
 
 ## `constrained`
 
@@ -46,19 +66,242 @@ Constrained optimization.
 
 Constraints are handled by transforming the problem (penalty, barrier, augmented Lagrangian), by projecting onto the feasible set, or by solving the KKT conditions directly (SQP).
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `penalty_method` | `(f, x0, eq=None, ineq=None, mu0: float = 1.0, growth: float = 10.0, outer_iter: int = 20, tol: float = 1e-0, ...)` | Quadratic penalty: minimize ``f + mu/2 (\|\|h\|\|^2 + \|\|max(g,0)\|\|^2)``. |
-| `barrier_method` | `(f, x0, ineq, mu0: float = 1.0, shrink: float = 0.2, outer_iter: int = 30, tol: float = 1e-08, inner=None)` | Logarithmic barrier (interior point) for ``g(x) <= 0``. |
-| `augmented_lagrangian` | `(f, x0, eq=None, ineq=None, mu0: float = 10.0, growth: float = 5.0, outer_iter: int = 50, tol: float = 1e-1, ...)` | Augmented Lagrangian (method of multipliers). |
-| `projected_gradient` | `(f, x0, projection, grad_f=None, lr: float = 0.01, tol: float = 1e-10, max_iter: int = 20000, line_search:, ...)` | Projected gradient descent for a simple feasible set. |
-| `sqp` | `(f, x0, eq=None, ineq=None, grad_f=None, tol: float = 1e-10, max_iter: int = 200, hess_update: str = 'bfgs')` | Sequential quadratic programming. |
-| `active_set_qp` | `(G, c, A_ineq=None, b_ineq=None, A_eq=None, b_eq=None, x0=None, max_iter: int = 200, tol: float = 1e-10)` | Primal active set method for a convex QP. |
-| `solve_qp` | `(G, c, A_eq=None, b_eq=None)` | Equality-constrained QP ``min 0.5 x'Gx + c'x`` s.t. ``A x = b`` via KKT. |
-| `project_box` | `(x, lower=None, upper=None)` | Project onto a box ``[lower, upper]``. |
-| `project_simplex` | `(v, s: float = 1.0)` | Euclidean projection onto the simplex ``{x >= 0, sum x = s}``. |
-| `project_ball` | `(x, radius: float = 1.0, center=None)` | Project onto a Euclidean ball. |
-| `kkt_residual` | `(grad_f, x, eq_jac=None, ineq_jac=None, lam=None, mu=None, eq=None, ineq=None)` | Residual of the KKT conditions, for checking a candidate solution. |
+| [`penalty_method`](#api-penalty_method) | function | Quadratic penalty: minimize ``f + mu/2 (\|\|h\|\|^2 + \|\|max(g,0)\|\|^2)``. |
+| [`barrier_method`](#api-barrier_method) | function | Logarithmic barrier (interior point) for ``g(x) <= 0``. |
+| [`augmented_lagrangian`](#api-augmented_lagrangian) | function | Augmented Lagrangian (method of multipliers). |
+| [`projected_gradient`](#api-projected_gradient) | function | Projected gradient descent for a simple feasible set. |
+| [`sqp`](#api-sqp) | function | Sequential quadratic programming. |
+| [`active_set_qp`](#api-active_set_qp) | function | Primal active set method for a convex QP. |
+| [`solve_qp`](#api-solve_qp) | function | Equality-constrained QP ``min 0.5 x'Gx + c'x`` s.t. ``A x = b`` via KKT. |
+| [`project_box`](#api-project_box) | function | Project onto a box ``[lower, upper]``. |
+| [`project_simplex`](#api-project_simplex) | function | Euclidean projection onto the simplex ``{x >= 0, sum x = s}``. |
+| [`project_ball`](#api-project_ball) | function | Project onto a Euclidean ball. |
+| [`kkt_residual`](#api-kkt_residual) | function | Residual of the KKT conditions, for checking a candidate solution. |
+
+### `penalty_method` {#api-penalty_method}
+
+```python
+penalty_method(
+    f,
+    x0,
+    eq=None,
+    ineq=None,
+    mu0: float = 1.0,
+    growth: float = 10.0,
+    outer_iter: int = 20,
+    tol: float = 1e-08,
+    inner=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Quadratic penalty: minimize `f + mu/2 (||h||^2 + ||max(g,0)||^2)`.
+
+Simple and robust, but the subproblems become ill-conditioned as `mu`
+grows -- which is exactly what the augmented Lagrangian fixes.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `barrier_method` {#api-barrier_method}
+
+```python
+barrier_method(
+    f,
+    x0,
+    ineq,
+    mu0: float = 1.0,
+    shrink: float = 0.2,
+    outer_iter: int = 30,
+    tol: float = 1e-08,
+    inner=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Logarithmic barrier (interior point) for `g(x) <= 0`.
+
+Requires a strictly feasible starting point; the barrier keeps every
+iterate inside the feasible region as `mu` is driven to zero.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `augmented_lagrangian` {#api-augmented_lagrangian}
+
+```python
+augmented_lagrangian(
+    f,
+    x0,
+    eq=None,
+    ineq=None,
+    mu0: float = 10.0,
+    growth: float = 5.0,
+    outer_iter: int = 50,
+    tol: float = 1e-10,
+    inner=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Augmented Lagrangian (method of multipliers).
+
+Adds explicit multiplier estimates to the penalty, so the constraints are
+satisfied exactly at a finite penalty -- no ill-conditioning blow-up.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `projected_gradient` {#api-projected_gradient}
+
+```python
+projected_gradient(
+    f,
+    x0,
+    projection,
+    grad_f=None,
+    lr: float = 0.01,
+    tol: float = 1e-10,
+    max_iter: int = 20000,
+    line_search: bool = True,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Projected gradient descent for a simple feasible set.
+
+Each step takes a gradient step and projects back, so feasibility is
+maintained exactly whenever the projection is exact.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `sqp` {#api-sqp}
+
+```python
+sqp(
+    f,
+    x0,
+    eq=None,
+    ineq=None,
+    grad_f=None,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+    hess_update: str = 'bfgs',
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Sequential quadratic programming.
+
+Each iteration solves a QP built from a quadratic model of the Lagrangian
+and linearized constraints; the Hessian is kept positive definite by a
+damped BFGS update (Powell's modification).
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `active_set_qp` {#api-active_set_qp}
+
+```python
+active_set_qp(
+    G,
+    c,
+    A_ineq=None,
+    b_ineq=None,
+    A_eq=None,
+    b_eq=None,
+    x0=None,
+    max_iter: int = 200,
+    tol: float = 1e-10,
+)
+```
+
+Primal active set method for a convex QP.
+
+Solves `min 0.5 x'Gx + c'x` subject to `A_ineq x <= b_ineq` and
+`A_eq x = b_eq` by iterating on the working set of active constraints.
+
+The primal method must start inside the feasible region, so an infeasible
+(or omitted) `x0` is first repaired by successive projection.
+
+### `solve_qp` {#api-solve_qp}
+
+```python
+solve_qp(G, c, A_eq=None, b_eq=None)
+```
+
+Equality-constrained QP `min 0.5 x'Gx + c'x` s.t. `A x = b` via KKT.
+
+### `project_box` {#api-project_box}
+
+```python
+project_box(x, lower=None, upper=None)
+```
+
+Project onto a box `[lower, upper]`.
+
+### `project_simplex` {#api-project_simplex}
+
+```python
+project_simplex(v, s: float = 1.0)
+```
+
+Euclidean projection onto the simplex `{x >= 0, sum x = s}`.
+
+Uses the classical sort-and-threshold algorithm, exact in `O(n log n)`.
+
+### `project_ball` {#api-project_ball}
+
+```python
+project_ball(x, radius: float = 1.0, center=None)
+```
+
+Project onto a Euclidean ball.
+
+### `kkt_residual` {#api-kkt_residual}
+
+```python
+kkt_residual(
+    grad_f,
+    x,
+    eq_jac=None,
+    ineq_jac=None,
+    lam=None,
+    mu=None,
+    eq=None,
+    ineq=None,
+)
+```
+
+Residual of the KKT conditions, for checking a candidate solution.
 
 ## `derivative_free`
 
@@ -68,16 +311,181 @@ Derivative-free optimization: search using function values alone.
 
 The right tools when derivatives are unavailable, expensive, or the objective is noisy or discontinuous.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `line_minimize_1d` | `(fun, tol: float = 1e-13, start: float = 0.0, initial_step: float = 1.0)` | Minimize a 1-D function, bracketing outward from ``start`` first. |
-| `nelder_mead` | `(f, x0, tol: float = 1e-12, max_iter: int = 5000, step: float = 0.1, alpha: float = 1.0, gamma: float = 2.0, ...)` | Nelder-Mead simplex: reflect, expand, contract, shrink. |
-| `powell` | `(f, x0, tol: float = 1e-10, max_iter: int = 400, line_tol: float = 1e-13)` | Powell's conjugate direction method. |
-| `hooke_jeeves` | `(f, x0, step: float = 0.5, tol: float = 1e-12, max_iter: int = 10000, shrink: float = 0.5)` | Hooke-Jeeves pattern search: exploratory moves plus a pattern move. |
-| `coordinate_descent` | `(f, x0, tol: float = 1e-10, max_iter: int = 1000, bracket: float = 10.0)` | Coordinate descent: exactly minimize one variable at a time. |
-| `pattern_search` | `(f, x0, **kwargs)` | Generalized pattern search (alias of ``compass_search``). |
-| `compass_search` | `(f, x0, step: float = 0.5, tol: float = 1e-12, max_iter: int = 20000, shrink: float = 0.5, expand: float =, ...)` | Compass (coordinate) search: poll the ``2n`` axis directions. |
-| `cyclic_coordinate` | `(f, x0, **kwargs)` | Alias of ``coordinate_descent``. |
+| [`line_minimize_1d`](#api-line_minimize_1d) | function | Minimize a 1-D function, bracketing outward from ``start`` first. |
+| [`nelder_mead`](#api-nelder_mead) | function | Nelder-Mead simplex: reflect, expand, contract, shrink. |
+| [`powell`](#api-powell) | function | Powell's conjugate direction method. |
+| [`hooke_jeeves`](#api-hooke_jeeves) | function | Hooke-Jeeves pattern search: exploratory moves plus a pattern move. |
+| [`coordinate_descent`](#api-coordinate_descent) | function | Coordinate descent: exactly minimize one variable at a time. |
+| [`pattern_search`](#api-pattern_search) | function | Generalized pattern search (alias of ``compass_search``). |
+| [`compass_search`](#api-compass_search) | function | Compass (coordinate) search: poll the ``2n`` axis directions. |
+| [`cyclic_coordinate`](#api-cyclic_coordinate) | function | Alias of ``coordinate_descent``. |
+
+### `line_minimize_1d` {#api-line_minimize_1d}
+
+```python
+line_minimize_1d(fun, tol: float = 1e-13, start: float = 0.0, initial_step: float = 1.0)
+```
+
+Minimize a 1-D function, bracketing outward from `start` first.
+
+A fixed bracket is not safe: Brent's method only guarantees a minimum for a
+unimodal function, so on a multi-modal restriction it can settle in the
+wrong basin. Bracketing from the current point keeps the search local and
+descending.
+
+### `nelder_mead` {#api-nelder_mead}
+
+```python
+nelder_mead(
+    f,
+    x0,
+    tol: float = 1e-12,
+    max_iter: int = 5000,
+    step: float = 0.1,
+    alpha: float = 1.0,
+    gamma: float = 2.0,
+    rho: float = 0.5,
+    sigma: float = 0.5,
+    initial_simplex=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Nelder-Mead simplex: reflect, expand, contract, shrink.
+
+The most widely used derivative-free method; robust on low-dimensional
+problems but with no convergence guarantee in general.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `powell` {#api-powell}
+
+```python
+powell(
+    f,
+    x0,
+    tol: float = 1e-10,
+    max_iter: int = 400,
+    line_tol: float = 1e-13,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Powell's conjugate direction method.
+
+Minimizes along a set of directions and replaces one each cycle, building
+conjugate directions without derivatives.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `hooke_jeeves` {#api-hooke_jeeves}
+
+```python
+hooke_jeeves(
+    f,
+    x0,
+    step: float = 0.5,
+    tol: float = 1e-12,
+    max_iter: int = 10000,
+    shrink: float = 0.5,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Hooke-Jeeves pattern search: exploratory moves plus a pattern move.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `coordinate_descent` {#api-coordinate_descent}
+
+```python
+coordinate_descent(
+    f,
+    x0,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    bracket: float = 10.0,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Coordinate descent: exactly minimize one variable at a time.
+
+Excellent when the variables are weakly coupled and cheap per sweep, but it
+zigzags badly along a curved narrow valley -- Rosenbrock needs thousands of
+sweeps where Powell needs a handful. Prefer `powell`, which builds
+conjugate directions from the same kind of line searches, when the
+variables interact strongly.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `pattern_search` {#api-pattern_search}
+
+```python
+pattern_search(f, x0, **kwargs)
+```
+
+Generalized pattern search (alias of `compass_search`).
+
+### `compass_search` {#api-compass_search}
+
+```python
+compass_search(
+    f,
+    x0,
+    step: float = 0.5,
+    tol: float = 1e-12,
+    max_iter: int = 20000,
+    shrink: float = 0.5,
+    expand: float = 2.0,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Compass (coordinate) search: poll the `2n` axis directions.
+
+A generating set search with a convergence guarantee for smooth functions.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `cyclic_coordinate` {#api-cyclic_coordinate}
+
+```python
+cyclic_coordinate(f, x0, **kwargs)
+```
+
+Alias of `coordinate_descent`.
 
 ## `global_opt`
 
@@ -85,19 +493,236 @@ The right tools when derivatives are unavailable, expensive, or the objective is
 
 Global optimization: stochastic and population-based search.
 
-Local methods find the nearest minimum; these explore the whole domain, trading guarantees for the ability to escape local optima.
+Local methods can converge to different stationary points from different initial guesses. These methods explore more broadly to escape local optima, but a finite run does not certify that the global minimum has been found.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `simulated_annealing` | `(f, x0, bounds=None, T0: float = 10.0, cooling: float = 0.995, max_iter: int = 20000, step: float = 0.5, rn, ...)` | Simulated annealing with geometric cooling. |
-| `particle_swarm` | `(f, bounds, n_particles: int = 40, max_iter: int = 500, w: float = 0.729, c1: float = 1.49445, c2: float =, ...)` | Particle swarm optimization. |
-| `differential_evolution` | `(f, bounds, pop_size: int = 30, F: float = 0.8, CR: float = 0.9, max_iter: int = 1000, rng=None, tol: float, ...)` | Differential evolution. |
-| `genetic_algorithm` | `(f, bounds, pop_size: int = 60, max_iter: int = 500, crossover_rate: float = 0.8, mutation_rate: float = 0., ...)` | Real-coded genetic algorithm with tournament selection and BLX crossover. |
-| `basin_hopping` | `(f, x0, n_hops: int = 100, step: float = 0.5, T: float = 1.0, rng=None, local=None, bounds=None)` | Basin hopping: random perturbation followed by local minimization. |
-| `random_search` | `(f, bounds, n_samples: int = 10000, rng=None)` | Pure random search: the baseline every other global method must beat. |
-| `cma_es` | `(f, x0, sigma0: float = 0.5, pop_size=None, max_iter: int = 1000, rng=None, tol: float = 1e-14)` | Covariance Matrix Adaptation Evolution Strategy. |
-| `cma_es_lite` | `(f, x0, **kwargs)` | Alias of ``cma_es``. |
-| `dual_annealing_lite` | `(f, bounds, max_iter: int = 2000, rng=None, local=True, restarts: int = 5)` | Annealing over the whole domain, polished by a local search. |
+| [`simulated_annealing`](#api-simulated_annealing) | function | Simulated annealing with geometric cooling. |
+| [`particle_swarm`](#api-particle_swarm) | function | Particle swarm optimization. |
+| [`differential_evolution`](#api-differential_evolution) | function | Differential evolution. |
+| [`genetic_algorithm`](#api-genetic_algorithm) | function | Real-coded genetic algorithm with tournament selection and BLX crossover. |
+| [`basin_hopping`](#api-basin_hopping) | function | Basin hopping: random perturbation followed by local minimization. |
+| [`random_search`](#api-random_search) | function | Pure random search: the baseline every other global method must beat. |
+| [`cma_es`](#api-cma_es) | function | Covariance Matrix Adaptation Evolution Strategy. |
+| [`cma_es_lite`](#api-cma_es_lite) | function | Alias of ``cma_es``. |
+| [`dual_annealing_lite`](#api-dual_annealing_lite) | function | Annealing over the whole domain, polished by a local search. |
+
+### `simulated_annealing` {#api-simulated_annealing}
+
+```python
+simulated_annealing(
+    f,
+    x0,
+    bounds=None,
+    T0: float = 10.0,
+    cooling: float = 0.995,
+    max_iter: int = 20000,
+    step: float = 0.5,
+    rng=None,
+    T_min: float = 1e-12,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Simulated annealing with geometric cooling.
+
+Uphill moves are accepted with probability `exp(-dE/T)`, so the search can
+leave a local basin early and settles as the temperature falls.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `particle_swarm` {#api-particle_swarm}
+
+```python
+particle_swarm(
+    f,
+    bounds,
+    n_particles: int = 40,
+    max_iter: int = 500,
+    w: float = 0.729,
+    c1: float = 1.49445,
+    c2: float = 1.49445,
+    rng=None,
+    tol: float = 1e-12,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Particle swarm optimization.
+
+Particles are drawn toward their own best position and the swarm's best;
+the inertia weight `w` balances exploration against convergence.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `differential_evolution` {#api-differential_evolution}
+
+```python
+differential_evolution(
+    f,
+    bounds,
+    pop_size: int = 30,
+    F: float = 0.8,
+    CR: float = 0.9,
+    max_iter: int = 1000,
+    rng=None,
+    tol: float = 1e-12,
+    strategy: str = 'rand1bin',
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Differential evolution.
+
+Mutation uses scaled differences of population members, so the step size
+adapts to the population's spread automatically.
+
+`strategy='rand1bin'` mutates around a random member and explores widely;
+`'best1bin'` mutates around the incumbent best and converges faster on
+unimodal problems but is prone to stalling in a local basin on multimodal
+ones.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `genetic_algorithm` {#api-genetic_algorithm}
+
+```python
+genetic_algorithm(
+    f,
+    bounds,
+    pop_size: int = 60,
+    max_iter: int = 500,
+    crossover_rate: float = 0.8,
+    mutation_rate: float = 0.1,
+    elite: int = 2,
+    rng=None,
+    tournament: int = 3,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Real-coded genetic algorithm with tournament selection and BLX crossover.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `basin_hopping` {#api-basin_hopping}
+
+```python
+basin_hopping(
+    f,
+    x0,
+    n_hops: int = 100,
+    step: float = 0.5,
+    T: float = 1.0,
+    rng=None,
+    local=None,
+    bounds=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Basin hopping: random perturbation followed by local minimization.
+
+Very effective when the landscape is a set of smooth basins.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `random_search` {#api-random_search}
+
+```python
+random_search(f, bounds, n_samples: int = 10000, rng=None)
+```
+
+Pure random search: the baseline every other global method must beat.
+
+### `cma_es` {#api-cma_es}
+
+```python
+cma_es(
+    f,
+    x0,
+    sigma0: float = 0.5,
+    pop_size=None,
+    max_iter: int = 1000,
+    rng=None,
+    tol: float = 1e-14,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Covariance Matrix Adaptation Evolution Strategy.
+
+Samples from a multivariate normal, moves the mean toward the best points,
+and adapts the full covariance from the evolution path -- which lets the
+search learn the local metric and handle ill-conditioned, non-separable
+landscapes that defeat coordinate-wise methods.
+
+The default population `lambda = 4 + 3 ln n` is tuned for unimodal
+problems. On a strongly multimodal landscape that small a sample gets
+trapped; raise `pop_size` (a few dozen is usually enough) to restore
+global behaviour.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `cma_es_lite` {#api-cma_es_lite}
+
+```python
+cma_es_lite(f, x0, **kwargs)
+```
+
+Alias of `cma_es`.
+
+### `dual_annealing_lite` {#api-dual_annealing_lite}
+
+```python
+dual_annealing_lite(
+    f,
+    bounds,
+    max_iter: int = 2000,
+    rng=None,
+    local=True,
+    restarts: int = 5,
+)
+```
+
+Annealing over the whole domain, polished by a local search.
+
+A simplified dual annealing: global exploration then local refinement.
 
 ## `gradient`
 
@@ -107,20 +732,307 @@ Gradient-based unconstrained minimization.
 
 From plain steepest descent through the nonlinear conjugate gradient methods and the stochastic-gradient-style adaptive rules.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `gradient_descent` | `(f, x0, grad_f=None, lr: float = 0.01, tol: float = 1e-08, max_iter: int = 10000, line_search: bool = False)` | Steepest descent, with a fixed step or an Armijo line search. |
-| `steepest_descent_opt` | `(f, x0, grad_f=None, **kwargs)` | Steepest descent with an exact line search at every step. |
-| `momentum` | `(f, x0, grad_f=None, lr: float = 0.01, beta: float = 0.9, tol: float = 1e-08, max_iter: int = 10000)` | Heavy-ball momentum: damps oscillation across narrow valleys. |
-| `nesterov` | `(f, x0, grad_f=None, lr: float = 0.01, beta: float = 0.9, tol: float = 1e-08, max_iter: int = 10000)` | Nesterov accelerated gradient: evaluates the gradient at the look-ahead point. |
-| `adagrad` | `(f, x0, grad_f=None, lr: float = 0.1, eps: float = 1e-08, tol: float = 1e-08, max_iter: int = 10000)` | AdaGrad: per-coordinate steps scaled by the accumulated gradient norm. |
-| `rmsprop` | `(f, x0, grad_f=None, lr: float = 0.01, beta: float = 0.9, eps: float = 1e-08, tol: float = 1e-08, max_iter:, ...)` | RMSProp: an exponentially decaying window of squared gradients. |
-| `adam` | `(f, x0, grad_f=None, lr: float = 0.05, beta1: float = 0.9, beta2: float = 0.999, eps: float = 1e-08, tol: f, ...)` | Adam: momentum plus RMSProp scaling, with bias correction. |
-| `conjugate_gradient_fr` | `(f, x0, grad_f=None, **kwargs)` | Fletcher-Reeves nonlinear conjugate gradient. |
-| `conjugate_gradient_pr` | `(f, x0, grad_f=None, **kwargs)` | Polak-Ribiere nonlinear conjugate gradient (usually the most robust). |
-| `conjugate_gradient_hs` | `(f, x0, grad_f=None, **kwargs)` | Hestenes-Stiefel nonlinear conjugate gradient. |
-| `nonlinear_cg` | `(f, x0, grad_f=None, variant: str = 'pr', tol: float = 1e-08, max_iter: int = 2000, restart: int = None)` | Nonlinear conjugate gradient with a strong Wolfe line search. |
-| `barzilai_borwein` | `(f, x0, grad_f=None, tol: float = 1e-08, max_iter: int = 5000, variant: int = 1, memory: int = 10, sigma: f, ...)` | Barzilai-Borwein: a two-point step approximating the Newton scaling. |
+| [`gradient_descent`](#api-gradient_descent) | function | Steepest descent, with a fixed step or an Armijo line search. |
+| [`steepest_descent_opt`](#api-steepest_descent_opt) | function | Steepest descent with an exact line search at every step. |
+| [`momentum`](#api-momentum) | function | Heavy-ball momentum: damps oscillation across narrow valleys. |
+| [`nesterov`](#api-nesterov) | function | Nesterov accelerated gradient: evaluates the gradient at the look-ahead point. |
+| [`adagrad`](#api-adagrad) | function | AdaGrad: per-coordinate steps scaled by the accumulated gradient norm. |
+| [`rmsprop`](#api-rmsprop) | function | RMSProp: an exponentially decaying window of squared gradients. |
+| [`adam`](#api-adam) | function | Adam: momentum plus RMSProp scaling, with bias correction. |
+| [`conjugate_gradient_fr`](#api-conjugate_gradient_fr) | function | Fletcher-Reeves nonlinear conjugate gradient. |
+| [`conjugate_gradient_pr`](#api-conjugate_gradient_pr) | function | Polak-Ribiere nonlinear conjugate gradient (usually the most robust). |
+| [`conjugate_gradient_hs`](#api-conjugate_gradient_hs) | function | Hestenes-Stiefel nonlinear conjugate gradient. |
+| [`nonlinear_cg`](#api-nonlinear_cg) | function | Nonlinear conjugate gradient with a strong Wolfe line search. |
+| [`barzilai_borwein`](#api-barzilai_borwein) | function | Barzilai-Borwein: a two-point step approximating the Newton scaling. |
+
+### `gradient_descent` {#api-gradient_descent}
+
+```python
+gradient_descent(
+    f,
+    x0,
+    grad_f=None,
+    lr: float = 0.01,
+    tol: float = 1e-08,
+    max_iter: int = 10000,
+    line_search: bool = False,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Steepest descent, with a fixed step or an Armijo line search.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `steepest_descent_opt` {#api-steepest_descent_opt}
+
+```python
+steepest_descent_opt(f, x0, grad_f=None, **kwargs)
+```
+
+Steepest descent with an exact line search at every step.
+
+### `momentum` {#api-momentum}
+
+```python
+momentum(
+    f,
+    x0,
+    grad_f=None,
+    lr: float = 0.01,
+    beta: float = 0.9,
+    tol: float = 1e-08,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Heavy-ball momentum: damps oscillation across narrow valleys.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `nesterov` {#api-nesterov}
+
+```python
+nesterov(
+    f,
+    x0,
+    grad_f=None,
+    lr: float = 0.01,
+    beta: float = 0.9,
+    tol: float = 1e-08,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Nesterov accelerated gradient: evaluates the gradient at the look-ahead point.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `adagrad` {#api-adagrad}
+
+```python
+adagrad(
+    f,
+    x0,
+    grad_f=None,
+    lr: float = 0.1,
+    eps: float = 1e-08,
+    tol: float = 1e-08,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+AdaGrad: per-coordinate steps scaled by the accumulated gradient norm.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `rmsprop` {#api-rmsprop}
+
+```python
+rmsprop(
+    f,
+    x0,
+    grad_f=None,
+    lr: float = 0.01,
+    beta: float = 0.9,
+    eps: float = 1e-08,
+    tol: float = 1e-08,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+RMSProp: an exponentially decaying window of squared gradients.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `adam` {#api-adam}
+
+```python
+adam(
+    f,
+    x0,
+    grad_f=None,
+    lr: float = 0.05,
+    beta1: float = 0.9,
+    beta2: float = 0.999,
+    eps: float = 1e-08,
+    tol: float = 1e-08,
+    max_iter: int = 10000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Adam: momentum plus RMSProp scaling, with bias correction.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `conjugate_gradient_fr` {#api-conjugate_gradient_fr}
+
+```python
+conjugate_gradient_fr(f, x0, grad_f=None, **kwargs)
+```
+
+Fletcher-Reeves nonlinear conjugate gradient.
+
+### `conjugate_gradient_pr` {#api-conjugate_gradient_pr}
+
+```python
+conjugate_gradient_pr(f, x0, grad_f=None, **kwargs)
+```
+
+Polak-Ribiere nonlinear conjugate gradient (usually the most robust).
+
+### `conjugate_gradient_hs` {#api-conjugate_gradient_hs}
+
+```python
+conjugate_gradient_hs(f, x0, grad_f=None, **kwargs)
+```
+
+Hestenes-Stiefel nonlinear conjugate gradient.
+
+### `nonlinear_cg` {#api-nonlinear_cg}
+
+```python
+nonlinear_cg(
+    f,
+    x0,
+    grad_f=None,
+    variant: str = 'pr',
+    tol: float = 1e-08,
+    max_iter: int = 2000,
+    restart: int = None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Nonlinear conjugate gradient with a strong Wolfe line search.
+
+`variant` selects the beta formula: `'fr'` (Fletcher-Reeves),
+`'pr'` (Polak-Ribiere, restarted at negative beta), or `'hs'`
+(Hestenes-Stiefel). Automatic restarts keep the directions descent.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `barzilai_borwein` {#api-barzilai_borwein}
+
+```python
+barzilai_borwein(
+    f,
+    x0,
+    grad_f=None,
+    tol: float = 1e-08,
+    max_iter: int = 5000,
+    variant: int = 1,
+    memory: int = 10,
+    sigma: float = 0.0001,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Barzilai-Borwein: a two-point step approximating the Newton scaling.
+
+Gradient-only cost with markedly better convergence than steepest descent.
+The raw iteration is non-monotone and can stall (it diverges on Rosenbrock),
+so Raydan's globalization is applied: a step is accepted when it improves on
+the *worst* of the last `memory` objective values, and is backtracked
+otherwise.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+## `least_squares`
+
+<small>`quadrivium.optimize.least_squares`</small>
+
+Bounded robust least squares using matrix-free damped Gauss-Newton steps.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`least_squares`](#api-least_squares) | function | Minimize robust residual cost subject to lower/upper parameter bounds. |
+
+### `least_squares` {#api-least_squares}
+
+```python
+least_squares(
+    fun,
+    x0,
+    jac='2-point',
+    bounds=(-inf, inf),
+    loss='linear',
+    f_scale=1.0,
+    x_scale=1.0,
+    ftol=1e-10,
+    xtol=1e-10,
+    gtol=1e-08,
+    max_iter=500,
+    max_nfev=None,
+    jac_sparsity=None,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+    tol=None,
+)
+```
+
+Minimize robust residual cost subject to lower/upper parameter bounds.
+
+`jac(x)` may return a dense matrix, a sparse matrix or a LinearOperator
+with both forward and adjoint products. The normal equations are applied
+as products, never assembled, so sparse Jacobians remain sparse. Numerical
+Jacobians honor bounds; `jac_sparsity` enables grouped perturbations.
+`x_scale='jac'` estimates reciprocal column norms, or pass positive scales.
+
+Histories contain accepted parameter vectors. `callback(x)` receives an
+independent snapshot after an accepted step; returning True or raising
+StopIteration stops. The result exposes residuals, optimality and active_mask
+in addition to the usual OptimizeResult fields. Covariance is not computed.
 
 ## `linesearch`
 
@@ -130,14 +1042,112 @@ Line searches: choose a step length along a descent direction.
 
 The Wolfe conditions are what make quasi-Newton updates provably stable, so these routines underpin most of the gradient-based methods in this package.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `backtracking` | `(f, x, direction, grad, alpha0: float = 1.0, rho: float = 0.5, c1: float = 0.0001, max_iter: int = 60)` | Backtracking until the Armijo sufficient decrease condition holds. |
-| `armijo` | `(f, x, direction, grad, **kwargs)` | Alias of ``backtracking`` under the Armijo name. |
-| `wolfe` | `(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 0.0001, c2: float = 0.9, max_iter: int = 60)` | Weak Wolfe conditions: Armijo decrease plus a curvature condition. |
-| `strong_wolfe` | `(f, grad_f, x, direction, alpha0: float = 1.0, c1: float = 0.0001, c2: float = 0.9, alpha_max: float = 50.0, ...)` | Strong Wolfe line search with bracketing and an interpolating zoom. |
-| `exact_line_search` | `(f, x, direction, bracket=(0.0, 2.0), tol: float = 1e-10)` | Minimize ``f(x + alpha d)`` exactly in ``alpha`` by golden section. |
-| `goldstein` | `(f, x, direction, grad, alpha0: float = 1.0, c: float = 0.25, max_iter: int = 60)` | Goldstein conditions: bracket the step between two decrease lines. |
+| [`backtracking`](#api-backtracking) | function | Backtracking until the Armijo sufficient decrease condition holds. |
+| [`armijo`](#api-armijo) | function | Alias of ``backtracking`` under the Armijo name. |
+| [`wolfe`](#api-wolfe) | function | Weak Wolfe conditions: Armijo decrease plus a curvature condition. |
+| [`strong_wolfe`](#api-strong_wolfe) | function | Strong Wolfe line search with bracketing and an interpolating zoom. |
+| [`exact_line_search`](#api-exact_line_search) | function | Minimize ``f(x + alpha d)`` exactly in ``alpha`` by golden section. |
+| [`goldstein`](#api-goldstein) | function | Goldstein conditions: bracket the step between two decrease lines. |
+
+### `backtracking` {#api-backtracking}
+
+```python
+backtracking(
+    f,
+    x,
+    direction,
+    grad,
+    alpha0: float = 1.0,
+    rho: float = 0.5,
+    c1: float = 0.0001,
+    max_iter: int = 60,
+)
+```
+
+Backtracking until the Armijo sufficient decrease condition holds.
+
+### `armijo` {#api-armijo}
+
+```python
+armijo(f, x, direction, grad, **kwargs)
+```
+
+Alias of `backtracking` under the Armijo name.
+
+### `wolfe` {#api-wolfe}
+
+```python
+wolfe(
+    f,
+    grad_f,
+    x,
+    direction,
+    alpha0: float = 1.0,
+    c1: float = 0.0001,
+    c2: float = 0.9,
+    max_iter: int = 60,
+)
+```
+
+Weak Wolfe conditions: Armijo decrease plus a curvature condition.
+
+### `strong_wolfe` {#api-strong_wolfe}
+
+```python
+strong_wolfe(
+    f,
+    grad_f,
+    x,
+    direction,
+    alpha0: float = 1.0,
+    c1: float = 0.0001,
+    c2: float = 0.9,
+    alpha_max: float = 50.0,
+    max_iter: int = 40,
+    phi0=None,
+    dphi0=None,
+)
+```
+
+Strong Wolfe line search with bracketing and an interpolating zoom.
+
+Guarantees `|g(alpha)'d| <= c2 |g(0)'d|`, which keeps quasi-Newton
+curvature updates positive definite. The zoom phase uses safeguarded
+quadratic interpolation rather than bisection: for a quadratic objective
+that lands on the exact minimizer immediately, which is what preserves the
+conjugacy that nonlinear CG depends on.
+
+Every caller in the package already holds `f(x)` and `grad f(x)` from
+the step that chose `direction`; pass them as `phi0` and `dphi0` to
+skip re-deriving them. That matters most when `grad_f` is a finite
+difference, where recomputing the gradient at `x` costs another `2n`
+evaluations of `f` per line search.
+
+### `exact_line_search` {#api-exact_line_search}
+
+```python
+exact_line_search(f, x, direction, bracket=(0.0, 2.0), tol: float = 1e-10)
+```
+
+Minimize `f(x + alpha d)` exactly in `alpha` by golden section.
+
+### `goldstein` {#api-goldstein}
+
+```python
+goldstein(
+    f,
+    x,
+    direction,
+    grad,
+    alpha0: float = 1.0,
+    c: float = 0.25,
+    max_iter: int = 60,
+)
+```
+
+Goldstein conditions: bracket the step between two decrease lines.
 
 ## `linprog`
 
@@ -147,16 +1157,132 @@ Linear programming.
 
 The simplex method walks the vertices of the feasible polytope; interior point methods cut through its interior. Both are provided, together with the transportation and assignment special cases.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `simplex` | `(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None, max_iter: int = 10000)` | Solve a linear program by the two-phase simplex method. |
-| `simplex_tableau` | `(c, A, b, basis, max_iter: int = 10000, tol: float = 1e-10)` | Run the primal simplex from a given basis on ``min c'x``, ``Ax = b, x >= 0``. |
-| `two_phase_simplex` | `(c, A, b, max_iter: int = 10000, tol: float = 1e-10)` | Two-phase simplex for the standard form ``min c'x s.t. A x = b, x >= 0``. |
-| `big_m_simplex` | `(c, A, b, M: float = 1000000.0, max_iter: int = 10000, tol: float = 1e-10)` | Big-M simplex for ``min c'x s.t. A x = b, x >= 0`` (equalities). |
-| `interior_point_lp` | `(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None, tol: float = 1e-10, max_iter: int = 200, sigma: float = 0.1)` | Primal-dual interior point method with Mehrotra-style centering. |
-| `linprog` | `(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None, method: str = 'simplex', **kwargs)` | Solve a linear program with the simplex or interior point method. |
-| `standard_form` | `(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None)` | Convert ``min c'x`` with mixed constraints to ``A x = b, x >= 0``. |
-| `assignment_problem` | `(cost, maximize: bool = False)` | Hungarian algorithm for the linear assignment problem. |
+| [`simplex`](#api-simplex) | function | Solve a linear program by the two-phase simplex method. |
+| [`simplex_tableau`](#api-simplex_tableau) | function | Run the primal simplex from a given basis on ``min c'x``, ``Ax = b, x >= 0``. |
+| [`two_phase_simplex`](#api-two_phase_simplex) | function | Two-phase simplex for the standard form ``min c'x s.t. A x = b, x >= 0``. |
+| [`big_m_simplex`](#api-big_m_simplex) | function | Big-M simplex for ``min c'x s.t. A x = b, x >= 0`` (equalities). |
+| [`interior_point_lp`](#api-interior_point_lp) | function | Primal-dual interior point method with Mehrotra-style centering. |
+| [`linprog`](#api-linprog) | function | Solve a linear program with the simplex or interior point method. |
+| [`standard_form`](#api-standard_form) | function | Convert ``min c'x`` with mixed constraints to ``A x = b, x >= 0``. |
+| [`assignment_problem`](#api-assignment_problem) | function | Hungarian algorithm for the linear assignment problem. |
+
+### `simplex` {#api-simplex}
+
+```python
+simplex(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None, max_iter: int = 10000)
+```
+
+Solve a linear program by the two-phase simplex method.
+
+Minimizes `c'x` subject to `A_ub x <= b_ub`, `A_eq x = b_eq`, `x >= 0`.
+
+### `simplex_tableau` {#api-simplex_tableau}
+
+```python
+simplex_tableau(c, A, b, basis, max_iter: int = 10000, tol: float = 1e-10)
+```
+
+Run the primal simplex from a given basis on `min c'x`, `Ax = b, x >= 0`.
+
+Returns `(x, basis, status)` where status is `'optimal'`, `'unbounded'`
+or `'max_iter'`. Bland's rule is used on degenerate pivots to guarantee
+termination.
+
+### `two_phase_simplex` {#api-two_phase_simplex}
+
+```python
+two_phase_simplex(c, A, b, max_iter: int = 10000, tol: float = 1e-10)
+```
+
+Two-phase simplex for the standard form `min c'x  s.t.  A x = b, x >= 0`.
+
+`A x = b` are *equalities*, not inequalities -- convert inequalities by
+adding slack variables first, or call `simplex` / `linprog`,
+which accept `A_ub`/`b_ub` and do that for you.  Phase 1 minimizes the
+sum of artificial variables to find a feasible basis; phase 2 optimizes
+from it.  Returns `(x, basis, status)`.
+
+### `big_m_simplex` {#api-big_m_simplex}
+
+```python
+big_m_simplex(c, A, b, M: float = 1000000.0, max_iter: int = 10000, tol: float = 1e-10)
+```
+
+Big-M simplex for `min c'x  s.t.  A x = b, x >= 0` (equalities).
+
+Penalizes artificial variables in a single phase instead of solving a
+separate phase-1 problem.  Simpler than two-phase but numerically
+delicate -- a large `M` swamps the genuine costs, so the two-phase
+method is preferred in practice.  Returns `(x, basis, status)`.
+
+### `interior_point_lp` {#api-interior_point_lp}
+
+```python
+interior_point_lp(
+    c,
+    A_ub=None,
+    b_ub=None,
+    A_eq=None,
+    b_eq=None,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+    sigma: float = 0.1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Primal-dual interior point method with Mehrotra-style centering.
+
+Follows the central path from the interior, so the work is polynomial in
+the problem size rather than combinatorial in the vertices.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `linprog` {#api-linprog}
+
+```python
+linprog(
+    c,
+    A_ub=None,
+    b_ub=None,
+    A_eq=None,
+    b_eq=None,
+    method: str = 'simplex',
+    **kwargs,
+)
+```
+
+Solve a linear program with the simplex or interior point method.
+
+### `standard_form` {#api-standard_form}
+
+```python
+standard_form(c, A_ub=None, b_ub=None, A_eq=None, b_eq=None)
+```
+
+Convert `min c'x` with mixed constraints to `A x = b, x >= 0`.
+
+Slack variables are appended for the inequality rows; the caller keeps the
+original variable count to recover the solution.
+
+### `assignment_problem` {#api-assignment_problem}
+
+```python
+assignment_problem(cost, maximize: bool = False)
+```
+
+Hungarian algorithm for the linear assignment problem.
+
+Returns `(row_indices, col_indices, total_cost)` for the optimal
+one-to-one matching in `O(n^3)`.
 
 ## `proximal`
 
@@ -166,22 +1292,248 @@ Proximal algorithms for composite objectives ``min f(x) + g(x)``.
 
 ``f`` is smooth and ``g`` is convex but possibly non-differentiable (an L1 penalty, an indicator of a constraint set). Proximal methods handle ``g`` through its proximal operator instead of a gradient, which is what makes sparsity-inducing regularizers tractable.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `prox_l1` | `(x, t: float)` | Proximal operator of ``t \|\|x\|\|_1``. |
-| `prox_l2` | `(x, t: float)` | Proximal operator of ``t \|\|x\|\|_2`` (block soft thresholding). |
-| `prox_box` | `(x, lower=None, upper=None)` | Proximal operator of the indicator of a box (that is, the projection). |
-| `prox_nonneg` | `(x, t: float = 0.0)` | Proximal operator of the indicator of the non-negative orthant. |
-| `soft_threshold` | `(x, t: float)` | Soft thresholding ``sign(x) max(\|x\| - t, 0)``: the prox of the L1 norm. |
-| `ista` | `(grad_f, prox, x0, lr: float = 0.01, **kwargs)` | Iterative shrinkage-thresholding algorithm (unaccelerated). |
-| `fista` | `(grad_f, prox, x0, lr: float = 0.01, **kwargs)` | FISTA: Nesterov-accelerated proximal gradient, ``O(1/k^2)``. |
-| `proximal_gradient` | `(grad_f, prox, x0, lr: float = 0.01, tol: float = 1e-10, max_iter: int = 10000, f=None, g=None, accelerate:, ...)` | Proximal gradient (forward-backward splitting). |
-| `admm` | `(prox_f, prox_g, x0, rho: float = 1.0, tol: float = 1e-10, max_iter: int = 5000, over_relax: float = 1.0)` | Alternating direction method of multipliers for ``min f(x) + g(z)``, ``x = z``. |
-| `admm_lasso` | `(A, b, lam: float = 1.0, rho: float = 1.0, tol: float = 1e-10, max_iter: int = 5000)` | LASSO by ADMM, with a cached factorization of ``A'A + rho I``. |
-| `douglas_rachford` | `(prox_f, prox_g, x0, gamma: float = 1.0, tol: float = 1e-10, max_iter: int = 5000)` | Douglas-Rachford splitting for ``min f(x) + g(x)``. |
-| `lasso` | `(A, b, lam: float = 1.0, x0=None, tol: float = 1e-12, max_iter: int = 20000, accelerate: bool = True)` | LASSO: ``min 0.5 \|\|Ax - b\|\|^2 + lam \|\|x\|\|_1``. |
-| `ridge` | `(A, b, lam: float = 1.0)` | Ridge regression in closed form: ``(A'A + lam I)^-1 A'b``. |
-| `elastic_net` | `(A, b, lam: float = 1.0, alpha: float = 0.5, tol: float = 1e-12, max_iter: int = 20000)` | Elastic net: ``0.5\|\|Ax-b\|\|^2 + lam(alpha\|\|x\|\|_1 + (1-alpha)/2 \|\|x\|\|^2)``. |
+| [`prox_l1`](#api-prox_l1) | function | Proximal operator of ``t \|\|x\|\|_1``. |
+| [`prox_l2`](#api-prox_l2) | function | Proximal operator of ``t \|\|x\|\|_2`` (block soft thresholding). |
+| [`prox_box`](#api-prox_box) | function | Proximal operator of the indicator of a box (that is, the projection). |
+| [`prox_nonneg`](#api-prox_nonneg) | function | Proximal operator of the indicator of the non-negative orthant. |
+| [`soft_threshold`](#api-soft_threshold) | function | Soft thresholding ``sign(x) max(\|x\| - t, 0)``: the prox of the L1 norm. |
+| [`ista`](#api-ista) | function | Iterative shrinkage-thresholding algorithm (unaccelerated). |
+| [`fista`](#api-fista) | function | FISTA: Nesterov-accelerated proximal gradient, ``O(1/k^2)``. |
+| [`proximal_gradient`](#api-proximal_gradient) | function | Proximal gradient (forward-backward splitting). |
+| [`admm`](#api-admm) | function | Alternating direction method of multipliers for ``min f(x) + g(z)``, ``x = z``. |
+| [`admm_lasso`](#api-admm_lasso) | function | LASSO by ADMM, with a cached factorization of ``A'A + rho I``. |
+| [`douglas_rachford`](#api-douglas_rachford) | function | Douglas-Rachford splitting for ``min f(x) + g(x)``. |
+| [`lasso`](#api-lasso) | function | LASSO: ``min 0.5 \|\|Ax - b\|\|^2 + lam \|\|x\|\|_1``. |
+| [`ridge`](#api-ridge) | function | Ridge regression in closed form: ``(A'A + lam I)^-1 A'b``. |
+| [`elastic_net`](#api-elastic_net) | function | Elastic net: ``0.5\|\|Ax-b\|\|^2 + lam(alpha\|\|x\|\|_1 + (1-alpha)/2 \|\|x\|\|^2)``. |
+
+### `prox_l1` {#api-prox_l1}
+
+```python
+prox_l1(x, t: float)
+```
+
+Proximal operator of `t ||x||_1`.
+
+### `prox_l2` {#api-prox_l2}
+
+```python
+prox_l2(x, t: float)
+```
+
+Proximal operator of `t ||x||_2` (block soft thresholding).
+
+### `prox_box` {#api-prox_box}
+
+```python
+prox_box(x, lower=None, upper=None)
+```
+
+Proximal operator of the indicator of a box (that is, the projection).
+
+### `prox_nonneg` {#api-prox_nonneg}
+
+```python
+prox_nonneg(x, t: float = 0.0)
+```
+
+Proximal operator of the indicator of the non-negative orthant.
+
+### `soft_threshold` {#api-soft_threshold}
+
+```python
+soft_threshold(x, t: float)
+```
+
+Soft thresholding `sign(x) max(|x| - t, 0)`: the prox of the L1 norm.
+
+### `ista` {#api-ista}
+
+```python
+ista(grad_f, prox, x0, lr: float = 0.01, **kwargs)
+```
+
+Iterative shrinkage-thresholding algorithm (unaccelerated).
+
+### `fista` {#api-fista}
+
+```python
+fista(grad_f, prox, x0, lr: float = 0.01, **kwargs)
+```
+
+FISTA: Nesterov-accelerated proximal gradient, `O(1/k^2)`.
+
+### `proximal_gradient` {#api-proximal_gradient}
+
+```python
+proximal_gradient(
+    grad_f,
+    prox,
+    x0,
+    lr: float = 0.01,
+    tol: float = 1e-10,
+    max_iter: int = 10000,
+    f=None,
+    g=None,
+    accelerate: bool = False,
+    backtrack: bool = True,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Proximal gradient (forward-backward splitting).
+
+Alternates a gradient step on the smooth part with the proximal operator of
+the non-smooth part. With `accelerate=True` this is FISTA, which improves
+the rate from `O(1/k)` to `O(1/k^2)`.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `admm` {#api-admm}
+
+```python
+admm(
+    prox_f,
+    prox_g,
+    x0,
+    rho: float = 1.0,
+    tol: float = 1e-10,
+    max_iter: int = 5000,
+    over_relax: float = 1.0,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Alternating direction method of multipliers for `min f(x) + g(z)`, `x = z`.
+
+Splits a hard problem into two easy proximal steps coupled by a dual
+variable; converges for any `rho > 0` when both parts are convex.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `admm_lasso` {#api-admm_lasso}
+
+```python
+admm_lasso(
+    A,
+    b,
+    lam: float = 1.0,
+    rho: float = 1.0,
+    tol: float = 1e-10,
+    max_iter: int = 5000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+LASSO by ADMM, with a cached factorization of `A'A + rho I`.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `douglas_rachford` {#api-douglas_rachford}
+
+```python
+douglas_rachford(
+    prox_f,
+    prox_g,
+    x0,
+    gamma: float = 1.0,
+    tol: float = 1e-10,
+    max_iter: int = 5000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Douglas-Rachford splitting for `min f(x) + g(x)`.
+
+Handles two non-smooth terms, neither of which needs a gradient.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `lasso` {#api-lasso}
+
+```python
+lasso(
+    A,
+    b,
+    lam: float = 1.0,
+    x0=None,
+    tol: float = 1e-12,
+    max_iter: int = 20000,
+    accelerate: bool = True,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+LASSO: `min 0.5 ||Ax - b||^2 + lam ||x||_1`.
+
+Solved by proximal gradient with the Lipschitz step `1/||A||_2^2`.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `ridge` {#api-ridge}
+
+```python
+ridge(A, b, lam: float = 1.0)
+```
+
+Ridge regression in closed form: `(A'A + lam I)^-1 A'b`.
+
+### `elastic_net` {#api-elastic_net}
+
+```python
+elastic_net(
+    A,
+    b,
+    lam: float = 1.0,
+    alpha: float = 0.5,
+    tol: float = 1e-12,
+    max_iter: int = 20000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Elastic net: `0.5||Ax-b||^2 + lam(alpha||x||_1 + (1-alpha)/2 ||x||^2)`.
+
+Blends LASSO's sparsity with ridge's stability under correlated columns.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
 
 ## `quasinewton`
 
@@ -191,18 +1543,293 @@ Newton and quasi-Newton methods for unconstrained minimization.
 
 Quasi-Newton methods build curvature information from successive gradients, so they get near-Newton convergence without ever forming a Hessian.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `newton_method` | `(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10, max_iter: int = 200, line_search: bool = True)` | Newton's method: solve ``H p = -g`` each step. Quadratic convergence. |
-| `modified_newton` | `(f, x0, grad_f=None, hess_f=None, tol: float = 1e-10, max_iter: int = 200, beta: float = 0.001)` | Newton with a Hessian modification that forces positive definiteness. |
-| `bfgs` | `(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None)` | BFGS: the standard quasi-Newton method. |
-| `dfp` | `(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None, c2: float = 0.1)` | Davidon-Fletcher-Powell: the original quasi-Newton update. |
-| `sr1` | `(f, x0, grad_f=None, tol: float = 1e-10, max_iter: int = 1000, H0=None, r: float = 1e-08, c2: float = 0.1)` | Symmetric rank-one update. |
-| `broyden_class` | `(f, x0, grad_f=None, phi: float = 0.5, tol: float = 1e-10, max_iter: int = 1000, H0=None, c2: float = 0.1)` | Broyden family interpolating DFP (``phi=1``) and BFGS (``phi=0``). |
-| `lbfgs` | `(f, x0, grad_f=None, m: int = 10, tol: float = 1e-10, max_iter: int = 1000, ftol: float = 1e-12)` | Limited-memory BFGS. |
-| `quasi_newton` | `(f, x0, grad_f=None, method: str = 'bfgs', **kwargs)` | Dispatch to a quasi-Newton method by name. |
-| `newton_cg` | `(f, x0, grad_f=None, hess_vec=None, tol: float = 1e-08, max_iter: int = 500, cg_max: int = None, forcing: s, ...)` | Truncated (Hessian-free) Newton with conjugate-gradient inner solves. |
-| `lbfgsb` | `(f, x0, grad_f=None, bounds=None, m: int = 10, tol: float = 1e-08, max_iter: int = 1000)` | L-BFGS with simple bound constraints, by the projected-gradient approach. |
+| [`newton_method`](#api-newton_method) | function | Newton's method: solve ``H p = -g`` each step. Quadratic convergence. |
+| [`modified_newton`](#api-modified_newton) | function | Newton with a Hessian modification that forces positive definiteness. |
+| [`bfgs`](#api-bfgs) | function | BFGS: the standard quasi-Newton method. |
+| [`dfp`](#api-dfp) | function | Davidon-Fletcher-Powell: the original quasi-Newton update. |
+| [`sr1`](#api-sr1) | function | Symmetric rank-one update. |
+| [`broyden_class`](#api-broyden_class) | function | Broyden family interpolating DFP (``phi=1``) and BFGS (``phi=0``). |
+| [`lbfgs`](#api-lbfgs) | function | Limited-memory BFGS. |
+| [`quasi_newton`](#api-quasi_newton) | function | Dispatch to a quasi-Newton method by name. |
+| [`newton_cg`](#api-newton_cg) | function | Truncated (Hessian-free) Newton with conjugate-gradient inner solves. |
+| [`lbfgsb`](#api-lbfgsb) | function | L-BFGS with simple bound constraints, by the projected-gradient approach. |
+
+### `newton_method` {#api-newton_method}
+
+```python
+newton_method(
+    f,
+    x0,
+    grad_f=None,
+    hess_f=None,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+    line_search: bool = True,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton's method: solve `H p = -g` each step. Quadratic convergence.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `modified_newton` {#api-modified_newton}
+
+```python
+modified_newton(
+    f,
+    x0,
+    grad_f=None,
+    hess_f=None,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+    beta: float = 0.001,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton with a Hessian modification that forces positive definiteness.
+
+Adds increasing multiples of the identity until Cholesky succeeds, which
+guarantees a descent direction even in non-convex regions.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `bfgs` {#api-bfgs}
+
+```python
+bfgs(
+    f,
+    x0,
+    grad_f=None,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    H0=None,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+BFGS: the standard quasi-Newton method.
+
+Updates the inverse Hessian directly and keeps it positive definite whenever
+the curvature condition `s'y > 0` holds -- which the Wolfe line search
+guarantees.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `dfp` {#api-dfp}
+
+```python
+dfp(
+    f,
+    x0,
+    grad_f=None,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    H0=None,
+    c2: float = 0.1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Davidon-Fletcher-Powell: the original quasi-Newton update.
+
+DFP is markedly more sensitive to line search accuracy than BFGS -- with a
+loose curvature condition it can stall on Rosenbrock -- so the default
+`c2` here is tighter than the BFGS default.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `sr1` {#api-sr1}
+
+```python
+sr1(
+    f,
+    x0,
+    grad_f=None,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    H0=None,
+    r: float = 1e-08,
+    c2: float = 0.1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Symmetric rank-one update.
+
+Not guaranteed positive definite, but often a better Hessian approximation
+than BFGS -- useful inside trust region methods.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `broyden_class` {#api-broyden_class}
+
+```python
+broyden_class(
+    f,
+    x0,
+    grad_f=None,
+    phi: float = 0.5,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    H0=None,
+    c2: float = 0.1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Broyden family interpolating DFP (`phi=1`) and BFGS (`phi=0`).
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `lbfgs` {#api-lbfgs}
+
+```python
+lbfgs(
+    f,
+    x0,
+    grad_f=None,
+    m: int = 10,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    ftol: float = 1e-12,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Limited-memory BFGS.
+
+Stores only the last `m` correction pairs and applies the inverse Hessian
+by the two-loop recursion, so memory is `O(mn)` instead of `O(n^2)` --
+the reason L-BFGS is the default for large problems.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `quasi_newton` {#api-quasi_newton}
+
+```python
+quasi_newton(f, x0, grad_f=None, method: str = 'bfgs', **kwargs)
+```
+
+Dispatch to a quasi-Newton method by name.
+
+### `newton_cg` {#api-newton_cg}
+
+```python
+newton_cg(
+    f,
+    x0,
+    grad_f=None,
+    hess_vec=None,
+    tol: float = 1e-08,
+    max_iter: int = 500,
+    cg_max: int = None,
+    forcing: str = 'superlinear',
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Truncated (Hessian-free) Newton with conjugate-gradient inner solves.
+
+Solves the Newton system `H p = -g` approximately with CG, terminating
+early on two conditions.  The first is the *forcing sequence*: an accurate
+Newton direction is worthless far from the solution, so the inner
+tolerance is tied to the current gradient norm and tightens automatically
+as convergence sets in.  The second is negative curvature: if CG meets a
+direction with `d'Hd <= 0` the quadratic model is unbounded there, and
+the iterate is truncated to the current direction -- which is still a
+descent direction, so the method keeps working on non-convex problems
+where plain Newton would step toward a saddle.
+
+Only Hessian-*vector* products are needed; supply `hess_vec(x, v)` for
+large problems, or let it be approximated by a directional difference of
+gradients.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `lbfgsb` {#api-lbfgsb}
+
+```python
+lbfgsb(
+    f,
+    x0,
+    grad_f=None,
+    bounds=None,
+    m: int = 10,
+    tol: float = 1e-08,
+    max_iter: int = 1000,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+L-BFGS with simple bound constraints, by the projected-gradient approach.
+
+At each step the variables at their bounds with a gradient pushing further
+out are *frozen* (the active set); the L-BFGS direction is computed on the
+remaining free variables and the result projected back into the box.
+Freezing them matters: a curvature pair built from a step that the
+projection then truncated corrupts the Hessian approximation, so the update
+is skipped when the step was clipped.
+
+`bounds` is a sequence of `(lo, hi)` pairs; use `None` for an
+unbounded side.  With `bounds=None` this is plain L-BFGS.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
 
 ## `scalar`
 
@@ -210,16 +1837,112 @@ Quasi-Newton methods build curvature information from successive gradients, so t
 
 One-dimensional minimization.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `golden_section` | `(f, a: float, b: float, tol: float = 1e-10, max_iter: int = 500)` | Golden section search: reduces the interval by ``0.618`` each step. |
-| `fibonacci_search` | `(f, a: float, b: float, n: int = 40)` | Fibonacci search: the optimal fixed-budget interval reduction. |
-| `ternary_search` | `(f, a: float, b: float, tol: float = 1e-10, max_iter: int = 500)` | Ternary search: split into thirds, discard one. Simple but slower than golden. |
-| `parabolic_interpolation` | `(f, a: float, b: float, c=None, tol: float = 1e-10, max_iter: int = 100)` | Successive parabolic interpolation through three points. |
-| `brent_minimize` | `(f, a: float, b: float, tol: float = 1e-10, max_iter: int = 200)` | Brent's method: parabolic interpolation with a golden section fallback. |
-| `newton_minimize_1d` | `(f, x0: float, df=None, d2f=None, tol: float = 1e-12, max_iter: int = 100)` | Newton's method applied to ``f'(x) = 0``, with a curvature safeguard. |
-| `bracket_minimum` | `(f, a: float = 0.0, b: float = 1.0, growth: float = 1.618, max_iter: int = 100)` | Expand outward until three points bracket a minimum. |
-| `line_minimize` | `(f, a=None, b=None, method: str = 'brent', **kwargs)` | Minimize a scalar function, bracketing automatically when needed. |
+| [`golden_section`](#api-golden_section) | function | Golden section search: reduces the interval by ``0.618`` each step. |
+| [`fibonacci_search`](#api-fibonacci_search) | function | Fibonacci search: the optimal fixed-budget interval reduction. |
+| [`ternary_search`](#api-ternary_search) | function | Ternary search: split into thirds, discard one. Simple but slower than golden. |
+| [`parabolic_interpolation`](#api-parabolic_interpolation) | function | Successive parabolic interpolation through three points. |
+| [`brent_minimize`](#api-brent_minimize) | function | Brent's method: parabolic interpolation with a golden section fallback. |
+| [`newton_minimize_1d`](#api-newton_minimize_1d) | function | Newton's method applied to ``f'(x) = 0``, with a curvature safeguard. |
+| [`bracket_minimum`](#api-bracket_minimum) | function | Expand outward until three points bracket a minimum. |
+| [`line_minimize`](#api-line_minimize) | function | Minimize a scalar function, bracketing automatically when needed. |
+
+### `golden_section` {#api-golden_section}
+
+```python
+golden_section(f, a: float, b: float, tol: float = 1e-10, max_iter: int = 500)
+```
+
+Golden section search: reduces the interval by `0.618` each step.
+
+Needs no derivatives and is guaranteed for a unimodal function.
+
+### `fibonacci_search` {#api-fibonacci_search}
+
+```python
+fibonacci_search(f, a: float, b: float, n: int = 40)
+```
+
+Fibonacci search: the optimal fixed-budget interval reduction.
+
+### `ternary_search` {#api-ternary_search}
+
+```python
+ternary_search(f, a: float, b: float, tol: float = 1e-10, max_iter: int = 500)
+```
+
+Ternary search: split into thirds, discard one. Simple but slower than golden.
+
+### `parabolic_interpolation` {#api-parabolic_interpolation}
+
+```python
+parabolic_interpolation(
+    f,
+    a: float,
+    b: float,
+    c=None,
+    tol: float = 1e-10,
+    max_iter: int = 100,
+)
+```
+
+Successive parabolic interpolation through three points.
+
+### `brent_minimize` {#api-brent_minimize}
+
+```python
+brent_minimize(f, a: float, b: float, tol: float = 1e-10, max_iter: int = 200)
+```
+
+Brent's method: parabolic interpolation with a golden section fallback.
+
+The standard derivative-free 1-D minimizer.
+
+### `newton_minimize_1d` {#api-newton_minimize_1d}
+
+```python
+newton_minimize_1d(
+    f,
+    x0: float,
+    df=None,
+    d2f=None,
+    tol: float = 1e-12,
+    max_iter: int = 100,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Newton's method applied to `f'(x) = 0`, with a curvature safeguard.
+
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
+
+### `bracket_minimum` {#api-bracket_minimum}
+
+```python
+bracket_minimum(
+    f,
+    a: float = 0.0,
+    b: float = 1.0,
+    growth: float = 1.618,
+    max_iter: int = 100,
+)
+```
+
+Expand outward until three points bracket a minimum.
+
+### `line_minimize` {#api-line_minimize}
+
+```python
+line_minimize(f, a=None, b=None, method: str = 'brent', **kwargs)
+```
+
+Minimize a scalar function, bracketing automatically when needed.
 
 ## `trustregion`
 
@@ -229,13 +1952,169 @@ Trust region methods and nonlinear least squares.
 
 Instead of a direction plus a step length, trust region methods pick a radius in which the quadratic model is trusted and minimize the model there -- which is what makes them reliable on non-convex problems.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `trust_region` | `(f, x0, grad_f=None, hess_f=None, delta0: float = 1.0, delta_max: float = 100.0, eta: float = 0.15, tol: fl, ...)` | Trust region minimization with a selectable subproblem solver. |
-| `cauchy_point` | `(g, B, delta: float)` | Cauchy point: the model minimizer along the steepest descent direction. |
-| `dogleg` | `(g, B, delta: float)` | Powell's dogleg step: interpolate between the Cauchy and Newton points. |
-| `steihaug_cg` | `(g, B, delta: float, tol: float = 1e-10, max_iter: int = None)` | Steihaug-Toint truncated CG: solves the trust region subproblem. |
-| `levenberg_marquardt` | `(residual, x0, jac=None, lam0: float = 0.001, tol: float = 1e-12, max_iter: int = 500, lam_up: float = 10.0, ...)` | Levenberg-Marquardt: interpolates Gauss-Newton and gradient descent. |
-| `gauss_newton` | `(residual, x0, jac=None, tol: float = 1e-10, max_iter: int = 200)` | Gauss-Newton for least squares: drop the second-order residual term. |
-| `nonlinear_least_squares` | `(residual, x0, jac=None, method: str = 'lm', **kwargs)` | Solve ``min 0.5 \|\|r(x)\|\|^2`` by Levenberg-Marquardt or Gauss-Newton. |
-| `curve_fit` | `(model, xdata, ydata, p0, jac=None, sigma=None, method: str = 'lm', **kwargs)` | Fit ``model(x, *params)`` to data by nonlinear least squares. |
+| [`trust_region`](#api-trust_region) | function | Trust region minimization with a selectable subproblem solver. |
+| [`cauchy_point`](#api-cauchy_point) | function | Cauchy point: the model minimizer along the steepest descent direction. |
+| [`dogleg`](#api-dogleg) | function | Powell's dogleg step: interpolate between the Cauchy and Newton points. |
+| [`steihaug_cg`](#api-steihaug_cg) | function | Steihaug-Toint truncated CG: solves the trust region subproblem. |
+| [`levenberg_marquardt`](#api-levenberg_marquardt) | function | Levenberg-Marquardt: interpolates Gauss-Newton and gradient descent. |
+| [`gauss_newton`](#api-gauss_newton) | function | Gauss-Newton for least squares: drop the second-order residual term. |
+| [`nonlinear_least_squares`](#api-nonlinear_least_squares) | function | Solve ``min 0.5 \|\|r(x)\|\|^2`` by Levenberg-Marquardt or Gauss-Newton. |
+| [`curve_fit`](#api-curve_fit) | function | Fit ``model(x, *params)`` to data by nonlinear least squares. |
+
+### `trust_region` {#api-trust_region}
+
+```python
+trust_region(
+    f,
+    x0,
+    grad_f=None,
+    hess_f=None,
+    delta0: float = 1.0,
+    delta_max: float = 100.0,
+    eta: float = 0.15,
+    tol: float = 1e-10,
+    max_iter: int = 1000,
+    subproblem: str = 'dogleg',
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Trust region minimization with a selectable subproblem solver.
+
+`subproblem` is `'dogleg'`, `'cauchy'` or `'steihaug'`. The radius
+grows when the model predicts the actual reduction well and shrinks when it
+does not.
+
+The Cauchy point only minimizes along the steepest descent direction, so it
+guarantees global convergence but at a linear rate; `dogleg` and
+`steihaug` capture the Newton direction too and converge superlinearly.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `cauchy_point` {#api-cauchy_point}
+
+```python
+cauchy_point(g, B, delta: float)
+```
+
+Cauchy point: the model minimizer along the steepest descent direction.
+
+Cheapest possible trust region step and enough for global convergence, but
+only linearly convergent -- it ignores the Newton direction entirely.
+
+### `dogleg` {#api-dogleg}
+
+```python
+dogleg(g, B, delta: float)
+```
+
+Powell's dogleg step: interpolate between the Cauchy and Newton points.
+
+The Newton point is only used when `B` is positive definite. With an
+indefinite Hessian `-B^-1 g` can point *toward* a saddle rather than away
+from it, so in that case the step falls back to the Cauchy point, which
+always descends.
+
+### `steihaug_cg` {#api-steihaug_cg}
+
+```python
+steihaug_cg(g, B, delta: float, tol: float = 1e-10, max_iter: int = None)
+```
+
+Steihaug-Toint truncated CG: solves the trust region subproblem.
+
+Stops on negative curvature or at the boundary, so it needs only
+matrix-vector products and works for large problems.
+
+### `levenberg_marquardt` {#api-levenberg_marquardt}
+
+```python
+levenberg_marquardt(
+    residual,
+    x0,
+    jac=None,
+    lam0: float = 0.001,
+    tol: float = 1e-12,
+    max_iter: int = 500,
+    lam_up: float = 10.0,
+    lam_down: float = 0.1,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Levenberg-Marquardt: interpolates Gauss-Newton and gradient descent.
+
+The damping `lambda` is raised when a step fails and lowered when it
+succeeds, which gives the robustness of descent far from the solution and
+the speed of Gauss-Newton near it.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `gauss_newton` {#api-gauss_newton}
+
+```python
+gauss_newton(
+    residual,
+    x0,
+    jac=None,
+    tol: float = 1e-10,
+    max_iter: int = 200,
+    *,
+    store_history=True,
+    history_stride=1,
+    callback=None,
+)
+```
+
+Gauss-Newton for least squares: drop the second-order residual term.
+
+Converges quadratically for zero-residual problems and linearly otherwise.
+
+
+    Optional controls: store_history=False disables snapshots; history_stride
+    retains every Nth snapshot; callback(x) receives a private iterate copy.
+    Return True or raise StopIteration from the callback to stop.
+
+### `nonlinear_least_squares` {#api-nonlinear_least_squares}
+
+```python
+nonlinear_least_squares(residual, x0, jac=None, method: str = 'lm', **kwargs)
+```
+
+Solve `min 0.5 ||r(x)||^2` by Levenberg-Marquardt or Gauss-Newton.
+
+### `curve_fit` {#api-curve_fit}
+
+```python
+curve_fit(
+    model,
+    xdata,
+    ydata,
+    p0,
+    jac=None,
+    sigma=None,
+    method: str = 'lm',
+    absolute_sigma=False,
+    compute_covariance=True,
+    **kwargs,
+)
+```
+
+Fit `model(x, *params)` to data by nonlinear least squares.
+
+Returns the optimization result with `covariance` and `std_errors`
+attached, estimated from the Jacobian at the solution.

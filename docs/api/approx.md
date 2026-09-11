@@ -7,17 +7,87 @@ Orthogonal polynomials, Gauss nodes, least squares, Pade, minimax, Fourier.
 
 For worked examples and guidance on choosing between these routines, see the [approximation guide](../guides/approx.md).
 
-**38 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**40 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.approx import legendre
-import quadrivium as qd            # qd.legendre, if re-exported
+from quadrivium import approx
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
+- [`adaptive`](#adaptive) &mdash; piecewise, tolerance-driven chebyshev representations of scalar functions (2)
 - [`fitting`](#fitting) &mdash; least squares fitting, pade approximants, minimax and fourier series (18)
 - [`orthopoly`](#orthopoly) &mdash; classical orthogonal polynomials and gauss quadrature nodes (20)
+
+## `adaptive`
+
+<small>`quadrivium.approx.adaptive`</small>
+
+Piecewise, tolerance-driven Chebyshev representations of scalar functions.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`ChebyshevApproximation`](#api-ChebyshevApproximation) | class | Adaptive scalar approximation with evaluation, derivatives, integrals, roots. |
+| [`chebfun`](#api-chebfun) | function | Construct a tolerance-driven piecewise Chebyshev approximation. |
+
+### `ChebyshevApproximation` {#api-ChebyshevApproximation}
+
+```python
+ChebyshevApproximation(
+    f,
+    domain=(-1.0, 1.0),
+    *,
+    atol=1e-12,
+    rtol=1e-10,
+    max_degree=128,
+    max_pieces=256,
+)
+```
+
+Adaptive scalar approximation with evaluation, derivatives, integrals, roots.
+
+Degree doubling is checked using both coefficient tails and independent
+off-grid samples. Difficult pieces are bisected. `converged` reports
+whether the requested sample-based error target was reached; the estimate
+is not a proof for arbitrary functions between samples.
+
+#### `ChebyshevApproximation.__call__` {#api-ChebyshevApproximation.__call__}
+
+```python
+ChebyshevApproximation.__call__(self, x)
+```
+
+Call self as a function.
+
+#### `ChebyshevApproximation.derivative` {#api-ChebyshevApproximation.derivative}
+
+```python
+ChebyshevApproximation.derivative(self, order=1)
+```
+
+#### `ChebyshevApproximation.integrate` {#api-ChebyshevApproximation.integrate}
+
+```python
+ChebyshevApproximation.integrate(self, a=None, b=None)
+```
+
+#### `ChebyshevApproximation.roots` {#api-ChebyshevApproximation.roots}
+
+```python
+ChebyshevApproximation.roots(self, tol=1e-08)
+```
+
+Real roots of the represented pieces, deduplicated at shared boundaries.
+
+### `chebfun` {#api-chebfun}
+
+```python
+chebfun(f, domain=(-1.0, 1.0), **kwargs)
+```
+
+Construct a tolerance-driven piecewise Chebyshev approximation.
 
 ## `fitting`
 
@@ -25,26 +95,221 @@ import quadrivium as qd            # qd.legendre, if re-exported
 
 Least squares fitting, Pade approximants, minimax and Fourier series.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `polyfit` | `(x, y, degree: int = 1)` | Least squares polynomial fit; returns coefficients highest degree first. |
-| `weighted_polyfit` | `(x, y, weights, degree: int = 1)` | Weighted least squares polynomial fit. |
-| `chebyshev_fit` | `(x, y, degree: int = 5, domain=None)` | Least squares fit in the Chebyshev basis. |
-| `legendre_fit` | `(x, y, degree: int = 5, domain=None)` | Least squares fit in the Legendre basis. |
-| `exponential_fit` | `(x, y)` | Fit ``y = a exp(b x)`` by linearizing in ``log y``. |
-| `power_fit` | `(x, y)` | Fit ``y = a x^b`` by linearizing in log-log coordinates. |
-| `logarithmic_fit` | `(x, y)` | Fit ``y = a + b log x``. |
-| `rational_fit` | `(x, y, m: int = 2, n: int = 2)` | Linearized rational least squares fit ``P_m(x) / Q_n(x)`` with ``Q(0)=1``. |
-| `pade` | `(coeffs, m: int, n: int)` | Pade approximant ``[m/n]`` from Taylor coefficients (lowest order first). |
-| `pade_evaluate` | `(p, q, x)` | Evaluate a Pade approximant given its numerator and denominator. |
-| `remez` | `(f, degree: int, a: float = -1.0, b: float = 1.0, max_iter: int = 60, tol: float = 1e-13)` | Remez exchange algorithm for the minimax polynomial approximation. |
-| `minimax_polynomial` | `(f, degree: int, a: float = -1.0, b: float = 1.0, **kwargs)` | Best uniform (minimax) polynomial approximation via ``remez``. |
-| `fourier_series` | `(f, n: int = 10, period: float = 6.283185307179586)` | Truncated Fourier series of a periodic function. |
-| `fourier_coefficients` | `(f, n: int = 10, period: float = 6.283185307179586, n_quad: int = 2000)` | Fourier coefficients ``(a_0, a_k, b_k)`` of a periodic function. |
-| `trigonometric_fit` | `(x, y, n_harmonics: int = 3, period: float = 6.283185307179586)` | Least squares fit of a truncated trigonometric series to scattered data. |
-| `spline_fit` | `(x, y, smoothing: float = 1.0)` | Smoothing spline fit to noisy data. |
-| `aaa` | `(f, points=None, tol: float = 1e-13, max_terms: int = 100, values=None)` | AAA algorithm: near-best rational approximation in barycentric form. |
-| `chebyshev_economization` | `(coeffs, n: int, a: float = -1.0, b: float = 1.0)` | Reduce a truncated power series to lower degree with minimal added error. |
+| [`polyfit`](#api-polyfit) | function | Least squares polynomial fit; returns coefficients highest degree first. |
+| [`weighted_polyfit`](#api-weighted_polyfit) | function | Weighted least squares polynomial fit. |
+| [`chebyshev_fit`](#api-chebyshev_fit) | function | Least squares fit in the Chebyshev basis. |
+| [`legendre_fit`](#api-legendre_fit) | function | Least squares fit in the Legendre basis. |
+| [`exponential_fit`](#api-exponential_fit) | function | Fit ``y = a exp(b x)`` by linearizing in ``log y``. |
+| [`power_fit`](#api-power_fit) | function | Fit ``y = a x^b`` by linearizing in log-log coordinates. |
+| [`logarithmic_fit`](#api-logarithmic_fit) | function | Fit ``y = a + b log x``. |
+| [`rational_fit`](#api-rational_fit) | function | Linearized rational least squares fit ``P_m(x) / Q_n(x)`` with ``Q(0)=1``. |
+| [`pade`](#api-pade) | function | Pade approximant ``[m/n]`` from Taylor coefficients (lowest order first). |
+| [`pade_evaluate`](#api-pade_evaluate) | function | Evaluate a Pade approximant given its numerator and denominator. |
+| [`remez`](#api-remez) | function | Remez exchange algorithm for the minimax polynomial approximation. |
+| [`minimax_polynomial`](#api-minimax_polynomial) | function | Best uniform (minimax) polynomial approximation via ``remez``. |
+| [`fourier_series`](#api-fourier_series) | function | Truncated Fourier series of a periodic function. |
+| [`fourier_coefficients`](#api-fourier_coefficients) | function | Fourier coefficients ``(a_0, a_k, b_k)`` of a periodic function. |
+| [`trigonometric_fit`](#api-trigonometric_fit) | function | Least squares fit of a truncated trigonometric series to scattered data. |
+| [`spline_fit`](#api-spline_fit) | function | Smoothing spline fit to noisy data. |
+| [`aaa`](#api-aaa) | function | AAA algorithm: near-best rational approximation in barycentric form. |
+| [`chebyshev_economization`](#api-chebyshev_economization) | function | Reduce a truncated power series to lower degree with minimal added error. |
+
+### `polyfit` {#api-polyfit}
+
+```python
+polyfit(x, y, degree: int = 1)
+```
+
+Least squares polynomial fit; returns coefficients highest degree first.
+
+Solved through QR on the Vandermonde matrix rather than the normal
+equations, which halves the loss of conditioning.
+
+### `weighted_polyfit` {#api-weighted_polyfit}
+
+```python
+weighted_polyfit(x, y, weights, degree: int = 1)
+```
+
+Weighted least squares polynomial fit.
+
+### `chebyshev_fit` {#api-chebyshev_fit}
+
+```python
+chebyshev_fit(x, y, degree: int = 5, domain=None)
+```
+
+Least squares fit in the Chebyshev basis.
+
+Far better conditioned than the monomial basis at high degree.
+
+### `legendre_fit` {#api-legendre_fit}
+
+```python
+legendre_fit(x, y, degree: int = 5, domain=None)
+```
+
+Least squares fit in the Legendre basis.
+
+### `exponential_fit` {#api-exponential_fit}
+
+```python
+exponential_fit(x, y)
+```
+
+Fit `y = a exp(b x)` by linearizing in `log y`.
+
+Requires positive `y`; note that the linearization weights small values
+more heavily than a direct nonlinear fit would.
+
+### `power_fit` {#api-power_fit}
+
+```python
+power_fit(x, y)
+```
+
+Fit `y = a x^b` by linearizing in log-log coordinates.
+
+### `logarithmic_fit` {#api-logarithmic_fit}
+
+```python
+logarithmic_fit(x, y)
+```
+
+Fit `y = a + b log x`.
+
+### `rational_fit` {#api-rational_fit}
+
+```python
+rational_fit(x, y, m: int = 2, n: int = 2)
+```
+
+Linearized rational least squares fit `P_m(x) / Q_n(x)` with `Q(0)=1`.
+
+### `pade` {#api-pade}
+
+```python
+pade(coeffs, m: int, n: int)
+```
+
+Pade approximant `[m/n]` from Taylor coefficients (lowest order first).
+
+Often converges where the Taylor series diverges, because the poles of the
+rational form can represent nearby singularities.
+
+The Pade table can be *degenerate*: when a lower-order approximant already
+reproduces the series exactly (as `[1/1]` does for `1/(1-x)`), the
+linear system for a higher-order one is singular. A minimum-norm solution
+is returned in that case, which still reproduces the series.
+
+### `pade_evaluate` {#api-pade_evaluate}
+
+```python
+pade_evaluate(p, q, x)
+```
+
+Evaluate a Pade approximant given its numerator and denominator.
+
+### `remez` {#api-remez}
+
+```python
+remez(
+    f,
+    degree: int,
+    a: float = -1.0,
+    b: float = 1.0,
+    max_iter: int = 60,
+    tol: float = 1e-13,
+)
+```
+
+Remez exchange algorithm for the minimax polynomial approximation.
+
+Iterates toward the equioscillation property that characterizes the best
+uniform approximation: the error attains its maximum with alternating sign
+at `degree + 2` points.
+
+### `minimax_polynomial` {#api-minimax_polynomial}
+
+```python
+minimax_polynomial(f, degree: int, a: float = -1.0, b: float = 1.0, **kwargs)
+```
+
+Best uniform (minimax) polynomial approximation via `remez`.
+
+### `fourier_series` {#api-fourier_series}
+
+```python
+fourier_series(f, n: int = 10, period: float = 6.283185307179586)
+```
+
+Truncated Fourier series of a periodic function.
+
+### `fourier_coefficients` {#api-fourier_coefficients}
+
+```python
+fourier_coefficients(
+    f,
+    n: int = 10,
+    period: float = 6.283185307179586,
+    n_quad: int = 2000,
+)
+```
+
+Fourier coefficients `(a_0, a_k, b_k)` of a periodic function.
+
+### `trigonometric_fit` {#api-trigonometric_fit}
+
+```python
+trigonometric_fit(x, y, n_harmonics: int = 3, period: float = 6.283185307179586)
+```
+
+Least squares fit of a truncated trigonometric series to scattered data.
+
+### `spline_fit` {#api-spline_fit}
+
+```python
+spline_fit(x, y, smoothing: float = 1.0)
+```
+
+Smoothing spline fit to noisy data.
+
+### `aaa` {#api-aaa}
+
+```python
+aaa(f, points=None, tol: float = 1e-13, max_terms: int = 100, values=None)
+```
+
+AAA algorithm: near-best rational approximation in barycentric form.
+
+Greedily adds support points where the current approximation is worst, and
+solves a small least-squares problem for the barycentric weights at each
+step.  Two properties make it the modern default for rational fitting:
+the barycentric form is numerically stable where a ratio of explicit
+polynomials is not, and the greedy support-point choice sidesteps the
+nonlinear optimization that classical Pade and minimax fitting require.
+
+Handles poles, branch points and near-singular behaviour that polynomial
+approximation cannot touch.  Pass either a callable `f` with sample
+`points`, or `points` together with `values`.
+
+Returns `(r, support, weights, fvals)` where `r` is the evaluator.
+
+### `chebyshev_economization` {#api-chebyshev_economization}
+
+```python
+chebyshev_economization(coeffs, n: int, a: float = -1.0, b: float = 1.0)
+```
+
+Reduce a truncated power series to lower degree with minimal added error.
+
+Convert to the Chebyshev basis, drop the top coefficients, convert back.
+Because Chebyshev polynomials equioscillate, discarding the `T_k` term
+adds an error of exactly `|c_k|` spread evenly over the interval --
+against the strongly endpoint-weighted error of simply truncating the
+power series.  Returns the shortened power-basis coefficients.
 
 ## `orthopoly`
 
@@ -54,25 +319,200 @@ Classical orthogonal polynomials and Gauss quadrature nodes.
 
 Each family is generated from its three-term recurrence; nodes and weights come from the Golub-Welsch eigenvalue algorithm applied to the Jacobi matrix, which is both elegant and numerically stable.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `legendre` | `(n: int, x)` | Legendre polynomial ``P_n`` by the three-term recurrence. |
-| `legendre_coefficients` | `(n: int)` | Monomial coefficients of ``P_n`` (highest degree first). |
-| `chebyshev_t` | `(n: int, x)` | Chebyshev polynomial of the first kind ``T_n``. |
-| `chebyshev_u` | `(n: int, x)` | Chebyshev polynomial of the second kind ``U_n``. |
-| `hermite_physicists` | `(n: int, x)` | Physicists' Hermite polynomial ``H_n`` (weight ``exp(-x^2)``). |
-| `hermite_probabilists` | `(n: int, x)` | Probabilists' Hermite polynomial ``He_n`` (weight ``exp(-x^2/2)``). |
-| `laguerre` | `(n: int, x)` | Laguerre polynomial ``L_n`` (weight ``exp(-x)`` on ``[0, inf)``). |
-| `generalized_laguerre` | `(n: int, alpha: float, x)` | Generalized Laguerre polynomial ``L_n^alpha``. |
-| `jacobi_polynomial` | `(n: int, alpha: float, beta: float, x)` | Jacobi polynomial ``P_n^(alpha,beta)``; generalizes Legendre and Chebyshev. |
-| `gegenbauer` | `(n: int, alpha: float, x)` | Gegenbauer (ultraspherical) polynomial ``C_n^alpha``. |
-| `recurrence_coefficients` | `(kind: str, n: int, alpha: float = 0.0, beta: float = 0.0)` | Monic three-term recurrence coefficients ``(a, b)`` and the weight mass. |
-| `golub_welsch` | `(a, b)` | Gauss nodes and weights from the Jacobi matrix eigendecomposition. |
-| `gauss_legendre_nodes` | `(n: int, a: float = -1.0, b: float = 1.0)` | Gauss-Legendre nodes and weights, exact for degree ``2n-1``. |
-| `gauss_chebyshev_nodes` | `(n: int, kind: int = 1)` | Gauss-Chebyshev nodes and weights (closed form). |
-| `gauss_hermite_nodes` | `(n: int)` | Gauss-Hermite nodes and weights for ``exp(-x^2)`` on the real line. |
-| `gauss_laguerre_nodes` | `(n: int, alpha: float = 0.0)` | Gauss-Laguerre nodes and weights for ``x^alpha exp(-x)`` on ``[0, inf)``. |
-| `gauss_jacobi_nodes` | `(n: int, alpha: float = 0.0, beta: float = 0.0)` | Gauss-Jacobi nodes and weights for ``(1-x)^alpha (1+x)^beta``. |
-| `gauss_lobatto_nodes` | `(n: int, a: float = -1.0, b: float = 1.0)` | Gauss-Lobatto nodes and weights; both endpoints are included. |
-| `gauss_radau_nodes` | `(n: int, a: float = -1.0, b: float = 1.0)` | Gauss-Radau nodes and weights; the left endpoint is included. |
-| `orthogonal_series_fit` | `(f, n: int, family: str = 'legendre', a: float = -1.0, b: float = 1.0)` | Least squares projection of ``f`` onto an orthogonal polynomial basis. |
+| [`legendre`](#api-legendre) | function | Legendre polynomial ``P_n`` by the three-term recurrence. |
+| [`legendre_coefficients`](#api-legendre_coefficients) | function | Monomial coefficients of ``P_n`` (highest degree first). |
+| [`chebyshev_t`](#api-chebyshev_t) | function | Chebyshev polynomial of the first kind ``T_n``. |
+| [`chebyshev_u`](#api-chebyshev_u) | function | Chebyshev polynomial of the second kind ``U_n``. |
+| [`hermite_physicists`](#api-hermite_physicists) | function | Physicists' Hermite polynomial ``H_n`` (weight ``exp(-x^2)``). |
+| [`hermite_probabilists`](#api-hermite_probabilists) | function | Probabilists' Hermite polynomial ``He_n`` (weight ``exp(-x^2/2)``). |
+| [`laguerre`](#api-laguerre) | function | Laguerre polynomial ``L_n`` (weight ``exp(-x)`` on ``[0, inf)``). |
+| [`generalized_laguerre`](#api-generalized_laguerre) | function | Generalized Laguerre polynomial ``L_n^alpha``. |
+| [`jacobi_polynomial`](#api-jacobi_polynomial) | function | Jacobi polynomial ``P_n^(alpha,beta)``; generalizes Legendre and Chebyshev. |
+| [`gegenbauer`](#api-gegenbauer) | function | Gegenbauer (ultraspherical) polynomial ``C_n^alpha``. |
+| [`recurrence_coefficients`](#api-recurrence_coefficients) | function | Monic three-term recurrence coefficients ``(a, b)`` and the weight mass. |
+| [`golub_welsch`](#api-golub_welsch) | function | Gauss nodes and weights from the Jacobi matrix eigendecomposition. |
+| [`gauss_legendre_nodes`](#api-gauss_legendre_nodes) | function | Gauss-Legendre nodes and weights, exact for degree ``2n-1``. |
+| [`gauss_chebyshev_nodes`](#api-gauss_chebyshev_nodes) | function | Gauss-Chebyshev nodes and weights (closed form). |
+| [`gauss_hermite_nodes`](#api-gauss_hermite_nodes) | function | Gauss-Hermite nodes and weights for ``exp(-x^2)`` on the real line. |
+| [`gauss_laguerre_nodes`](#api-gauss_laguerre_nodes) | function | Gauss-Laguerre nodes and weights for ``x^alpha exp(-x)`` on ``[0, inf)``. |
+| [`gauss_jacobi_nodes`](#api-gauss_jacobi_nodes) | function | Gauss-Jacobi nodes and weights for ``(1-x)^alpha (1+x)^beta``. |
+| [`gauss_lobatto_nodes`](#api-gauss_lobatto_nodes) | function | Gauss-Lobatto nodes and weights; both endpoints are included. |
+| [`gauss_radau_nodes`](#api-gauss_radau_nodes) | function | Gauss-Radau nodes and weights; the left endpoint is included. |
+| [`orthogonal_series_fit`](#api-orthogonal_series_fit) | function | Least squares projection of ``f`` onto an orthogonal polynomial basis. |
+
+### `legendre` {#api-legendre}
+
+```python
+legendre(n: int, x)
+```
+
+Legendre polynomial `P_n` by the three-term recurrence.
+
+### `legendre_coefficients` {#api-legendre_coefficients}
+
+```python
+legendre_coefficients(n: int)
+```
+
+Monomial coefficients of `P_n` (highest degree first).
+
+### `chebyshev_t` {#api-chebyshev_t}
+
+```python
+chebyshev_t(n: int, x)
+```
+
+Chebyshev polynomial of the first kind `T_n`.
+
+### `chebyshev_u` {#api-chebyshev_u}
+
+```python
+chebyshev_u(n: int, x)
+```
+
+Chebyshev polynomial of the second kind `U_n`.
+
+### `hermite_physicists` {#api-hermite_physicists}
+
+```python
+hermite_physicists(n: int, x)
+```
+
+Physicists' Hermite polynomial `H_n` (weight `exp(-x^2)`).
+
+### `hermite_probabilists` {#api-hermite_probabilists}
+
+```python
+hermite_probabilists(n: int, x)
+```
+
+Probabilists' Hermite polynomial `He_n` (weight `exp(-x^2/2)`).
+
+### `laguerre` {#api-laguerre}
+
+```python
+laguerre(n: int, x)
+```
+
+Laguerre polynomial `L_n` (weight `exp(-x)` on `[0, inf)`).
+
+### `generalized_laguerre` {#api-generalized_laguerre}
+
+```python
+generalized_laguerre(n: int, alpha: float, x)
+```
+
+Generalized Laguerre polynomial `L_n^alpha`.
+
+### `jacobi_polynomial` {#api-jacobi_polynomial}
+
+```python
+jacobi_polynomial(n: int, alpha: float, beta: float, x)
+```
+
+Jacobi polynomial `P_n^(alpha,beta)`; generalizes Legendre and Chebyshev.
+
+### `gegenbauer` {#api-gegenbauer}
+
+```python
+gegenbauer(n: int, alpha: float, x)
+```
+
+Gegenbauer (ultraspherical) polynomial `C_n^alpha`.
+
+### `recurrence_coefficients` {#api-recurrence_coefficients}
+
+```python
+recurrence_coefficients(kind: str, n: int, alpha: float = 0.0, beta: float = 0.0)
+```
+
+Monic three-term recurrence coefficients `(a, b)` and the weight mass.
+
+The recurrence is `p_{k+1} = (x - a_k) p_k - b_k p_{k-1}`; `b_0` holds
+the integral of the weight function.
+
+### `golub_welsch` {#api-golub_welsch}
+
+```python
+golub_welsch(a, b)
+```
+
+Gauss nodes and weights from the Jacobi matrix eigendecomposition.
+
+`a` and `b` are the monic recurrence coefficients; `b[0]` is the
+total mass of the weight function.
+
+### `gauss_legendre_nodes` {#api-gauss_legendre_nodes}
+
+```python
+gauss_legendre_nodes(n: int, a: float = -1.0, b: float = 1.0)
+```
+
+Gauss-Legendre nodes and weights, exact for degree `2n-1`.
+
+### `gauss_chebyshev_nodes` {#api-gauss_chebyshev_nodes}
+
+```python
+gauss_chebyshev_nodes(n: int, kind: int = 1)
+```
+
+Gauss-Chebyshev nodes and weights (closed form).
+
+### `gauss_hermite_nodes` {#api-gauss_hermite_nodes}
+
+```python
+gauss_hermite_nodes(n: int)
+```
+
+Gauss-Hermite nodes and weights for `exp(-x^2)` on the real line.
+
+### `gauss_laguerre_nodes` {#api-gauss_laguerre_nodes}
+
+```python
+gauss_laguerre_nodes(n: int, alpha: float = 0.0)
+```
+
+Gauss-Laguerre nodes and weights for `x^alpha exp(-x)` on `[0, inf)`.
+
+### `gauss_jacobi_nodes` {#api-gauss_jacobi_nodes}
+
+```python
+gauss_jacobi_nodes(n: int, alpha: float = 0.0, beta: float = 0.0)
+```
+
+Gauss-Jacobi nodes and weights for `(1-x)^alpha (1+x)^beta`.
+
+### `gauss_lobatto_nodes` {#api-gauss_lobatto_nodes}
+
+```python
+gauss_lobatto_nodes(n: int, a: float = -1.0, b: float = 1.0)
+```
+
+Gauss-Lobatto nodes and weights; both endpoints are included.
+
+### `gauss_radau_nodes` {#api-gauss_radau_nodes}
+
+```python
+gauss_radau_nodes(n: int, a: float = -1.0, b: float = 1.0)
+```
+
+Gauss-Radau nodes and weights; the left endpoint is included.
+
+### `orthogonal_series_fit` {#api-orthogonal_series_fit}
+
+```python
+orthogonal_series_fit(
+    f,
+    n: int,
+    family: str = 'legendre',
+    a: float = -1.0,
+    b: float = 1.0,
+)
+```
+
+Least squares projection of `f` onto an orthogonal polynomial basis.
+
+Coefficients are computed by Gauss quadrature, so the fit is the truncated
+orthogonal series -- the best `L^2` approximation of that degree.

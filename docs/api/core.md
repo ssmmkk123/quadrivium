@@ -7,16 +7,18 @@ Result records, exceptions, norms, and shared numerical helpers.
 
 For worked examples and guidance on choosing between these routines, see the [core guide](../guides/core.md).
 
-**35 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**39 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.core import BracketError
-import quadrivium as qd            # qd.BracketError, if re-exported
+from quadrivium import core
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
 - [`exceptions`](#exceptions) &mdash; exception hierarchy shared by every solver in ``quadrivium`` (7)
+- [`storage`](#storage) &mdash; bounded trajectory recording and portable solver checkpoints (4)
 - [`types`](#types) &mdash; lightweight result containers returned by the solvers (7)
 - [`utils`](#utils) &mdash; numerical utilities: norms, machine constants, and numerical derivatives (21)
 
@@ -26,15 +28,184 @@ import quadrivium as qd            # qd.BracketError, if re-exported
 
 Exception hierarchy shared by every solver in ``quadrivium``.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`QuadriviumError` | &mdash; | Base class for all library errors. |
-| *class*&nbsp;`ConvergenceError` | `(message, iterations=None, residual=None, best=None)` | An iterative method failed to reach the requested tolerance. |
-| *class*&nbsp;`SingularMatrixError` | &mdash; | Matrix is singular (or numerically so) for the requested operation. |
-| *class*&nbsp;`DimensionError` | &mdash; | Array shapes are incompatible. |
-| *class*&nbsp;`DomainError` | &mdash; | Argument outside the domain of validity of the method. |
-| *class*&nbsp;`StepSizeError` | &mdash; | Adaptive step size underflowed the minimum allowed value. |
-| *class*&nbsp;`BracketError` | &mdash; | A bracketing method was given an interval that does not bracket a root. |
+| [`QuadriviumError`](#api-QuadriviumError) | class | Base class for all library errors. |
+| [`ConvergenceError`](#api-ConvergenceError) | class | An iterative method failed to reach the requested tolerance. |
+| [`SingularMatrixError`](#api-SingularMatrixError) | class | Matrix is singular (or numerically so) for the requested operation. |
+| [`DimensionError`](#api-DimensionError) | class | Array shapes are incompatible. |
+| [`DomainError`](#api-DomainError) | class | Argument outside the domain of validity of the method. |
+| [`StepSizeError`](#api-StepSizeError) | class | Adaptive step size underflowed the minimum allowed value. |
+| [`BracketError`](#api-BracketError) | class | A bracketing method was given an interval that does not bracket a root. |
+
+### `QuadriviumError` {#api-QuadriviumError}
+
+
+Base class for all library errors.
+
+Base classes: `Exception`.
+
+### `ConvergenceError` {#api-ConvergenceError}
+
+```python
+ConvergenceError(message, iterations=None, residual=None, best=None)
+```
+
+An iterative method failed to reach the requested tolerance.
+
+The partial state is attached so callers can inspect / restart.
+
+Base classes: [`QuadriviumError`](core.md#api-QuadriviumError).
+
+### `SingularMatrixError` {#api-SingularMatrixError}
+
+
+Matrix is singular (or numerically so) for the requested operation.
+
+Base classes: [`QuadriviumError`](core.md#api-QuadriviumError).
+
+### `DimensionError` {#api-DimensionError}
+
+
+Array shapes are incompatible.
+
+Base classes: [`QuadriviumError`](core.md#api-QuadriviumError), `ValueError`.
+
+### `DomainError` {#api-DomainError}
+
+
+Argument outside the domain of validity of the method.
+
+Base classes: [`QuadriviumError`](core.md#api-QuadriviumError), `ValueError`.
+
+### `StepSizeError` {#api-StepSizeError}
+
+
+Adaptive step size underflowed the minimum allowed value.
+
+Base classes: [`QuadriviumError`](core.md#api-QuadriviumError).
+
+### `BracketError` {#api-BracketError}
+
+
+A bracketing method was given an interval that does not bracket a root.
+
+Base classes: [`QuadriviumError`](core.md#api-QuadriviumError), `ValueError`.
+
+## `storage`
+
+<small>`quadrivium.core.storage`</small>
+
+Bounded trajectory recording and portable solver checkpoints.
+
+Output controls select what is retained *during* integration. Callbacks receive an independent state copy, so retaining or editing it cannot corrupt a solver.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`SolverCheckpoint`](#api-SolverCheckpoint) | class | JSON-serializable restart state; model functions are supplied on restart. |
+| [`OutputRecorder`](#api-OutputRecorder) | class | Record selected states using O(state size + requested output size) memory. |
+| [`resume_ode`](#api-resume_ode) | function | Restart an ODE, supplying its model again instead of serializing callables. |
+| [`resume_pde`](#api-resume_pde) | function | Restart a time-dependent PDE with its model/grid options resupplied. |
+
+### `SolverCheckpoint` {#api-SolverCheckpoint}
+
+```python
+SolverCheckpoint(
+    t: float,
+    y: object,
+    method: str = '',
+    metadata: dict = <factory>,
+    version: int = 1,
+) -> None
+```
+
+JSON-serializable restart state; model functions are supplied on restart.
+
+`metadata` holds step size/order/history when an integrator needs them.
+This stores numerical state, never executable Python objects or pickle data.
+
+#### `SolverCheckpoint.to_dict` {#api-SolverCheckpoint.to_dict}
+
+```python
+SolverCheckpoint.to_dict(self)
+```
+
+#### `SolverCheckpoint.to_json` {#api-SolverCheckpoint.to_json}
+
+```python
+SolverCheckpoint.to_json(self)
+```
+
+#### `SolverCheckpoint.from_json` {#api-SolverCheckpoint.from_json}
+
+```python
+SolverCheckpoint.from_json(value)
+```
+
+### `OutputRecorder` {#api-OutputRecorder}
+
+```python
+OutputRecorder(t_span, *, save_at=None, save_every=1, final_only=False, callback=None)
+```
+
+Record selected states using O(state size + requested output size) memory.
+
+`save_at` is ordered in integration direction, and uses cubic Hermite
+interpolation when endpoint slopes are supplied (linear otherwise).
+`save_every` retains the initial state, every kth step, and the endpoint.
+`final_only` retains one state. A callback is called on accepted states;
+return True to request termination, and None/False to continue.
+
+#### `OutputRecorder.current` {#api-OutputRecorder.current}
+
+```python
+OutputRecorder.current(t_span, **overrides)
+```
+
+#### `OutputRecorder.append` {#api-OutputRecorder.append}
+
+```python
+OutputRecorder.append(self, t, y, slope=None)
+```
+
+#### `OutputRecorder.finish` {#api-OutputRecorder.finish}
+
+```python
+OutputRecorder.finish(self)
+```
+
+#### `OutputRecorder.checkpoint` {#api-OutputRecorder.checkpoint}
+
+```python
+OutputRecorder.checkpoint(self, method='', metadata=None)
+```
+
+### `resume_ode` {#api-resume_ode}
+
+```python
+resume_ode(f, checkpoint, t_final, *, solver=None, **kwargs)
+```
+
+Restart an ODE, supplying its model again instead of serializing callables.
+
+Adaptive BDF/Radau restore step/order/history. Other methods restart from
+the saved state, with their usual self-starting initialization; this is not
+a bitwise continuation of multistep history. `solver` can be an adapter
+with signature `solver(f, t_span, y0, **options)` for split Hamiltonian or
+exponential models that need extra model arguments. Delay equations restore
+their recorded delay window; supply `history=` for earlier times if needed.
+
+### `resume_pde` {#api-resume_pde}
+
+```python
+resume_pde(solver, checkpoint, t_final, **kwargs)
+```
+
+Restart a time-dependent PDE with its model/grid options resupplied.
+
+Wave and leapfrog solvers restore their two-level recurrence exactly when
+the new interval contains an integer number of previous time steps. Other
+first-order-in-time methods restart directly from the saved field.
 
 ## `types`
 
@@ -42,17 +213,191 @@ Exception hierarchy shared by every solver in ``quadrivium``.
 
 Lightweight result containers returned by the solvers.
 
-Every container behaves like a small immutable record with a readable ``repr`` so results stay legible at an interactive prompt.
+These mutable dataclass records collect values, status and diagnostics with a readable ``repr``. Their arrays and histories may also be mutable; copy data when an independent snapshot is needed.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`RootResult` | `(root: Any, f_root: Any = None, iterations: int = 0, converged: bool = False, function_calls: int = 0, meth, ...)` | Outcome of a root-finding method. |
-| *class*&nbsp;`IterationResult` | `(x: Any, iterations: int = 0, converged: bool = False, residuals: list = <factory>, method: str = '', messa, ...)` | Outcome of an iterative linear solver. |
-| *class*&nbsp;`QuadratureResult` | `(value: float, error_estimate: Optional[float] = None, function_calls: int = 0, subintervals: int = 0, conv, ...)` | Outcome of a quadrature rule. |
-| *class*&nbsp;`ODESolution` | `(t: np.ndarray, y: np.ndarray, method: str = '', n_steps: int = 0, n_accepted: int = 0, n_rejected: int = 0, ...)` | Outcome of an initial-value problem integration. |
-| *class*&nbsp;`OptimizeResult` | `(x: Any, fun: float = nan, jac: Any = None, hess: Any = None, iterations: int = 0, converged: bool = False, ...)` | Outcome of an optimization run. |
-| *class*&nbsp;`EigenResult` | `(eigenvalues: np.ndarray, eigenvectors: Optional[np.ndarray] = None, iterations: int = 0, converged: bool =, ...)` | Eigenvalues (and optionally eigenvectors) of a matrix. |
-| *class*&nbsp;`PDESolution` | `(u: np.ndarray, grids: Sequence[np.ndarray] = (), t: Optional[np.ndarray] = None, method: str = '', iterati, ...)` | Outcome of a PDE solve on a structured grid. |
+| [`RootResult`](#api-RootResult) | class | Outcome of a root-finding method. |
+| [`IterationResult`](#api-IterationResult) | class | Outcome of an iterative linear solver. |
+| [`QuadratureResult`](#api-QuadratureResult) | class | Outcome of a quadrature rule. |
+| [`ODESolution`](#api-ODESolution) | class | Outcome of an initial-value problem integration. |
+| [`OptimizeResult`](#api-OptimizeResult) | class | Outcome of an optimization run. |
+| [`EigenResult`](#api-EigenResult) | class | Eigenvalues (and optionally eigenvectors) of a matrix. |
+| [`PDESolution`](#api-PDESolution) | class | Outcome of a PDE solve on a structured grid. |
+
+### `RootResult` {#api-RootResult}
+
+```python
+RootResult(
+    root: Any,
+    f_root: Any = None,
+    iterations: int = 0,
+    converged: bool = False,
+    function_calls: int = 0,
+    method: str = '',
+    history: list = <factory>,
+    message: str = '',
+) -> None
+```
+
+Outcome of a root-finding method.
+
+#### `RootResult.x` {#api-RootResult.x}
+
+Read-only property.
+
+### `IterationResult` {#api-IterationResult}
+
+```python
+IterationResult(
+    x: Any,
+    iterations: int = 0,
+    converged: bool = False,
+    residuals: list = <factory>,
+    method: str = '',
+    message: str = '',
+) -> None
+```
+
+Outcome of an iterative linear solver.
+
+#### `IterationResult.residual` {#api-IterationResult.residual}
+
+Read-only property.
+
+### `QuadratureResult` {#api-QuadratureResult}
+
+```python
+QuadratureResult(
+    value: Any,
+    error_estimate: Any = None,
+    function_calls: int = 0,
+    subintervals: int = 0,
+    converged: bool = True,
+    method: str = '',
+) -> None
+```
+
+Outcome of a quadrature rule.
+
+#### `QuadratureResult.__float__` {#api-QuadratureResult.__float__}
+
+```python
+QuadratureResult.__float__(self) -> float
+```
+
+### `ODESolution` {#api-ODESolution}
+
+```python
+ODESolution(
+    t: np.ndarray,
+    y: np.ndarray,
+    method: str = '',
+    n_steps: int = 0,
+    n_accepted: int = 0,
+    n_rejected: int = 0,
+    n_rhs_evals: int = 0,
+    success: bool = True,
+    message: str = '',
+    interpolant: Optional[Callable] = None,
+    dydt: Optional[np.ndarray] = None,
+    checkpoint: Any = None,
+) -> None
+```
+
+Outcome of an initial-value problem integration.
+
+`t` has shape `(n,)` and `y` has shape `(n, dim)`.
+
+#### `ODESolution.__call__` {#api-ODESolution.__call__}
+
+```python
+ODESolution.__call__(self, t_query)
+```
+
+Evaluate the solution at `t_query` (scalar or array).
+
+Accuracy depends on what the solver recorded.  With `dydt` -- the
+right-hand side at each stored point, which every Runge-Kutta method
+already computes as its first stage -- this is cubic Hermite
+interpolation, whose O(h^4) error matches a 4th/5th-order integrator.
+Without it the fallback is linear interpolation, accurate only to
+O(h^2), which would otherwise dominate the solver's own error.
+
+#### `ODESolution.y_final` {#api-ODESolution.y_final}
+
+Read-only property.
+
+### `OptimizeResult` {#api-OptimizeResult}
+
+```python
+OptimizeResult(
+    x: Any,
+    fun: float = nan,
+    jac: Any = None,
+    hess: Any = None,
+    iterations: int = 0,
+    converged: bool = False,
+    function_calls: int = 0,
+    gradient_calls: int = 0,
+    method: str = '',
+    history: list = <factory>,
+    message: str = '',
+) -> None
+```
+
+Outcome of an optimization run.
+
+### `EigenResult` {#api-EigenResult}
+
+```python
+EigenResult(
+    eigenvalues: np.ndarray,
+    eigenvectors: Optional[np.ndarray] = None,
+    iterations: int = 0,
+    converged: bool = True,
+    method: str = '',
+) -> None
+```
+
+Eigenvalues (and optionally eigenvectors) of a matrix.
+
+#### `EigenResult.__iter__` {#api-EigenResult.__iter__}
+
+```python
+EigenResult.__iter__(self)
+```
+
+### `PDESolution` {#api-PDESolution}
+
+```python
+PDESolution(
+    u: np.ndarray,
+    grids: Sequence[np.ndarray] = (),
+    t: Optional[np.ndarray] = None,
+    method: str = '',
+    iterations: int = 0,
+    converged: bool = True,
+    residuals: list = <factory>,
+    checkpoint: Any = None,
+) -> None
+```
+
+Outcome of a PDE solve on a structured grid.
+
+#### `PDESolution.x` {#api-PDESolution.x}
+
+Read-only property.
+
+#### `PDESolution.y` {#api-PDESolution.y}
+
+Read-only property.
+
+#### `PDESolution.final` {#api-PDESolution.final}
+
+Read-only property.
+
+Last time level for time-dependent problems, else the field itself.
 
 ## `utils`
 
@@ -62,26 +407,225 @@ Numerical utilities: norms, machine constants, and numerical derivatives.
 
 These helpers are used pervasively, so they are written to be allocation-light and to accept both scalar and vector callables.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `EPS` | &mdash; | `2.220446049250313e-16` |
-| `SQRT_EPS` | &mdash; | `1.4901161193847656e-08` |
-| `machine_epsilon` | `(dtype=float) -> float` | Smallest ``e`` with ``1 + e != 1`` in the given floating type. |
-| `unit_roundoff` | `(dtype=float) -> float` | Unit roundoff ``u = eps / 2`` for round-to-nearest arithmetic. |
-| `norm` | `(x, p=2) -> float` | Vector ``p``-norm; ``p`` may be 1, 2, any positive float, or ``inf``. |
-| `matrix_norm` | `(A, p='fro') -> float` | Matrix norm: ``1`` (max column sum), ``inf`` (max row sum), ``2`` (spectral), or ``'fro'`` (Frobenius). |
-| `condition_number` | `(A, p=2) -> float` | Condition number ``\|\|A\|\| * \|\|A^-1\|\|`` in the requested norm. |
-| `relative_error` | `(approx, exact) -> float` | Absolute error scaled by ``\|\|exact\|\|``; falls back to absolute if zero. |
-| `absolute_error` | `(approx, exact) -> float` | ``\|\|approx - exact\|\|_inf``. |
-| `as_vector` | `(x) -> np.ndarray` | Coerce to a 1-D float array (scalars become length-1 arrays). |
-| `as_matrix` | `(A) -> np.ndarray` | Coerce to a 2-D float array. |
-| `check_square` | `(A) -> np.ndarray` | Coerce to a 2-D float array and require it to be square. |
-| `is_symmetric` | `(A, tol: float = 1e-12) -> bool` |  |
-| `is_positive_definite` | `(A, tol: float = 0.0) -> bool` | True when ``A`` is symmetric with a successful Cholesky factorization. |
-| `is_diagonally_dominant` | `(A, strict: bool = True) -> bool` | Row diagonal dominance test (sufficient for Jacobi/Gauss-Seidel). |
-| `numerical_derivative` | `(f, x, h=None, order=1, accuracy=2)` | Finite-difference derivative of a scalar function. |
-| `numerical_jacobian` | `(F, x, h=None, method='central')` | Jacobian of a vector field ``F: R^n -> R^m`` at ``x``. |
-| `numerical_gradient` | `(f, x, h=None)` | Gradient of a scalar field via central differences. |
-| `numerical_hessian` | `(f, x, h=None)` | Symmetric Hessian via second-order central differences. |
-| `wrap_scalar_function` | `(f: Callable) -> Callable` | Return a version of ``f`` that maps arrays elementwise. |
-| *class*&nbsp;`CountedFunction` | `(f: Callable)` | Callable wrapper that tallies evaluations. |
+| [`EPS`](#api-EPS) | value | `2.220446049250313e-16` |
+| [`SQRT_EPS`](#api-SQRT_EPS) | value | `1.4901161193847656e-08` |
+| [`machine_epsilon`](#api-machine_epsilon) | function | Smallest ``e`` with ``1 + e != 1`` in the given floating type. |
+| [`unit_roundoff`](#api-unit_roundoff) | function | Unit roundoff ``u = eps / 2`` for round-to-nearest arithmetic. |
+| [`norm`](#api-norm) | function | Vector ``p``-norm; ``p`` may be 1, 2, any positive float, or ``inf``. |
+| [`matrix_norm`](#api-matrix_norm) | function | Matrix norm: ``1`` (max column sum), ``inf`` (max row sum), ``2`` (spectral), or ``'fro'`` (Frobenius). |
+| [`condition_number`](#api-condition_number) | function | Condition number ``\|\|A\|\| * \|\|A^-1\|\|`` in the requested norm. |
+| [`relative_error`](#api-relative_error) | function | Absolute error scaled by ``\|\|exact\|\|``; falls back to absolute if zero. |
+| [`absolute_error`](#api-absolute_error) | function | ``\|\|approx - exact\|\|_inf``. |
+| [`as_vector`](#api-as_vector) | function | Coerce to a 1-D float array (scalars become length-1 arrays). |
+| [`as_matrix`](#api-as_matrix) | function | Coerce to a 2-D float array. |
+| [`check_square`](#api-check_square) | function | Coerce to a 2-D float array and require it to be square. |
+| [`is_symmetric`](#api-is_symmetric) | function | Test whether a real square matrix is close to its transpose. |
+| [`is_positive_definite`](#api-is_positive_definite) | function | True when ``A`` is symmetric with a successful Cholesky factorization. |
+| [`is_diagonally_dominant`](#api-is_diagonally_dominant) | function | Row diagonal dominance test (sufficient for Jacobi/Gauss-Seidel). |
+| [`numerical_derivative`](#api-numerical_derivative) | function | Finite-difference derivative of a scalar function. |
+| [`numerical_jacobian`](#api-numerical_jacobian) | function | Jacobian of a vector field ``F: R^n -> R^m`` at ``x``. |
+| [`numerical_gradient`](#api-numerical_gradient) | function | Gradient of a scalar field via central differences. |
+| [`numerical_hessian`](#api-numerical_hessian) | function | Symmetric Hessian via second-order central differences. |
+| [`wrap_scalar_function`](#api-wrap_scalar_function) | function | Return a version of ``f`` that maps arrays elementwise. |
+| [`CountedFunction`](#api-CountedFunction) | class | Callable wrapper that tallies evaluations. |
+
+### `EPS` {#api-EPS}
+
+```python
+2.220446049250313e-16
+```
+
+### `SQRT_EPS` {#api-SQRT_EPS}
+
+```python
+1.4901161193847656e-08
+```
+
+### `machine_epsilon` {#api-machine_epsilon}
+
+```python
+machine_epsilon(dtype=float) -> float
+```
+
+Smallest `e` with `1 + e != 1` in the given floating type.
+
+### `unit_roundoff` {#api-unit_roundoff}
+
+```python
+unit_roundoff(dtype=float) -> float
+```
+
+Unit roundoff `u = eps / 2` for round-to-nearest arithmetic.
+
+### `norm` {#api-norm}
+
+```python
+norm(x, p=2) -> float
+```
+
+Vector `p`-norm; `p` may be 1, 2, any positive float, or `inf`.
+
+### `matrix_norm` {#api-matrix_norm}
+
+```python
+matrix_norm(A, p='fro') -> float
+```
+
+Matrix norm: `1` (max column sum), `inf` (max row sum), `2`
+(spectral), or `'fro'` (Frobenius).
+
+### `condition_number` {#api-condition_number}
+
+```python
+condition_number(A, p=2) -> float
+```
+
+Condition number `||A|| * ||A^-1||` in the requested norm.
+
+### `relative_error` {#api-relative_error}
+
+```python
+relative_error(approx, exact) -> float
+```
+
+Absolute error scaled by `||exact||`; falls back to absolute if zero.
+
+### `absolute_error` {#api-absolute_error}
+
+```python
+absolute_error(approx, exact) -> float
+```
+
+`||approx - exact||_inf`.
+
+### `as_vector` {#api-as_vector}
+
+```python
+as_vector(x) -> np.ndarray
+```
+
+Coerce to a 1-D float array (scalars become length-1 arrays).
+
+This runs in the inner loop of every iterative solver in the package, so
+the overwhelmingly common case -- an argument that is already a contiguous
+1-D `float64` array -- returns immediately. The general path is the
+original coercion; both return a view when one is possible and a copy when
+the input cannot be viewed as contiguous 1-D, so aliasing is unchanged.
+
+### `as_matrix` {#api-as_matrix}
+
+```python
+as_matrix(A) -> np.ndarray
+```
+
+Coerce to a 2-D float array.
+
+### `check_square` {#api-check_square}
+
+```python
+check_square(A) -> np.ndarray
+```
+
+Coerce to a 2-D float array and require it to be square.
+
+### `is_symmetric` {#api-is_symmetric}
+
+```python
+is_symmetric(A, tol: float = 1e-12) -> bool
+```
+
+Test whether a real square matrix is close to its transpose.
+
+Inputs are converted to floating-point arrays. Non-square or non-matrix
+inputs return False. The comparison uses absolute tolerance `tol` and
+relative tolerance `1e-5`, matching `allclose(A, A.T, atol=tol)`;
+this is an approximate symmetry check, not exact equality.
+
+### `is_positive_definite` {#api-is_positive_definite}
+
+```python
+is_positive_definite(A, tol: float = 0.0) -> bool
+```
+
+True when `A` is symmetric with a successful Cholesky factorization.
+
+### `is_diagonally_dominant` {#api-is_diagonally_dominant}
+
+```python
+is_diagonally_dominant(A, strict: bool = True) -> bool
+```
+
+Row diagonal dominance test (sufficient for Jacobi/Gauss-Seidel).
+
+### `numerical_derivative` {#api-numerical_derivative}
+
+```python
+numerical_derivative(f, x, h=None, order=1, accuracy=2)
+```
+
+Finite-difference derivative of a scalar function.
+
+`order` is the derivative order (1-4) and `accuracy` the formal order of
+accuracy (2 or 4) of the central stencil used.
+
+### `numerical_jacobian` {#api-numerical_jacobian}
+
+```python
+numerical_jacobian(F, x, h=None, method='central')
+```
+
+Jacobian of a vector field `F: R^n -> R^m` at `x`.
+
+### `numerical_gradient` {#api-numerical_gradient}
+
+```python
+numerical_gradient(f, x, h=None)
+```
+
+Gradient of a scalar field via central differences.
+
+### `numerical_hessian` {#api-numerical_hessian}
+
+```python
+numerical_hessian(f, x, h=None)
+```
+
+Symmetric Hessian via second-order central differences.
+
+### `wrap_scalar_function` {#api-wrap_scalar_function}
+
+```python
+wrap_scalar_function(f: Callable) -> Callable
+```
+
+Return a version of `f` that maps arrays elementwise.
+
+Tries the vectorized call first and falls back to a list comprehension, so
+plain `math`-style functions work anywhere the library accepts a callable.
+
+### `CountedFunction` {#api-CountedFunction}
+
+```python
+CountedFunction(f: Callable)
+```
+
+Callable wrapper that tallies evaluations.
+
+Useful for reporting `function_calls` without threading counters through
+every algorithm.
+
+#### `CountedFunction.__call__` {#api-CountedFunction.__call__}
+
+```python
+CountedFunction.__call__(self, x=_UNSET, *args, **kwargs)
+```
+
+Call self as a function.
+
+#### `CountedFunction.reset` {#api-CountedFunction.reset}
+
+```python
+CountedFunction.reset(self) -> None
+```

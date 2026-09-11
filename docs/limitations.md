@@ -1,113 +1,171 @@
 # Known limitations
 
-Everything here is a real property of a method or of this implementation,
-documented rather than papered over. None of it is a bug; where a limitation
-could be removed, the alternative is named.
+Quadrivium exposes many methods, but their domains and guarantees differ.
+This page collects boundaries that matter across tasks. Read the relevant
+guide and API entry before treating a familiar method name as a promise of
+another library's behavior.
 
-## Library-wide
+## Arrays and precision
 
-**Speed.** The algorithms are written to be read, which means Python-level
-loops wherever the method is a loop. Dense factorizations are competitive up
-to a few hundred rows; ODE and PDE time stepping runs roughly 10–100× slower
-than a compiled integrator. See [Performance](getting-started.md#performance).
-For large sparse solves or inner loops that run millions of times, use a
-compiled library.
+The array engine supports `bool`, `int64`, `float32`, `float64`, `complex64`,
+and `complex128`. Higher-level algorithms frequently convert to real double
+precision using shared helpers. Compact or complex storage support in
+`quadrivium.numeric` does not imply that every solver preserves that dtype or
+accepts complex values.
 
-**Precision.** Everything is double precision. There is no extended-precision
-or interval arithmetic, so no method here can return a certified error bound —
-only an estimate.
+There is no general arbitrary-precision, interval-arithmetic, GPU, or distributed
+array backend. Buffer interoperability is useful, but Quadrivium is not a
+complete implementation of the NumPy API. Check the [array guide](guides/numeric.md)
+for supported operations and the distinction between views and copies.
 
-**Threads.** Nothing in the array core is parallelized. The optional Rust
-kernels use threads for the
-matrix products underneath, but no algorithm here is threaded or vectorized
-across independent problems.
+Double precision has finite relative resolution, but a universal absolute
+accuracy floor such as `1e-16` is misleading: scale, conditioning, cancellation,
+and underflow all matter. Zero error on one special input does not establish
+that accuracy everywhere.
 
-**Sparse support is basic.** COO, CSR, CSC, and DIA storage with matrix-vector
-products, reverse Cuthill-McKee reordering, and the Krylov solvers. There is
-no sparse direct factorization, no fill-reducing ordering beyond RCM, and no
-graph partitioning.
+## Results and error estimates
 
-## Specific methods
+| Reported quantity | What it tells you | Additional check |
+| --- | --- | --- |
+| `converged=True` | A method-specific stopping condition was met | Residual, gradient, constraints, or refinement |
+| ODE `success=True` | The integrator completed or terminated as reported | Read `message`; compare achieved output and requested endpoint |
+| `error_estimate` | An estimator associated with a particular rule | Independent reference or refinement; inspect difficult features |
+| Small linear residual | A nearby equation is solved accurately | Conditioning and input uncertainty |
+| Small objective change | The cost stopped changing significantly | Stationarity and parameter sensitivity |
+| MCMC diagnostic near its target | No problem detected by that diagnostic | Multiple chains, trace behavior, tail exploration |
 
-**`cauchy_point` trust region converges linearly.** It minimises the model
-along the steepest-descent direction only, ignoring the Newton direction
-entirely. It is enough for global convergence and nothing more; use `dogleg`
-or `steihaug_cg` for a superlinear rate.
+Not every routine populates every record field. Some fixed rules return
+scalars; some diagnostics are absent when histories are disabled. A generic
+pipeline must branch on the actual return contract rather than assume all
+methods share one status field.
 
-**`stochastic_heun` solves the Stratonovich equation.** It converges to the
-Stratonovich solution, which differs from the Itô one by the drift correction
-`½ b b′`. For multiplicative noise it and `euler_maruyama` are solving
-genuinely different equations. This is a property of the scheme, not a defect;
-use `milstein` for the Itô solution at strong order 1.
+Malformed input may raise package-specific exceptions, standard `ValueError`
+or `TypeError`, or numeric linear-algebra exceptions. Nonconvergence is often
+returned as data, but this is not universal.
 
-**`stormer_cowell` is third order in its familiar form.** The widely quoted
-three-step coefficients `(13, −2, 1)/12` leave an `h³` term in the Taylor
-expansion. The implementation uses the four-step coefficients
-`(14, −5, 4, −1)/12`, chosen so that term cancels. It also reports velocity as
-a difference estimate rather than an integrated quantity, because it acts on
-positions only.
+## Linear algebra
 
-**Unpreconditioned `newton_krylov` scales with the mesh.** The number of
-Krylov iterations grows as a PDE mesh is refined — a property of the operator,
-not of the implementation. That is what `precond=` is for: on the `n = 1000`
-Bratu problem it takes the cost from 102,101 residual evaluations to 21.
+A dense factorization still requires storage proportional to the matrix size.
+Reduced QR and reusable factors reduce unnecessary work; they do not make a
+general dense problem sparse. General sparse direct LU with symbolic fill
+analysis is outside the current method set. Matrix-free solvers also require
+appropriate operator and preconditioner behavior.
 
-**`euler_maruyama` has strong order 1/2, not 1.** The Itô-Taylor expansion
-contains a `b b′(ΔW² − Δt)/2` term the method omits. `milstein` keeps it.
+Normal equations can square a least-squares design matrix's condition number.
+Classical Gram–Schmidt can lose orthogonality on nearly dependent columns.
+For sensitive problems, compare QR or SVD approaches and inspect rank and
+residuals. A successful solve cannot recover information lost in noisy inputs.
 
-**Bessel functions take integer orders only.** Half-integer orders are the
-spherical Bessel functions, which have their own routines
-(`spherical_bessel_j`, `spherical_bessel_y`). There is no arbitrary real
-order.
+See [linear algebra](guides/linalg.md) for the exact dispatcher choices,
+complex factor interfaces, and sparse assumptions.
 
-**`zeta` loses accuracy near `s = 1`.** That is a pole; values approaching it
-degrade, and `zeta(1.0)` is undefined.
+## Differentiation, interpolation, and approximation
 
-**Classical Gram-Schmidt is here to be compared against, not used.** It loses
-orthogonality on nearly dependent columns, as it should. Use `householder_qr`.
+A forward difference often balances `O(h)` truncation against `O(epsilon/h)`
+roundoff; a central difference often balances `O(h**2)` against the same
+roundoff term. Under those assumptions, useful step scales are roughly
+`sqrt(epsilon)` and `epsilon**(1/3)` after accounting for the function's scale.
+The central difference's best attainable error scales roughly as
+`epsilon**(2/3)`, not `epsilon**(1/3)`. Noise can dominate both estimates.
 
-**`normal_equations` squares the condition number.** It is provided because
-it is the formula everyone learns; `qr_least_squares` is the one to use.
+Automatic differentiation differentiates supported executed operations in
+floating-point arithmetic. It is not arbitrary-precision differentiation and
+does not automatically handle every array operation, external function,
+branching behavior, or nondifferentiable point. Complex-step differentiation
+requires an analytic extension and code that preserves the imaginary part.
 
-**Newton-Cotes rules above degree 8 have negative weights.** The
-implementation will build them, and they will lose digits to cancellation. Use
-a composite low-order rule or a Gauss rule.
+Runge-type oscillation is a risk for high-degree interpolation at equally
+spaced nodes, not a theorem that every such interpolant diverges. Chebyshev
+nodes, local splines, or shape-preserving interpolants offer different tradeoffs.
+Adaptive approximation uses sampled error checks and can miss narrow,
+unsampled features. Validate on additional points.
 
-**Global optimizers have no reliable stopping criterion.** `tol` detects that
-the population has collapsed, which is not the same as having found the global
-optimum. `max_iter` is the real budget.
+## Quadrature
 
-**`nelder_mead` has no convergence theory above one dimension.** It can
-converge to a non-stationary point. Verify with a gradient check when one is
-available.
+An adaptive rule can miss a narrow peak or discontinuity if its sample points
+never encounter it. Split at known difficult locations and compare refinements.
+Endpoint singularities, infinite intervals, oscillations, and principal values
+need appropriate transformations or specialized rules.
 
-## Numerical facts that look like limitations
+A method may stop because its subdivision budget is exhausted. Some legacy
+routines have less informative status reporting; the [integration guide](guides/integrate.md)
+documents specific cases. An error estimate is not a proof of a global bound.
+Monte Carlo errors have sampling uncertainty; one seed is not a convergence study.
 
-These are properties of the mathematics, not of the code:
+## Differential equations
 
-- **Finite differences cannot beat about `√ε` accuracy** for a first
-  derivative, `∛ε` for a central one. Use automatic differentiation
-  ([`quadrivium.diff`](guides/diff.md)) for exact derivatives.
-- **Monte Carlo converges as `n^{−1/2}`** in every dimension. One more digit
-  costs a hundred times the work.
-- **Second-order schemes oscillate at discontinuities.** Godunov's theorem: no
-  linear scheme above first order can be monotone. Use a limiter or WENO.
-- **A truncated Fourier series overshoots a jump by about 9%** however many
-  terms it has. That is Gibbs' phenomenon.
-- **Polynomial interpolation on equally spaced points diverges** as the degree
-  grows (Runge). Use Chebyshev nodes or a spline.
-- **Explicit time stepping has a stability limit.** Exceeding it diverges;
-  it does not merely lose accuracy.
+Adaptive ODE tolerances control a local error estimate. Global error, event
+location, and interpolated output have separate accuracy considerations. A
+stiff method's implicit solve introduces another convergence problem. Fixed-step
+methods still need step refinement and a stability check.
 
-<figure markdown="span">
-  ![The best each technique can do, measured](assets/figures/limitations-accuracy-floors.svg#only-light)
-  ![The best each technique can do, measured](assets/figures/limitations-accuracy-floors-dark.svg#only-dark)
-  <figcaption>None of these floors is an implementation defect. A forward difference cannot beat √ε whatever step it takes; Monte Carlo buys a digit for a hundred times the samples; automatic differentiation has no floor of its own because it never subtracts nearby numbers.</figcaption>
-</figure>
+Output controls reduce stored data; they do not guarantee that arbitrary later
+interpolation remains accurate. A numerical checkpoint stores solver state,
+not model code or the entire execution environment. Compatibility and exact
+restart behavior are method-specific.
 
-## Reporting something else
+PDE methods require the documented boundary conditions and grid layout.
+Explicit diffusion and advection have stability restrictions. An implicit
+method can be stable while severely underresolving the solution. High-order
+linear advection schemes can oscillate near jumps; limiters and WENO address
+that tradeoff under their own assumptions.
 
-If a method is wrong rather than limited — the wrong answer, the wrong
-convergence order, a failure that is not reported — that is a bug. Please
-[open an issue](https://github.com/ssmmkk123/quadrivium/issues) with the
-smallest case that shows it, and what the answer should be.
+See [ODEs](guides/ode.md), [PDEs](guides/pde.md), and
+[scientific workflows](guides/workflows.md) before combining time, mesh,
+nonlinear, and output tolerances.
+
+## Optimization and statistical inference
+
+A local optimizer can converge to a local minimum or stall in a flat region.
+A population's collapse does not certify a global optimum. Nelder–Mead can
+stagnate or converge to a nonstationary point on some problems. Verify a
+stationarity measure when available, and examine multiple starts where needed.
+
+Parameter scaling affects finite differences, line searches, and trust regions.
+A small residual norm does not establish parameter identifiability. Covariance
+estimates rely on assumptions about the local model and observation errors;
+robust losses do not automatically supply a valid ordinary least-squares
+covariance. The robust `curve_fit` path currently returns no covariance or
+standard-error estimate.
+
+Monte Carlo's `N**(-1/2)` standard-error rate assumes the relevant variance is
+finite and sampling assumptions hold. Correlated samples reduce effective
+information. Rank-based MCMC diagnostics help detect problems but do not prove
+convergence or discovery of every mode.
+
+## Stochastic equations and special functions
+
+Euler–Maruyama and Milstein solve Itô SDEs under their documented noise
+assumptions. Stochastic Heun uses the Stratonovich interpretation. With
+multiplicative noise, these interpretations generally describe different
+processes unless the drift is corrected. Strong convergence compares paths
+under coupled Brownian increments; independent paths do not measure it.
+
+Sobol directions in higher dimensions are generated rather than drawn from a
+full optimized external direction table. Randomized QMC uncertainty comes from
+independent scrambles, not from treating points in one scramble as independent.
+
+Special functions have poles, overflow regions, and domain restrictions. Bessel
+orders in the ordinary integer-order routines are integers. Near a zero, use
+absolute error; near a pole, relative conditioning can deteriorate. Scaled and
+tail functions can avoid cancellation, but their domains must still be checked.
+
+## Runtime and concurrency
+
+Performance depends on method, size, dtype, layout, callbacks, and retained
+output. Native kernels use one computational thread per call; selected long
+callback-free loops release the GIL. This does not mean every routine executes
+concurrently or that sharing mutable storage is safe. Independent calls should
+not mutate the same array memory.
+
+The Python reference mode still requires the C array engine. For comparisons,
+report the backend and workload rather than infer performance from the
+language used in one layer.
+
+## Report unexpected behavior
+
+An incorrect value, wrong order, crash, or misleading status outside a stated
+limitation is useful to report. Provide a minimal example, version or commit,
+backend, input scales, method options, actual result, and independent expected
+behavior. The [contributing guide](contributing.md) explains how to turn that
+case into a regression.

@@ -1,0 +1,464 @@
+{
+  "command": ".venv/bin/python tools/gen_figures.py",
+  "environment": {
+    "matplotlib": "3.10.9",
+    "numpy": "2.4.4",
+    "python": "3.14.4",
+    "quadrivium": "1.1.0"
+  },
+  "figures": [
+    {
+      "files": [
+        "start-decay-validation.svg",
+        "start-decay-validation-dark.svg"
+      ],
+      "name": "start-decay-validation",
+      "page": "getting-started.md",
+      "parameters": {
+        "atol": 1e-09,
+        "equation": "y'=-y; y(0)=1",
+        "error_grid_points": 301,
+        "rtol": 1e-06,
+        "t_span": [
+          0,
+          4
+        ]
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Adaptive exponential decay solution and dense-output error against exp(-t)."
+    },
+    {
+      "files": [
+        "core-roundoff-budget.svg",
+        "core-roundoff-budget-dark.svg"
+      ],
+      "name": "core-roundoff-budget",
+      "page": "guides/core.md",
+      "parameters": {
+        "display_floor": 1e-17,
+        "h": "61 log-spaced points, 1e-16 to 1e-1",
+        "reference": "Decimal.exp, precision=60"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Subtractive cancellation in exp(h)-1 compared with expm1 and a 60-digit reference."
+    },
+    {
+      "files": [
+        "numeric-grid-resolution.svg",
+        "numeric-grid-resolution-dark.svg"
+      ],
+      "name": "numeric-grid-resolution",
+      "page": "guides/numeric.md",
+      "parameters": {
+        "point_counts": [
+          9,
+          17,
+          33,
+          65,
+          129,
+          257
+        ],
+        "routines": [
+          "numeric.linspace",
+          "numeric.sin",
+          "numeric.interp"
+        ],
+        "signal": "sin(6*pi*x), x in [0,1]",
+        "validation_points": 2001
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Linear reconstruction of a sampled sine wave and its dense-grid RMS error under refinement."
+    },
+    {
+      "files": [
+        "linalg-residual-sensitivity.svg",
+        "linalg-residual-sensitivity-dark.svg"
+      ],
+      "name": "linalg-residual-sensitivity",
+      "page": "guides/linalg.md",
+      "parameters": {
+        "exact_solution": [
+          1,
+          1
+        ],
+        "kappa": "1 to 1e10",
+        "matrix": "diag(1, 1/kappa)",
+        "residual_definition": "||A*x_computed-b_original||_2 / ||b_original||_2",
+        "rhs_perturbation": [
+          0,
+          1e-10
+        ]
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "A fixed right-hand-side perturbation produces condition-dependent solution error despite a small residual."
+    },
+    {
+      "files": [
+        "rootfind-accuracy-work.svg",
+        "rootfind-accuracy-work-dark.svg"
+      ],
+      "name": "rootfind-accuracy-work",
+      "page": "guides/rootfind.md",
+      "parameters": {
+        "bracket": [
+          1,
+          2
+        ],
+        "display_floor": 1e-17,
+        "function": "x*x-2",
+        "newton_start": 2,
+        "tolerances": [
+          0.001,
+          1e-05,
+          1e-07,
+          1e-09,
+          1e-11,
+          1e-13
+        ],
+        "work": "CountedFunction f calls; Newton derivative calls shown separately"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Measured sqrt(2) root error versus requested tolerance and actual function/derivative calls."
+    },
+    {
+      "files": [
+        "interpolate-node-choice.svg",
+        "interpolate-node-choice-dark.svg"
+      ],
+      "name": "interpolate-node-choice",
+      "page": "guides/interpolate.md",
+      "parameters": {
+        "display_floor": 1e-17,
+        "function": "1/(1+25*x*x), [-1,1]",
+        "node_counts": [
+          5,
+          9,
+          13,
+          17,
+          21,
+          25
+        ],
+        "profile_node_count": 17,
+        "validation_points": 2001
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Off-node error of barycentric interpolation of the Runge function on uniform and Chebyshev grids."
+    },
+    {
+      "files": [
+        "approx-fit-generalization.svg",
+        "approx-fit-generalization-dark.svg"
+      ],
+      "name": "approx-fit-generalization",
+      "page": "guides/approx.md",
+      "parameters": {
+        "degrees": "1 through 16",
+        "noise_std": 0.08,
+        "rng": "quadrivium.numeric.default_rng(20260911)",
+        "signal": "sin(pi*x), [-1,1]",
+        "training_points": 25,
+        "validation_points": 501
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Training residual and independent truth error of polynomial fits to seeded noisy sine data."
+    },
+    {
+      "files": [
+        "diff-step-selection.svg",
+        "diff-step-selection-dark.svg"
+      ],
+      "name": "diff-step-selection",
+      "page": "guides/diff.md",
+      "parameters": {
+        "display_floor": 1e-17,
+        "function": "exp(x), derivative at x=1",
+        "h": "61 points, 1e-16 to 1e-1",
+        "reference": "math.e"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Derivative error for exp at x=1 as the finite-difference or complex step changes, and callback costs."
+    },
+    {
+      "files": [
+        "integrate-accuracy-budget.svg",
+        "integrate-accuracy-budget-dark.svg"
+      ],
+      "name": "integrate-accuracy-budget",
+      "page": "guides/integrate.md",
+      "parameters": {
+        "composite_intervals": [
+          2,
+          4,
+          8,
+          16,
+          32,
+          64,
+          128
+        ],
+        "display_floor": 1e-17,
+        "exact_integral": "e-1",
+        "gauss_nodes": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          10
+        ],
+        "integrand": "exp(x) on [0,1]"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Quadrature of exp(x): analytic area reference and achieved absolute error versus counted integrand calls."
+    },
+    {
+      "files": [
+        "ode-step-budget.svg",
+        "ode-step-budget-dark.svg"
+      ],
+      "name": "ode-step-budget",
+      "page": "guides/ode.md",
+      "parameters": {
+        "equation": "y'=-y, y(0)=1, t in [0,2]",
+        "profile_steps": 4,
+        "step_counts": [
+          4,
+          8,
+          16,
+          32,
+          64,
+          128
+        ],
+        "work": "CountedFunction RHS calls"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Euler, Heun and RK4 on exponential decay, showing coarse trajectories and endpoint error per RHS call."
+    },
+    {
+      "files": [
+        "pde-diffusion-refinement.svg",
+        "pde-diffusion-refinement-dark.svg"
+      ],
+      "name": "pde-diffusion-refinement",
+      "page": "guides/pde.md",
+      "parameters": {
+        "boundary": "zero Dirichlet",
+        "equation": "u_t=0.1*u_xx; x in [0,1]; t in [0,0.5]",
+        "initial": "sin(pi*x)",
+        "space_intervals": [
+          10,
+          20,
+          40,
+          80
+        ],
+        "time_steps": "2*nx"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Crank–Nicolson heat profiles versus the analytic sine mode and measured coupled space/time refinement."
+    },
+    {
+      "files": [
+        "optimize-scaling-paths.svg",
+        "optimize-scaling-paths-dark.svg"
+      ],
+      "name": "optimize-scaling-paths",
+      "page": "guides/optimize.md",
+      "parameters": {
+        "analytic_gradient": [
+          "x",
+          "20*y"
+        ],
+        "display_floor": 1e-17,
+        "gradient_descent_lr": 0.08,
+        "max_iter": 160,
+        "objective": "(x*x+20*y*y)/2",
+        "start": [
+          3,
+          1.5
+        ],
+        "tol": 1e-09
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Gradient descent and BFGS paths on an anisotropic quadratic with their objective histories."
+    },
+    {
+      "files": [
+        "transforms-sampling-spectrum.svg",
+        "transforms-sampling-spectrum-dark.svg"
+      ],
+      "name": "transforms-sampling-spectrum",
+      "page": "guides/transforms.md",
+      "parameters": {
+        "amplitude": "2*abs(rfft(x))/N; DC and Nyquist divided by 2",
+        "duration_seconds": 1,
+        "endpoint": false,
+        "sample_rates_hz": [
+          64,
+          16
+        ],
+        "signal": "sin(2*pi*5*t)+0.4*sin(2*pi*11*t)"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Sampling a two-tone signal at 64 and 16 Hz demonstrates one-sided FFT amplitude normalization and aliasing."
+    },
+    {
+      "files": [
+        "stochastic-error-calibration.svg",
+        "stochastic-error-calibration-dark.svg"
+      ],
+      "name": "stochastic-error-calibration",
+      "page": "guides/stochastic.md",
+      "parameters": {
+        "ensemble_size": 40,
+        "error_bars": "estimate minus exact, plus/minus 2 reported standard errors; first 12 seeds at N=1024",
+        "integrand": "exp(x) on [0,1]",
+        "sample_counts": [
+          64,
+          256,
+          1024,
+          4096
+        ],
+        "seeds": "integers 0 through 39"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Repeated seeded Monte Carlo integration compares empirical RMS error with reported standard error and individual error bars."
+    },
+    {
+      "files": [
+        "special-identity-checks.svg",
+        "special-identity-checks-dark.svg"
+      ],
+      "name": "special-identity-checks",
+      "page": "guides/special.md",
+      "parameters": {
+        "bessel_reference": "j0(x)=sin(x)/x, 0.1<=x<=20",
+        "display_floor": 1e-17,
+        "erfc_reference": "Python math.erfc, 0<=x<=8"
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Spherical Bessel j0 is checked against sin(x)/x, while complementary-error-function formulas are checked against math.erfc."
+    },
+    {
+      "files": [
+        "workflow-parameter-recovery.svg",
+        "workflow-parameter-recovery-dark.svg"
+      ],
+      "name": "workflow-parameter-recovery",
+      "page": "guides/workflows.md",
+      "parameters": {
+        "equation": "y'=-k*y, y(0)=1",
+        "inner_atol": "rtol*1e-3",
+        "inner_rtol": [
+          0.001,
+          0.0001,
+          1e-05,
+          1e-06,
+          1e-07,
+          1e-08
+        ],
+        "outer_bracket": [
+          0.2,
+          3
+        ],
+        "outer_tol": 1e-12,
+        "target": "y(2)=exp(-3.4)",
+        "true_k": 1.7
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "A nested brent/solve_ivp decay calibration demonstrates how inner integration tolerance limits recovered-parameter accuracy."
+    },
+    {
+      "files": [
+        "validation-refinement-orders.svg",
+        "validation-refinement-orders-dark.svg"
+      ],
+      "name": "validation-refinement-orders",
+      "page": "design.md",
+      "parameters": {
+        "equation": "y'=-y, y(0)=1, t in [0,2]",
+        "expected_orders": {
+          "Euler": 1,
+          "RK4": 4
+        },
+        "observed_order": "log2(error_N/error_2N)",
+        "step_counts": [
+          4,
+          8,
+          16,
+          32,
+          64,
+          128
+        ]
+      },
+      "size_inches": [
+        9.6,
+        4.7
+      ],
+      "summary": "Step refinement for Euler and RK4, with observed orders computed from adjacent measured errors."
+    }
+  ],
+  "generator": "tools/gen_figures.py",
+  "notes": [
+    "Numerical algorithms are executed by Quadrivium; NumPy supplies plot coordinates and diagnostic reductions.",
+    "Work axes count callbacks, not wall-clock performance.",
+    "Random experiments use the fixed seeds recorded below.",
+    "Display floors apply only to logarithmic plots; no error metric is silently modified.",
+    "SVG timestamps are omitted and svg.hashsalt is fixed. Exact byte identity requires the recorded rendering environment."
+  ],
+  "schema_version": 1,
+  "source_sha256": {
+    "tools/figstyle.py": "8d5c9e222e727fd351d3b789f178342d57db705c466713e900e2c31fe611169f",
+    "tools/figures/__init__.py": "f2704f5bf488b2cf4f1df685761f4a42a251b676319b499f889f226dbc975419",
+    "tools/figures/experiments.py": "5c9d03304b544a11c7f51b3e1e576413664c7c8a3de5abbf93b07d369cecb5d7",
+    "tools/gen_figures.py": "9afed100acbdc39c92a455c4a49d44ec3d2355622657a8cce4fabe9347835021"
+  },
+  "verification": ".venv/bin/python tools/gen_figures.py --check"
+}

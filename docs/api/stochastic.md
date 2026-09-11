@@ -7,20 +7,1047 @@ Random generation, sampling, MCMC, statistics, SDE solvers.
 
 For worked examples and guidance on choosing between these routines, see the [stochastic methods guide](../guides/stochastic.md).
 
-**75 public names.** Import them from the subpackage or, where re-exported, from the top level:
+**93 public names.** Import them from the subpackage or, where re-exported, from the top level:
 
 ```python
-from quadrivium.stochastic import LCG
-import quadrivium as qd            # qd.LCG, if re-exported
+from quadrivium import stochastic
 ```
+
+Each entry includes the complete call signature and available source documentation. Class entries also list public methods and properties including inherited interfaces implemented by Quadrivium. Base-class links identify shared contracts. Keyword support differs between methods; check the specific entry before passing dispatcher options.
 
 ## Contents
 
+- [`diagnostics`](#diagnostics) &mdash; rank-based diagnostics for multiple monte carlo chains (5)
+- [`distributions`](#distributions) &mdash; scalar-parameter distributions with array evaluation and stable tail apis (10)
 - [`generators`](#generators) &mdash; pseudorandom and low-discrepancy number generators (11)
 - [`mcmc`](#mcmc) &mdash; markov chain monte carlo (12)
+- [`qmc`](#qmc) &mdash; stateful randomized digital nets and reproducible child random streams (3)
 - [`sampling`](#sampling) &mdash; sampling from probability distributions (13)
 - [`sde`](#sde) &mdash; numerical solution of stochastic differential equations (17)
 - [`stats`](#stats) &mdash; descriptive statistics, regression and hypothesis testing (22)
+
+## `diagnostics`
+
+<small>`quadrivium.stochastic.diagnostics`</small>
+
+Rank-based diagnostics for multiple Monte Carlo chains.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`split_rhat`](#api-split_rhat) | function | Maximum rank/folded split R-hat; NaN for identically constant chains. |
+| [`bulk_ess`](#api-bulk_ess) | function | Rank-normalized effective sample size using positive monotone lag pairs. |
+| [`tail_ess`](#api-tail_ess) | function | Minimum indicator ESS in the lower and upper probability tails. |
+| [`mcse`](#api-mcse) | function | Monte Carlo standard error of the posterior mean, per parameter. |
+| [`mcmc_diagnostics`](#api-mcmc_diagnostics) | function | Return split R-hat, bulk/tail ESS and mean Monte Carlo standard errors. |
+
+### `split_rhat` {#api-split_rhat}
+
+```python
+split_rhat(chains)
+```
+
+Maximum rank/folded split R-hat; NaN for identically constant chains.
+
+Different constant values in different chains yield infinity, indicating
+disagreement. Equal constant traces provide no estimate of mixing.
+
+### `bulk_ess` {#api-bulk_ess}
+
+```python
+bulk_ess(chains)
+```
+
+Rank-normalized effective sample size using positive monotone lag pairs.
+
+### `tail_ess` {#api-tail_ess}
+
+```python
+tail_ess(chains, probability=0.05)
+```
+
+Minimum indicator ESS in the lower and upper probability tails.
+
+### `mcse` {#api-mcse}
+
+```python
+mcse(chains)
+```
+
+Monte Carlo standard error of the posterior mean, per parameter.
+
+### `mcmc_diagnostics` {#api-mcmc_diagnostics}
+
+```python
+mcmc_diagnostics(chains)
+```
+
+Return split R-hat, bulk/tail ESS and mean Monte Carlo standard errors.
+
+Degenerate constant traces have undefined (NaN) diagnostics; their zero
+empirical spread must not be mistaken for a precisely estimated posterior.
+
+## `distributions`
+
+<small>`quadrivium.stochastic.distributions`</small>
+
+Scalar-parameter distributions with array evaluation and stable tail APIs.
+
+Sampling accepts a seed or the package's Generator. Continuous distributions expose pdf/logpdf, discrete ones also expose pmf/logpmf. Quantiles use a monotone bracket and evaluate the smaller tail instead of subtracting nearly equal CDFs.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`Distribution`](#api-Distribution) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Normal`](#api-Normal) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Uniform`](#api-Uniform) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Exponential`](#api-Exponential) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Gamma`](#api-Gamma) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Beta`](#api-Beta) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`StudentT`](#api-StudentT) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`ChiSquare`](#api-ChiSquare) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Poisson`](#api-Poisson) | class | Common distribution interface; parameters belong to concrete subclasses. |
+| [`Binomial`](#api-Binomial) | class | Common distribution interface; parameters belong to concrete subclasses. |
+
+### `Distribution` {#api-Distribution}
+
+```python
+Distribution()
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+#### `Distribution.pdf` {#api-Distribution.pdf}
+
+```python
+Distribution.pdf(self, x)
+```
+
+#### `Distribution.logpdf` {#api-Distribution.logpdf}
+
+```python
+Distribution.logpdf(self, x)
+```
+
+#### `Distribution.pmf` {#api-Distribution.pmf}
+
+```python
+Distribution.pmf(self, x)
+```
+
+#### `Distribution.logpmf` {#api-Distribution.logpmf}
+
+```python
+Distribution.logpmf(self, x)
+```
+
+#### `Distribution.cdf` {#api-Distribution.cdf}
+
+```python
+Distribution.cdf(self, x)
+```
+
+#### `Distribution.sf` {#api-Distribution.sf}
+
+```python
+Distribution.sf(self, x)
+```
+
+#### `Distribution.logcdf` {#api-Distribution.logcdf}
+
+```python
+Distribution.logcdf(self, x)
+```
+
+#### `Distribution.logsf` {#api-Distribution.logsf}
+
+```python
+Distribution.logsf(self, x)
+```
+
+#### `Distribution.ppf` {#api-Distribution.ppf}
+
+```python
+Distribution.ppf(self, q)
+```
+
+#### `Distribution.isf` {#api-Distribution.isf}
+
+```python
+Distribution.isf(self, q)
+```
+
+#### `Distribution.rvs` {#api-Distribution.rvs}
+
+```python
+Distribution.rvs(self, size=None, rng=None)
+```
+
+### `Normal` {#api-Normal}
+
+```python
+Normal(loc=0.0, scale=1.0)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Normal.rvs` {#api-Normal.rvs}
+
+```python
+Normal.rvs(self, size=None, rng=None)
+```
+
+#### `Normal.pdf` {#api-Normal.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.pdf(self, x)
+```
+
+#### `Normal.logpdf` {#api-Normal.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.logpdf(self, x)
+```
+
+#### `Normal.pmf` {#api-Normal.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.pmf(self, x)
+```
+
+#### `Normal.logpmf` {#api-Normal.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.logpmf(self, x)
+```
+
+#### `Normal.cdf` {#api-Normal.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.cdf(self, x)
+```
+
+#### `Normal.sf` {#api-Normal.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.sf(self, x)
+```
+
+#### `Normal.logcdf` {#api-Normal.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.logcdf(self, x)
+```
+
+#### `Normal.logsf` {#api-Normal.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.logsf(self, x)
+```
+
+#### `Normal.ppf` {#api-Normal.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.ppf(self, q)
+```
+
+#### `Normal.isf` {#api-Normal.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Normal.isf(self, q)
+```
+
+### `Uniform` {#api-Uniform}
+
+```python
+Uniform(low=0.0, high=1.0)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Uniform.rvs` {#api-Uniform.rvs}
+
+```python
+Uniform.rvs(self, size=None, rng=None)
+```
+
+#### `Uniform.pdf` {#api-Uniform.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.pdf(self, x)
+```
+
+#### `Uniform.logpdf` {#api-Uniform.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.logpdf(self, x)
+```
+
+#### `Uniform.pmf` {#api-Uniform.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.pmf(self, x)
+```
+
+#### `Uniform.logpmf` {#api-Uniform.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.logpmf(self, x)
+```
+
+#### `Uniform.cdf` {#api-Uniform.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.cdf(self, x)
+```
+
+#### `Uniform.sf` {#api-Uniform.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.sf(self, x)
+```
+
+#### `Uniform.logcdf` {#api-Uniform.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.logcdf(self, x)
+```
+
+#### `Uniform.logsf` {#api-Uniform.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.logsf(self, x)
+```
+
+#### `Uniform.ppf` {#api-Uniform.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.ppf(self, q)
+```
+
+#### `Uniform.isf` {#api-Uniform.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Uniform.isf(self, q)
+```
+
+### `Exponential` {#api-Exponential}
+
+```python
+Exponential(scale=1.0)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Exponential.rvs` {#api-Exponential.rvs}
+
+```python
+Exponential.rvs(self, size=None, rng=None)
+```
+
+#### `Exponential.pdf` {#api-Exponential.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.pdf(self, x)
+```
+
+#### `Exponential.logpdf` {#api-Exponential.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.logpdf(self, x)
+```
+
+#### `Exponential.pmf` {#api-Exponential.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.pmf(self, x)
+```
+
+#### `Exponential.logpmf` {#api-Exponential.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.logpmf(self, x)
+```
+
+#### `Exponential.cdf` {#api-Exponential.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.cdf(self, x)
+```
+
+#### `Exponential.sf` {#api-Exponential.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.sf(self, x)
+```
+
+#### `Exponential.logcdf` {#api-Exponential.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.logcdf(self, x)
+```
+
+#### `Exponential.logsf` {#api-Exponential.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.logsf(self, x)
+```
+
+#### `Exponential.ppf` {#api-Exponential.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.ppf(self, q)
+```
+
+#### `Exponential.isf` {#api-Exponential.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Exponential.isf(self, q)
+```
+
+### `Gamma` {#api-Gamma}
+
+```python
+Gamma(shape, scale=1.0)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Gamma.rvs` {#api-Gamma.rvs}
+
+```python
+Gamma.rvs(self, size=None, rng=None)
+```
+
+#### `Gamma.pdf` {#api-Gamma.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.pdf(self, x)
+```
+
+#### `Gamma.logpdf` {#api-Gamma.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.logpdf(self, x)
+```
+
+#### `Gamma.pmf` {#api-Gamma.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.pmf(self, x)
+```
+
+#### `Gamma.logpmf` {#api-Gamma.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.logpmf(self, x)
+```
+
+#### `Gamma.cdf` {#api-Gamma.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.cdf(self, x)
+```
+
+#### `Gamma.sf` {#api-Gamma.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.sf(self, x)
+```
+
+#### `Gamma.logcdf` {#api-Gamma.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.logcdf(self, x)
+```
+
+#### `Gamma.logsf` {#api-Gamma.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.logsf(self, x)
+```
+
+#### `Gamma.ppf` {#api-Gamma.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.ppf(self, q)
+```
+
+#### `Gamma.isf` {#api-Gamma.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Gamma.isf(self, q)
+```
+
+### `Beta` {#api-Beta}
+
+```python
+Beta(a, b)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Beta.rvs` {#api-Beta.rvs}
+
+```python
+Beta.rvs(self, size=None, rng=None)
+```
+
+#### `Beta.pdf` {#api-Beta.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.pdf(self, x)
+```
+
+#### `Beta.logpdf` {#api-Beta.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.logpdf(self, x)
+```
+
+#### `Beta.pmf` {#api-Beta.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.pmf(self, x)
+```
+
+#### `Beta.logpmf` {#api-Beta.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.logpmf(self, x)
+```
+
+#### `Beta.cdf` {#api-Beta.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.cdf(self, x)
+```
+
+#### `Beta.sf` {#api-Beta.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.sf(self, x)
+```
+
+#### `Beta.logcdf` {#api-Beta.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.logcdf(self, x)
+```
+
+#### `Beta.logsf` {#api-Beta.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.logsf(self, x)
+```
+
+#### `Beta.ppf` {#api-Beta.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.ppf(self, q)
+```
+
+#### `Beta.isf` {#api-Beta.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Beta.isf(self, q)
+```
+
+### `StudentT` {#api-StudentT}
+
+```python
+StudentT(df, loc=0.0, scale=1.0)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `StudentT.rvs` {#api-StudentT.rvs}
+
+```python
+StudentT.rvs(self, size=None, rng=None)
+```
+
+#### `StudentT.pdf` {#api-StudentT.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.pdf(self, x)
+```
+
+#### `StudentT.logpdf` {#api-StudentT.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.logpdf(self, x)
+```
+
+#### `StudentT.pmf` {#api-StudentT.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.pmf(self, x)
+```
+
+#### `StudentT.logpmf` {#api-StudentT.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.logpmf(self, x)
+```
+
+#### `StudentT.cdf` {#api-StudentT.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.cdf(self, x)
+```
+
+#### `StudentT.sf` {#api-StudentT.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.sf(self, x)
+```
+
+#### `StudentT.logcdf` {#api-StudentT.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.logcdf(self, x)
+```
+
+#### `StudentT.logsf` {#api-StudentT.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.logsf(self, x)
+```
+
+#### `StudentT.ppf` {#api-StudentT.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.ppf(self, q)
+```
+
+#### `StudentT.isf` {#api-StudentT.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+StudentT.isf(self, q)
+```
+
+### `ChiSquare` {#api-ChiSquare}
+
+```python
+ChiSquare(df)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Gamma`](stochastic.md#api-Gamma).
+
+#### `ChiSquare.rvs` {#api-ChiSquare.rvs}
+
+Inherited from [`Gamma`](stochastic.md#api-Gamma).
+
+```python
+ChiSquare.rvs(self, size=None, rng=None)
+```
+
+#### `ChiSquare.pdf` {#api-ChiSquare.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.pdf(self, x)
+```
+
+#### `ChiSquare.logpdf` {#api-ChiSquare.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.logpdf(self, x)
+```
+
+#### `ChiSquare.pmf` {#api-ChiSquare.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.pmf(self, x)
+```
+
+#### `ChiSquare.logpmf` {#api-ChiSquare.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.logpmf(self, x)
+```
+
+#### `ChiSquare.cdf` {#api-ChiSquare.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.cdf(self, x)
+```
+
+#### `ChiSquare.sf` {#api-ChiSquare.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.sf(self, x)
+```
+
+#### `ChiSquare.logcdf` {#api-ChiSquare.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.logcdf(self, x)
+```
+
+#### `ChiSquare.logsf` {#api-ChiSquare.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.logsf(self, x)
+```
+
+#### `ChiSquare.ppf` {#api-ChiSquare.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.ppf(self, q)
+```
+
+#### `ChiSquare.isf` {#api-ChiSquare.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+ChiSquare.isf(self, q)
+```
+
+### `Poisson` {#api-Poisson}
+
+```python
+Poisson(mu)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Poisson.rvs` {#api-Poisson.rvs}
+
+```python
+Poisson.rvs(self, size=None, rng=None)
+```
+
+#### `Poisson.pdf` {#api-Poisson.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.pdf(self, x)
+```
+
+#### `Poisson.logpdf` {#api-Poisson.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.logpdf(self, x)
+```
+
+#### `Poisson.pmf` {#api-Poisson.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.pmf(self, x)
+```
+
+#### `Poisson.logpmf` {#api-Poisson.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.logpmf(self, x)
+```
+
+#### `Poisson.cdf` {#api-Poisson.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.cdf(self, x)
+```
+
+#### `Poisson.sf` {#api-Poisson.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.sf(self, x)
+```
+
+#### `Poisson.logcdf` {#api-Poisson.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.logcdf(self, x)
+```
+
+#### `Poisson.logsf` {#api-Poisson.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.logsf(self, x)
+```
+
+#### `Poisson.ppf` {#api-Poisson.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.ppf(self, q)
+```
+
+#### `Poisson.isf` {#api-Poisson.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Poisson.isf(self, q)
+```
+
+### `Binomial` {#api-Binomial}
+
+```python
+Binomial(n, p)
+```
+
+Common distribution interface; parameters belong to concrete subclasses.
+
+Base classes: [`Distribution`](stochastic.md#api-Distribution).
+
+#### `Binomial.pdf` {#api-Binomial.pdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.pdf(self, x)
+```
+
+#### `Binomial.logpdf` {#api-Binomial.logpdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.logpdf(self, x)
+```
+
+#### `Binomial.pmf` {#api-Binomial.pmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.pmf(self, x)
+```
+
+#### `Binomial.logpmf` {#api-Binomial.logpmf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.logpmf(self, x)
+```
+
+#### `Binomial.cdf` {#api-Binomial.cdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.cdf(self, x)
+```
+
+#### `Binomial.sf` {#api-Binomial.sf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.sf(self, x)
+```
+
+#### `Binomial.logcdf` {#api-Binomial.logcdf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.logcdf(self, x)
+```
+
+#### `Binomial.logsf` {#api-Binomial.logsf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.logsf(self, x)
+```
+
+#### `Binomial.ppf` {#api-Binomial.ppf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.ppf(self, q)
+```
+
+#### `Binomial.isf` {#api-Binomial.isf}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.isf(self, q)
+```
+
+#### `Binomial.rvs` {#api-Binomial.rvs}
+
+Inherited from [`Distribution`](stochastic.md#api-Distribution).
+
+```python
+Binomial.rvs(self, size=None, rng=None)
+```
 
 ## `generators`
 
@@ -30,19 +1057,198 @@ Pseudorandom and low-discrepancy number generators.
 
 Implemented explicitly so the mechanics -- and the failure modes of the older designs -- are visible rather than hidden behind a library call.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`LCG` | `(seed: int = 1, a: int = 1103515245, c: int = 12345, m: int = 2147483648)` | Linear congruential generator ``x <- (a x + c) mod m``. |
-| *class*&nbsp;`ParkMiller` | `(seed: int = 1)` | Park-Miller minimal standard generator: ``a = 16807``, ``m = 2^31 - 1``. |
-| *class*&nbsp;`XorShift` | `(seed: int = 88172645463325252)` | Marsaglia's xorshift generator: fast, long period, tiny state. |
-| *class*&nbsp;`MersenneTwister` | `(seed: int = 5489)` | MT19937: period ``2^19937 - 1`` and 623-dimensional equidistribution. |
-| `middle_square` | `(seed: int, n: int, digits: int = 4)` | Von Neumann's middle square method. |
-| `halton` | `(n: int, dim: int = 1, skip: int = 1)` | Halton low-discrepancy sequence. |
-| `sobol` | `(n: int, dim: int = 1)` | Sobol low-discrepancy sequence. |
-| `latin_hypercube_sample` | `(n: int, dim: int = 1, rng=None)` | Latin hypercube sample. |
-| `van_der_corput` | `(n: int, base: int = 2)` | First ``n`` elements of the van der Corput low-discrepancy sequence. |
-| `spectral_test` | `(generator, n: int = 2000, dim: int = 3, max_coeff: int = 10, tol: float = 1e-06)` | Search for a short dual-lattice vector in consecutive ``dim``-tuples. |
-| `spectral_test_2d` | `(generator, n: int = 5000, **kwargs)` | Two-dimensional dual-lattice search (see ``spectral_test``). |
+| [`LCG`](#api-LCG) | class | Linear congruential generator ``x <- (a x + c) mod m``. |
+| [`ParkMiller`](#api-ParkMiller) | class | Park-Miller minimal standard generator: ``a = 16807``, ``m = 2^31 - 1``. |
+| [`XorShift`](#api-XorShift) | class | Marsaglia's xorshift generator: fast, long period, tiny state. |
+| [`MersenneTwister`](#api-MersenneTwister) | class | MT19937: period ``2^19937 - 1`` and 623-dimensional equidistribution. |
+| [`middle_square`](#api-middle_square) | function | Von Neumann's middle square method. |
+| [`halton`](#api-halton) | function | Halton low-discrepancy sequence. |
+| [`sobol`](#api-sobol) | function | Sobol low-discrepancy sequence. |
+| [`latin_hypercube_sample`](#api-latin_hypercube_sample) | function | Latin hypercube sample. |
+| [`van_der_corput`](#api-van_der_corput) | function | First ``n`` elements of the van der Corput low-discrepancy sequence. |
+| [`spectral_test`](#api-spectral_test) | function | Search for a short dual-lattice vector in consecutive ``dim``-tuples. |
+| [`spectral_test_2d`](#api-spectral_test_2d) | function | Two-dimensional dual-lattice search (see ``spectral_test``). |
+
+### `LCG` {#api-LCG}
+
+```python
+LCG(seed: int = 1, a: int = 1103515245, c: int = 12345, m: int = 2147483648)
+```
+
+Linear congruential generator `x <- (a x + c) mod m`.
+
+The default constants are those of `glibc`. LCGs are fast but their
+points fall on a small number of hyperplanes -- see `spectral_test_2d`.
+
+#### `LCG.next_int` {#api-LCG.next_int}
+
+```python
+LCG.next_int(self) -> int
+```
+
+#### `LCG.random` {#api-LCG.random}
+
+```python
+LCG.random(self, size=None)
+```
+
+Uniform samples on `[0, 1)`.
+
+### `ParkMiller` {#api-ParkMiller}
+
+```python
+ParkMiller(seed: int = 1)
+```
+
+Park-Miller minimal standard generator: `a = 16807`, `m = 2^31 - 1`.
+
+Base classes: [`LCG`](stochastic.md#api-LCG).
+
+#### `ParkMiller.next_int` {#api-ParkMiller.next_int}
+
+Inherited from [`LCG`](stochastic.md#api-LCG).
+
+```python
+ParkMiller.next_int(self) -> int
+```
+
+#### `ParkMiller.random` {#api-ParkMiller.random}
+
+Inherited from [`LCG`](stochastic.md#api-LCG).
+
+```python
+ParkMiller.random(self, size=None)
+```
+
+Uniform samples on `[0, 1)`.
+
+### `XorShift` {#api-XorShift}
+
+```python
+XorShift(seed: int = 88172645463325252)
+```
+
+Marsaglia's xorshift generator: fast, long period, tiny state.
+
+#### `XorShift.next_int` {#api-XorShift.next_int}
+
+```python
+XorShift.next_int(self) -> int
+```
+
+#### `XorShift.random` {#api-XorShift.random}
+
+```python
+XorShift.random(self, size=None)
+```
+
+### `MersenneTwister` {#api-MersenneTwister}
+
+```python
+MersenneTwister(seed: int = 5489)
+```
+
+MT19937: period `2^19937 - 1` and 623-dimensional equidistribution.
+
+The standard general-purpose generator for simulation (though not
+cryptographically secure).
+
+#### `MersenneTwister.seed` {#api-MersenneTwister.seed}
+
+```python
+MersenneTwister.seed(self, s: int) -> None
+```
+
+#### `MersenneTwister.next_int` {#api-MersenneTwister.next_int}
+
+```python
+MersenneTwister.next_int(self) -> int
+```
+
+#### `MersenneTwister.random` {#api-MersenneTwister.random}
+
+```python
+MersenneTwister.random(self, size=None)
+```
+
+### `middle_square` {#api-middle_square}
+
+```python
+middle_square(seed: int, n: int, digits: int = 4)
+```
+
+Von Neumann's middle square method.
+
+Included as a cautionary example: it degenerates to zero or short cycles
+very quickly and must not be used for real work.
+
+### `halton` {#api-halton}
+
+```python
+halton(n: int, dim: int = 1, skip: int = 1)
+```
+
+Halton low-discrepancy sequence.
+
+### `sobol` {#api-sobol}
+
+```python
+sobol(n: int, dim: int = 1)
+```
+
+Sobol low-discrepancy sequence.
+
+### `latin_hypercube_sample` {#api-latin_hypercube_sample}
+
+```python
+latin_hypercube_sample(n: int, dim: int = 1, rng=None)
+```
+
+Latin hypercube sample.
+
+### `van_der_corput` {#api-van_der_corput}
+
+```python
+van_der_corput(n: int, base: int = 2)
+```
+
+First `n` elements of the van der Corput low-discrepancy sequence.
+
+### `spectral_test` {#api-spectral_test}
+
+```python
+spectral_test(
+    generator,
+    n: int = 2000,
+    dim: int = 3,
+    max_coeff: int = 10,
+    tol: float = 1e-06,
+)
+```
+
+Search for a short dual-lattice vector in consecutive `dim`-tuples.
+
+Successive outputs of a linear congruential generator satisfy an exact
+integer recurrence, so some small integer vector `a` makes
+`a . (x_i, ..., x_{i+dim-1})` an integer for *every* tuple. This searches
+the small integer vectors and reports the one whose combination stays
+closest to an integer.
+
+Returns a dict with the best `coefficients`, the worst-case
+`deviation` from an integer, and `lattice_detected`. RANDU
+(`a = 65539`, `m = 2^31`) is found immediately with `(9, -6, 1)`,
+since its triples lie on just 15 planes; a good generator leaves every
+small vector uniformly spread, giving a deviation near `0.5`.
+
+### `spectral_test_2d` {#api-spectral_test_2d}
+
+```python
+spectral_test_2d(generator, n: int = 5000, **kwargs)
+```
+
+Two-dimensional dual-lattice search (see `spectral_test`).
 
 ## `mcmc`
 
@@ -52,20 +1258,291 @@ Markov chain Monte Carlo.
 
 When direct sampling is impossible, MCMC builds a Markov chain whose stationary distribution is the target, so the samples are correlated but asymptotically correct. Diagnostics matter as much as the samplers themselves.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| *class*&nbsp;`Chain` | `(data, acceptance=None, swaps=None)` | Array of MCMC draws that also carries the sampler's diagnostics. |
-| `metropolis_hastings` | `(log_target, x0, proposal, log_proposal_ratio=None, n: int = 10000, burn: int = 1000, thin: int = 1, rng=None)` | Metropolis-Hastings. |
-| `random_walk_metropolis` | `(log_target, x0, step: float = 1.0, n: int = 10000, burn: int = 1000, thin: int = 1, rng=None)` | Random walk Metropolis with an isotropic Gaussian proposal. |
-| `gibbs_sampler` | `(conditionals, x0, n: int = 10000, burn: int = 1000, rng=None)` | Systematic-scan Gibbs sampler. |
-| `hamiltonian_mc` | `(log_target, grad_log_target, x0, step: float = 0.1, n_leapfrog: int = 20, n: int = 5000, burn: int = 500, ...)` | Hamiltonian Monte Carlo. |
-| `nuts_lite` | `(log_target, grad_log_target, x0, step: float = 0.1, n: int = 5000, burn: int = 500, max_depth: int = 8, rn, ...)` | HMC with a randomized trajectory length. |
-| `slice_sampler` | `(log_target, x0, w: float = 1.0, n: int = 10000, burn: int = 1000, rng=None, max_steps: int = 100)` | Univariate slice sampling with stepping-out and shrinkage. |
-| `parallel_tempering` | `(log_target, x0, temperatures=(1.0, 2.0, 4.0, 8.0), step: float = 1.0, n: int = 10000, burn: int = 1000, sw, ...)` | Parallel tempering (replica exchange). |
-| `effective_sample_size` | `(chain)` | Effective sample size ``N / tau``: the number of independent samples. |
-| `gelman_rubin` | `(chains)` | Gelman-Rubin ``R-hat`` from several independent chains. |
-| `autocorrelation_time` | `(chain, max_lag=None)` | Integrated autocorrelation time, using Geyer's initial positive sequence. |
-| `acceptance_rate` | `(chain)` | Fraction of proposals accepted, if the sampler recorded it. |
+| [`Chain`](#api-Chain) | class | Array of MCMC draws that also carries the sampler's diagnostics. |
+| [`metropolis_hastings`](#api-metropolis_hastings) | function | Metropolis-Hastings. |
+| [`random_walk_metropolis`](#api-random_walk_metropolis) | function | Random walk Metropolis with an isotropic Gaussian proposal. |
+| [`gibbs_sampler`](#api-gibbs_sampler) | function | Systematic-scan Gibbs sampler. |
+| [`hamiltonian_mc`](#api-hamiltonian_mc) | function | Hamiltonian Monte Carlo. |
+| [`nuts_lite`](#api-nuts_lite) | function | HMC with a randomized trajectory length. |
+| [`slice_sampler`](#api-slice_sampler) | function | Univariate slice sampling with stepping-out and shrinkage. |
+| [`parallel_tempering`](#api-parallel_tempering) | function | Parallel tempering (replica exchange). |
+| [`effective_sample_size`](#api-effective_sample_size) | function | Effective sample size ``N / tau``: the number of independent samples. |
+| [`gelman_rubin`](#api-gelman_rubin) | function | Gelman-Rubin ``R-hat`` from several independent chains. |
+| [`autocorrelation_time`](#api-autocorrelation_time) | function | Integrated autocorrelation time, using Geyer's initial positive sequence. |
+| [`acceptance_rate`](#api-acceptance_rate) | function | Fraction of proposals accepted, if the sampler recorded it. |
+
+### `Chain` {#api-Chain}
+
+```python
+Chain(data, acceptance=None, swaps=None)
+```
+
+Array of MCMC draws that also carries the sampler's diagnostics.
+
+A plain `ndarray` cannot hold extra attributes, so the acceptance rate
+and swap count travel with the samples on this thin subclass.
+
+Base classes: [`numeric.ndarray`](../guides/numeric.md).
+
+### `metropolis_hastings` {#api-metropolis_hastings}
+
+```python
+metropolis_hastings(
+    log_target,
+    x0,
+    proposal,
+    log_proposal_ratio=None,
+    n: int = 10000,
+    burn: int = 1000,
+    thin: int = 1,
+    rng=None,
+)
+```
+
+Metropolis-Hastings.
+
+`proposal(x, rng)` returns a candidate; `log_proposal_ratio(x, y)` is
+`log q(x|y) - log q(y|x)` and defaults to 0 for a symmetric proposal.
+
+### `random_walk_metropolis` {#api-random_walk_metropolis}
+
+```python
+random_walk_metropolis(
+    log_target,
+    x0,
+    step: float = 1.0,
+    n: int = 10000,
+    burn: int = 1000,
+    thin: int = 1,
+    rng=None,
+)
+```
+
+Random walk Metropolis with an isotropic Gaussian proposal.
+
+An acceptance rate near 0.234 is optimal in high dimension; tune `step`
+toward that.
+
+### `gibbs_sampler` {#api-gibbs_sampler}
+
+```python
+gibbs_sampler(conditionals, x0, n: int = 10000, burn: int = 1000, rng=None)
+```
+
+Systematic-scan Gibbs sampler.
+
+`conditionals[i](x, rng)` draws component `i` from its full conditional
+given the current state; every draw is accepted by construction.
+
+### `hamiltonian_mc` {#api-hamiltonian_mc}
+
+```python
+hamiltonian_mc(
+    log_target,
+    grad_log_target,
+    x0,
+    step: float = 0.1,
+    n_leapfrog: int = 20,
+    n: int = 5000,
+    burn: int = 500,
+    rng=None,
+    mass=None,
+)
+```
+
+Hamiltonian Monte Carlo.
+
+Augments the state with momentum and follows Hamiltonian dynamics with a
+leapfrog integrator, so proposals travel far while keeping a high
+acceptance rate. The integrator must be symplectic and reversible for
+detailed balance to hold.
+
+### `nuts_lite` {#api-nuts_lite}
+
+```python
+nuts_lite(
+    log_target,
+    grad_log_target,
+    x0,
+    step: float = 0.1,
+    n: int = 5000,
+    burn: int = 500,
+    max_depth: int = 8,
+    rng=None,
+)
+```
+
+HMC with a randomized trajectory length.
+
+Captures the practical benefit of NUTS -- no hand-tuned path length --
+without the full recursive no-U-turn tree.
+
+### `slice_sampler` {#api-slice_sampler}
+
+```python
+slice_sampler(
+    log_target,
+    x0,
+    w: float = 1.0,
+    n: int = 10000,
+    burn: int = 1000,
+    rng=None,
+    max_steps: int = 100,
+)
+```
+
+Univariate slice sampling with stepping-out and shrinkage.
+
+Needs no proposal tuning: the step size adapts through the interval
+construction, and every draw is accepted.
+
+### `parallel_tempering` {#api-parallel_tempering}
+
+```python
+parallel_tempering(
+    log_target,
+    x0,
+    temperatures=(1.0, 2.0, 4.0, 8.0),
+    step: float = 1.0,
+    n: int = 10000,
+    burn: int = 1000,
+    swap_every: int = 10,
+    rng=None,
+)
+```
+
+Parallel tempering (replica exchange).
+
+Runs chains at several temperatures and swaps neighbours, so the hot chains
+cross barriers and carry the cold chain out of local modes -- the standard
+fix for multimodal targets.
+
+### `effective_sample_size` {#api-effective_sample_size}
+
+```python
+effective_sample_size(chain)
+```
+
+Effective sample size `N / tau`: the number of independent samples.
+
+### `gelman_rubin` {#api-gelman_rubin}
+
+```python
+gelman_rubin(chains)
+```
+
+Gelman-Rubin `R-hat` from several independent chains.
+
+Compares within-chain and between-chain variance; values above about 1.01
+indicate the chains have not mixed.
+
+### `autocorrelation_time` {#api-autocorrelation_time}
+
+```python
+autocorrelation_time(chain, max_lag=None)
+```
+
+Integrated autocorrelation time, using Geyer's initial positive sequence.
+
+`tau` measures how many steps the chain needs to produce one independent
+sample.
+
+### `acceptance_rate` {#api-acceptance_rate}
+
+```python
+acceptance_rate(chain)
+```
+
+Fraction of proposals accepted, if the sampler recorded it.
+
+## `qmc`
+
+<small>`quadrivium.stochastic.qmc`</small>
+
+Stateful randomized digital nets and reproducible child random streams.
+
+Direction numbers are constructed from primitive binary polynomials. The first dimensions use the package's historical initial directions; later dimensions use deterministic odd initial values, rather than substituting another sequence. They are not the optimized Joe--Kuo direction tables. Scrambling applies a random invertible lower-triangular binary matrix followed by a digital shift.
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| [`Sobol`](#api-Sobol) | class | Incremental Sobol engine with bounded state and optional LMS scrambling. |
+| [`spawn_rngs`](#api-spawn_rngs) | function | Return ``n`` reproducible child streams independent of scheduling order. |
+| [`randomized_qmc`](#api-randomized_qmc) | function | Integrate using independent scrambled nets; estimate replicate standard error. |
+
+### `Sobol` {#api-Sobol}
+
+```python
+Sobol(dim, *, scramble=True, seed=0, bits=30)
+```
+
+Incremental Sobol engine with bounded state and optional LMS scrambling.
+
+`random_base2(m)` draws 2**m points and enforces a power-of-two cumulative
+sample count. `random(n)` permits arbitrary sizes but loses that balance
+guarantee. `state` is a JSON-serializable checkpoint. Up to 1024 dimensions
+and 52 direction bits are supported; memory is O(dim * bits).
+
+#### `Sobol.state` {#api-Sobol.state}
+
+Read-only property.
+
+#### `Sobol.from_state` {#api-Sobol.from_state}
+
+```python
+Sobol.from_state(state)
+```
+
+#### `Sobol.reset` {#api-Sobol.reset}
+
+```python
+Sobol.reset(self)
+```
+
+#### `Sobol.fast_forward` {#api-Sobol.fast_forward}
+
+```python
+Sobol.fast_forward(self, n)
+```
+
+#### `Sobol.random` {#api-Sobol.random}
+
+```python
+Sobol.random(self, n=1)
+```
+
+#### `Sobol.random_base2` {#api-Sobol.random_base2}
+
+```python
+Sobol.random_base2(self, m)
+```
+
+#### `Sobol.spawn` {#api-Sobol.spawn}
+
+```python
+Sobol.spawn(self, n)
+```
+
+### `spawn_rngs` {#api-spawn_rngs}
+
+```python
+spawn_rngs(seed, n)
+```
+
+Return `n` reproducible child streams independent of scheduling order.
+
+### `randomized_qmc` {#api-randomized_qmc}
+
+```python
+randomized_qmc(f, lows, highs, *, m=10, replicates=8, seed=0, batch_size=256)
+```
+
+Integrate using independent scrambled nets; estimate replicate standard error.
+
+Integrands accept a scalar in one dimension or a point in higher dimensions.
+Points and values are consumed in bounded batches; only replicate estimates
+are retained. Error is a sampling estimate, not a certified bound.
 
 ## `sampling`
 
@@ -73,21 +1550,173 @@ When direct sampling is impossible, MCMC builds a Markov chain whose stationary 
 
 Sampling from probability distributions.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `inverse_transform` | `(inv_cdf, n: int = 1000, rng=None)` | Inverse transform sampling: ``X = F^-1(U)`` with ``U`` uniform. |
-| `box_muller` | `(n: int = 1000, mu: float = 0.0, sigma: float = 1.0, rng=None)` | Box-Muller transform: two uniforms give two independent normals. |
-| `marsaglia_polar` | `(n: int = 1000, mu: float = 0.0, sigma: float = 1.0, rng=None)` | Marsaglia polar method: like Box-Muller but with no trigonometry. |
-| `rejection_sampling` | `(pdf, proposal_sampler, proposal_pdf, M: float, n: int = 1000, rng=None, max_tries: int = 10000000)` | Rejection sampling with an envelope ``M * proposal_pdf >= pdf``. |
-| `adaptive_rejection` | `(log_pdf, x_init, n: int = 1000, domain=(-inf, inf), rng=None, dlog_pdf=None, max_points: int = 60)` | Adaptive rejection sampling (Gilks-Wild) for log-concave densities. |
-| `ratio_of_uniforms` | `(pdf, n: int = 1000, u_max: float = 1.0, v_range=(-1.0, 1.0), rng=None, max_tries: int = 10000000)` | Ratio-of-uniforms method: sample ``(u, v)`` and return ``v/u``. |
-| `alias_table` | `(probabilities)` | Build Walker's alias table for O(1) sampling from a discrete distribution. |
-| `sample_discrete` | `(probabilities, n: int = 1000, rng=None, method: str = 'alias')` | Sample from a discrete distribution by the alias table or by inversion. |
-| `multivariate_normal` | `(mean, cov, n: int = 1000, rng=None)` | Multivariate normal samples via the Cholesky factor of the covariance. |
-| `gibbs_bivariate_normal` | `(rho: float, n: int = 5000, burn: int = 500, rng=None)` | Gibbs sampler for a bivariate normal with correlation ``rho``. |
-| `bootstrap` | `(data, statistic, n_resamples: int = 10000, rng=None, confidence: float = 0.95)` | Nonparametric bootstrap: resample with replacement to get a sampling distribution for any statistic. |
-| `jackknife` | `(data, statistic)` | Leave-one-out jackknife estimate of bias and standard error. |
-| `permutation_test` | `(a, b, statistic=None, n_permutations: int = 10000, rng=None)` | Two-sample permutation test. |
+| [`inverse_transform`](#api-inverse_transform) | function | Inverse transform sampling: ``X = F^-1(U)`` with ``U`` uniform. |
+| [`box_muller`](#api-box_muller) | function | Box-Muller transform: two uniforms give two independent normals. |
+| [`marsaglia_polar`](#api-marsaglia_polar) | function | Marsaglia polar method: like Box-Muller but with no trigonometry. |
+| [`rejection_sampling`](#api-rejection_sampling) | function | Rejection sampling with an envelope ``M * proposal_pdf >= pdf``. |
+| [`adaptive_rejection`](#api-adaptive_rejection) | function | Adaptive rejection sampling (Gilks-Wild) for log-concave densities. |
+| [`ratio_of_uniforms`](#api-ratio_of_uniforms) | function | Ratio-of-uniforms method: sample ``(u, v)`` and return ``v/u``. |
+| [`alias_table`](#api-alias_table) | function | Build Walker's alias table for O(1) sampling from a discrete distribution. |
+| [`sample_discrete`](#api-sample_discrete) | function | Sample from a discrete distribution by the alias table or by inversion. |
+| [`multivariate_normal`](#api-multivariate_normal) | function | Multivariate normal samples via the Cholesky factor of the covariance. |
+| [`gibbs_bivariate_normal`](#api-gibbs_bivariate_normal) | function | Gibbs sampler for a bivariate normal with correlation ``rho``. |
+| [`bootstrap`](#api-bootstrap) | function | Nonparametric bootstrap: resample with replacement to get a sampling distribution for any statistic. |
+| [`jackknife`](#api-jackknife) | function | Leave-one-out jackknife estimate of bias and standard error. |
+| [`permutation_test`](#api-permutation_test) | function | Two-sample permutation test. |
+
+### `inverse_transform` {#api-inverse_transform}
+
+```python
+inverse_transform(inv_cdf, n: int = 1000, rng=None)
+```
+
+Inverse transform sampling: `X = F^-1(U)` with `U` uniform.
+
+Exact whenever the quantile function is available.
+
+### `box_muller` {#api-box_muller}
+
+```python
+box_muller(n: int = 1000, mu: float = 0.0, sigma: float = 1.0, rng=None)
+```
+
+Box-Muller transform: two uniforms give two independent normals.
+
+### `marsaglia_polar` {#api-marsaglia_polar}
+
+```python
+marsaglia_polar(n: int = 1000, mu: float = 0.0, sigma: float = 1.0, rng=None)
+```
+
+Marsaglia polar method: like Box-Muller but with no trigonometry.
+
+### `rejection_sampling` {#api-rejection_sampling}
+
+```python
+rejection_sampling(
+    pdf,
+    proposal_sampler,
+    proposal_pdf,
+    M: float,
+    n: int = 1000,
+    rng=None,
+    max_tries: int = 10000000,
+)
+```
+
+Rejection sampling with an envelope `M * proposal_pdf >= pdf`.
+
+Returns the samples and the realized acceptance rate; an `M` far larger
+than necessary is correct but wasteful.
+
+### `adaptive_rejection` {#api-adaptive_rejection}
+
+```python
+adaptive_rejection(
+    log_pdf,
+    x_init,
+    n: int = 1000,
+    domain=(-inf, inf),
+    rng=None,
+    dlog_pdf=None,
+    max_points: int = 60,
+)
+```
+
+Adaptive rejection sampling (Gilks-Wild) for log-concave densities.
+
+Builds a piecewise-linear *upper hull* of `log pdf` from tangents at the
+current abscissae. The hull exponentiates to a piecewise-exponential
+density that can be sampled exactly; every rejected point is added as a new
+tangent, so the envelope tightens and the acceptance rate climbs toward one.
+
+`x_init` must bracket the mode -- the tangent slopes have to be positive
+at the left end and negative at the right for an unbounded domain, or the
+envelope has infinite mass.
+
+### `ratio_of_uniforms` {#api-ratio_of_uniforms}
+
+```python
+ratio_of_uniforms(
+    pdf,
+    n: int = 1000,
+    u_max: float = 1.0,
+    v_range=(-1.0, 1.0),
+    rng=None,
+    max_tries: int = 10000000,
+)
+```
+
+Ratio-of-uniforms method: sample `(u, v)` and return `v/u`.
+
+Accepts when `u <= sqrt(pdf(v/u))`, giving exact samples without an
+explicit envelope function.
+
+### `alias_table` {#api-alias_table}
+
+```python
+alias_table(probabilities)
+```
+
+Build Walker's alias table for O(1) sampling from a discrete distribution.
+
+### `sample_discrete` {#api-sample_discrete}
+
+```python
+sample_discrete(probabilities, n: int = 1000, rng=None, method: str = 'alias')
+```
+
+Sample from a discrete distribution by the alias table or by inversion.
+
+### `multivariate_normal` {#api-multivariate_normal}
+
+```python
+multivariate_normal(mean, cov, n: int = 1000, rng=None)
+```
+
+Multivariate normal samples via the Cholesky factor of the covariance.
+
+### `gibbs_bivariate_normal` {#api-gibbs_bivariate_normal}
+
+```python
+gibbs_bivariate_normal(rho: float, n: int = 5000, burn: int = 500, rng=None)
+```
+
+Gibbs sampler for a bivariate normal with correlation `rho`.
+
+The textbook illustration: each conditional is a one-dimensional normal.
+
+### `bootstrap` {#api-bootstrap}
+
+```python
+bootstrap(data, statistic, n_resamples: int = 10000, rng=None, confidence: float = 0.95)
+```
+
+Nonparametric bootstrap: resample with replacement to get a sampling
+distribution for any statistic.
+
+Returns the estimate, standard error, percentile interval and the replicates.
+
+### `jackknife` {#api-jackknife}
+
+```python
+jackknife(data, statistic)
+```
+
+Leave-one-out jackknife estimate of bias and standard error.
+
+### `permutation_test` {#api-permutation_test}
+
+```python
+permutation_test(a, b, statistic=None, n_permutations: int = 10000, rng=None)
+```
+
+Two-sample permutation test.
+
+Makes no distributional assumption: the null distribution is built by
+relabelling the pooled data.
 
 ## `sde`
 
@@ -97,25 +1726,492 @@ Numerical solution of stochastic differential equations.
 
 Schemes for the Ito SDE ``dX = a(X, t) dt + b(X, t) dW`` together with the driving Brownian machinery and exact-simulation algorithms for jump processes.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `brownian_path` | `(t_span, n: int = 1000, dim: int = 1, rng=None)` | Sample a standard Brownian path on a uniform grid. |
-| `brownian_bridge` | `(t_span, x0, x1, n: int = 1000, dim: int = 1, rng=None)` | Brownian bridge pinned to ``x0`` at the start and ``x1`` at the end. |
-| `euler_maruyama` | `(a, b, t_span, x0, n: int = 1000, rng=None, dW=None)` | Euler-Maruyama: ``X += a dt + b dW``. Strong order 1/2, weak order 1. |
-| `milstein` | `(a, b, t_span, x0, n: int = 1000, rng=None, db=None, dW=None)` | Milstein scheme: strong order 1 for scalar noise. |
-| `implicit_milstein` | `(a, b, t_span, x0, n: int = 1000, rng=None, db=None, theta: float = 0.5, tol: float = 1e-10, max_iter: int, ...)` | Drift-implicit Milstein: stable on stiff SDEs. |
-| `stochastic_heun` | `(a, b, t_span, x0, n: int = 1000, rng=None, dW=None)` | Stochastic Heun (Stratonovich predictor-corrector). |
-| `stochastic_rk` | `(a, b, t_span, x0, n: int = 1000, rng=None, dW=None)` | Derivative-free Runge-Kutta of strong order 1 (Platen). |
-| `srk_strong_1_5` | `(a, b, t_span, x0, n: int = 1000, rng=None)` | Strong order 1.5 Taylor scheme for additive noise. |
-| `tamed_euler` | `(a, b, t_span, x0, n: int = 1000, rng=None)` | Tamed Euler-Maruyama for super-linearly growing drift. |
-| `geometric_brownian_motion` | `(x0, mu: float, sigma: float, t_span, n: int = 1000, rng=None, exact: bool = True)` | Geometric Brownian motion ``dX = mu X dt + sigma X dW``. |
-| `ornstein_uhlenbeck` | `(x0, theta: float, mu: float, sigma: float, t_span, n: int = 1000, rng=None, exact: bool = True)` | Ornstein-Uhlenbeck ``dX = theta (mu - X) dt + sigma dW``. |
-| `cox_ingersoll_ross` | `(x0, theta: float, mu: float, sigma: float, t_span, n: int = 1000, rng=None)` | CIR process ``dX = theta (mu - X) dt + sigma sqrt(X) dW``. |
-| `gillespie_ssa` | `(propensities, stoichiometry, x0, t_span, rng=None, max_events: int = 1000000)` | Gillespie's stochastic simulation algorithm for reaction networks. |
-| `tau_leaping` | `(propensities, stoichiometry, x0, t_span, tau: float = 0.01, rng=None)` | Explicit tau-leaping: fire Poisson-many reactions per fixed step. |
-| `poisson_process` | `(rate: float, t_span, rng=None, max_events: int = 1000000)` | Event times of a homogeneous Poisson process, by exponential gaps. |
-| `strong_error` | `(solver, exact, t_span, x0, n: int = 500, paths: int = 200, rng=None, **kwargs)` | Mean pathwise error ``E\|X_N - X(T)\|`` at the final time. |
-| `weak_error` | `(solver, g, exact_mean: float, t_span, x0, n: int = 500, paths: int = 2000, rng=None, **kwargs)` | Error in an expectation ``\|E g(X_N) - E g(X(T))\|``. |
+| [`brownian_path`](#api-brownian_path) | function | Sample a standard Brownian path on a uniform grid. |
+| [`brownian_bridge`](#api-brownian_bridge) | function | Brownian bridge pinned to ``x0`` at the start and ``x1`` at the end. |
+| [`euler_maruyama`](#api-euler_maruyama) | function | Euler-Maruyama: ``X += a dt + b dW``. Strong order 1/2, weak order 1. |
+| [`milstein`](#api-milstein) | function | Milstein scheme: strong order 1 for scalar noise. |
+| [`implicit_milstein`](#api-implicit_milstein) | function | Drift-implicit Milstein: stable on stiff SDEs. |
+| [`stochastic_heun`](#api-stochastic_heun) | function | Stochastic Heun (Stratonovich predictor-corrector). |
+| [`stochastic_rk`](#api-stochastic_rk) | function | Derivative-free Runge-Kutta of strong order 1 (Platen). |
+| [`srk_strong_1_5`](#api-srk_strong_1_5) | function | Strong order 1.5 Taylor scheme for additive noise. |
+| [`tamed_euler`](#api-tamed_euler) | function | Tamed Euler-Maruyama for super-linearly growing drift. |
+| [`geometric_brownian_motion`](#api-geometric_brownian_motion) | function | Geometric Brownian motion ``dX = mu X dt + sigma X dW``. |
+| [`ornstein_uhlenbeck`](#api-ornstein_uhlenbeck) | function | Ornstein-Uhlenbeck ``dX = theta (mu - X) dt + sigma dW``. |
+| [`cox_ingersoll_ross`](#api-cox_ingersoll_ross) | function | CIR process ``dX = theta (mu - X) dt + sigma sqrt(X) dW``. |
+| [`gillespie_ssa`](#api-gillespie_ssa) | function | Gillespie's stochastic simulation algorithm for reaction networks. |
+| [`tau_leaping`](#api-tau_leaping) | function | Explicit tau-leaping: fire Poisson-many reactions per fixed step. |
+| [`poisson_process`](#api-poisson_process) | function | Event times of a homogeneous Poisson process, by exponential gaps. |
+| [`strong_error`](#api-strong_error) | function | Mean pathwise error ``E\|X_N - X(T)\|`` at the final time. |
+| [`weak_error`](#api-weak_error) | function | Error in an expectation ``\|E g(X_N) - E g(X(T))\|``. |
+
+### `brownian_path` {#api-brownian_path}
+
+```python
+brownian_path(t_span, n: int = 1000, dim: int = 1, rng=None)
+```
+
+Sample a standard Brownian path on a uniform grid.
+
+Returns `(t, W)` with `W[0] = 0` and `W` of shape `(n+1, dim)`.
+
+### `brownian_bridge` {#api-brownian_bridge}
+
+```python
+brownian_bridge(t_span, x0, x1, n: int = 1000, dim: int = 1, rng=None)
+```
+
+Brownian bridge pinned to `x0` at the start and `x1` at the end.
+
+Built by subtracting the linear drift that a free path would need to land
+on `x1`: `B(t) = W(t) - (t/T) W(T)` shifted onto the two endpoints.
+
+### `euler_maruyama` {#api-euler_maruyama}
+
+```python
+euler_maruyama(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    dW=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Euler-Maruyama: `X += a dt + b dW`.  Strong order 1/2, weak order 1.
+
+The direct analogue of forward Euler.  Its strong order is only 1/2 --
+*not* 1 -- because the Ito-Taylor expansion has a term `b b' (dW^2 - dt)/2`
+of size `dt` that this scheme discards; `milstein` keeps it.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `milstein` {#api-milstein}
+
+```python
+milstein(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    db=None,
+    dW=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Milstein scheme: strong order 1 for scalar noise.
+
+Adds the Ito correction `0.5 b b' (dW^2 - dt)` that Euler-Maruyama drops.
+`db` is the derivative `b'(x, t)`; without it a central difference is
+used.  For genuinely multidimensional noise the scheme also needs Levy
+areas, so this implementation applies the diagonal-noise form.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `implicit_milstein` {#api-implicit_milstein}
+
+```python
+implicit_milstein(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    db=None,
+    theta: float = 0.5,
+    tol: float = 1e-10,
+    max_iter: int = 50,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Drift-implicit Milstein: stable on stiff SDEs.
+
+Only the *drift* is treated implicitly.  Making the diffusion implicit as
+well would be wrong, not merely awkward: `dW` can take either sign, so an
+implicit diffusion term does not define a contraction and the resulting
+scheme need not have a solution at all.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `stochastic_heun` {#api-stochastic_heun}
+
+```python
+stochastic_heun(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    dW=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Stochastic Heun (Stratonovich predictor-corrector).
+
+Converges to the *Stratonovich* solution, which differs from the Ito one by
+the drift correction `0.5 b b'` -- so for multiplicative noise this and
+`euler_maruyama` are solving genuinely different equations.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `stochastic_rk` {#api-stochastic_rk}
+
+```python
+stochastic_rk(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    dW=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Derivative-free Runge-Kutta of strong order 1 (Platen).
+
+Reproduces Milstein's correction using a supporting value instead of
+`b'`, which makes it the practical choice when the derivative of the
+diffusion is unavailable.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `srk_strong_1_5` {#api-srk_strong_1_5}
+
+```python
+srk_strong_1_5(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Strong order 1.5 Taylor scheme for additive noise.
+
+Restricted to `b` independent of `x`.  With additive noise the only
+extra Ito integral needed is `I_{1,0}`, which is jointly Gaussian with
+`dW` and can be sampled exactly -- the double integrals that block the
+general case never appear.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `tamed_euler` {#api-tamed_euler}
+
+```python
+tamed_euler(
+    a,
+    b,
+    t_span,
+    x0,
+    n: int = 1000,
+    rng=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Tamed Euler-Maruyama for super-linearly growing drift.
+
+Plain Euler-Maruyama *diverges in the strong sense* when the drift grows
+faster than linearly (Hutzenthaler-Jentzen-Kloeden): the moments blow up
+however small the step.  Scaling the drift by `1/(1 + dt|a|)` restores
+convergence while leaving the small-step limit unchanged.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `geometric_brownian_motion` {#api-geometric_brownian_motion}
+
+```python
+geometric_brownian_motion(
+    x0,
+    mu: float,
+    sigma: float,
+    t_span,
+    n: int = 1000,
+    rng=None,
+    exact: bool = True,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Geometric Brownian motion `dX = mu X dt + sigma X dW`.
+
+`exact=True` uses the closed form `X0 exp((mu - sigma^2/2)t + sigma W)`,
+which is exact at every grid point -- there is no discretization error at
+all, only the sampling of `W`.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `ornstein_uhlenbeck` {#api-ornstein_uhlenbeck}
+
+```python
+ornstein_uhlenbeck(
+    x0,
+    theta: float,
+    mu: float,
+    sigma: float,
+    t_span,
+    n: int = 1000,
+    rng=None,
+    exact: bool = True,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Ornstein-Uhlenbeck `dX = theta (mu - X) dt + sigma dW`.
+
+`exact=True` samples the transition density directly: the process is
+Gaussian, so each step is drawn from its exact conditional law and the
+result carries no discretization error whatever the step size.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `cox_ingersoll_ross` {#api-cox_ingersoll_ross}
+
+```python
+cox_ingersoll_ross(
+    x0,
+    theta: float,
+    mu: float,
+    sigma: float,
+    t_span,
+    n: int = 1000,
+    rng=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+CIR process `dX = theta (mu - X) dt + sigma sqrt(X) dW`.
+
+The square root makes naive Euler steps go negative, at which point the
+diffusion is undefined; the full-truncation fix evaluates the coefficients
+at `max(X, 0)` and is the standard remedy.  `2 theta mu >= sigma^2`
+(the Feller condition) keeps the exact process strictly positive.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    linear interpolation between simulated grid states.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `gillespie_ssa` {#api-gillespie_ssa}
+
+```python
+gillespie_ssa(
+    propensities,
+    stoichiometry,
+    x0,
+    t_span,
+    rng=None,
+    max_events: int = 1000000,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Gillespie's stochastic simulation algorithm for reaction networks.
+
+`propensities(x, t)` returns the reaction rates and `stoichiometry` is
+the `(n_reactions, n_species)` change matrix.  This is an *exact*
+simulation of the chemical master equation, not a discretization: the
+waiting time is drawn from its true exponential law and the reaction from
+its true categorical law, so no step-size error exists.  The cost is one
+step per individual reaction event.
+
+Returns `(times, states)` with one row per event.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    right-continuous step sampling.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `tau_leaping` {#api-tau_leaping}
+
+```python
+tau_leaping(
+    propensities,
+    stoichiometry,
+    x0,
+    t_span,
+    tau: float = 0.01,
+    rng=None,
+    *,
+    save_at=None,
+    save_every=1,
+    final_only=False,
+    callback=None,
+)
+```
+
+Explicit tau-leaping: fire Poisson-many reactions per fixed step.
+
+Trades exactness for speed by holding the propensities fixed over `tau`
+and drawing each reaction count from a Poisson law.  Species counts are
+clipped at zero, since a leap can otherwise overshoot into negative
+populations -- the well-known failure mode of the naive scheme.
+
+    Output controls: final_only retains one state; save_every retains every
+    kth state and the endpoint; save_at requests selected times using
+    right-continuous step sampling.
+    callback(t, state_copy) receives accepted states, including the initial
+    state; return True to stop. Controlled output streams random draws
+    without retaining the full driving-noise array.
+
+### `poisson_process` {#api-poisson_process}
+
+```python
+poisson_process(rate: float, t_span, rng=None, max_events: int = 1000000)
+```
+
+Event times of a homogeneous Poisson process, by exponential gaps.
+
+### `strong_error` {#api-strong_error}
+
+```python
+strong_error(
+    solver,
+    exact,
+    t_span,
+    x0,
+    n: int = 500,
+    paths: int = 200,
+    rng=None,
+    **kwargs,
+)
+```
+
+Mean pathwise error `E|X_N - X(T)|` at the final time.
+
+`exact(t, W_T)` must return the true endpoint for the *same* Brownian
+path, which is what makes this a strong (pathwise) measure rather than a
+weak one.
+
+### `weak_error` {#api-weak_error}
+
+```python
+weak_error(
+    solver,
+    g,
+    exact_mean: float,
+    t_span,
+    x0,
+    n: int = 500,
+    paths: int = 2000,
+    rng=None,
+    **kwargs,
+)
+```
+
+Error in an expectation `|E g(X_N) - E g(X(T))|`.
+
+Weak error is typically an order better than strong error, and is the
+relevant measure whenever only averages are wanted.
 
 ## `stats`
 
@@ -123,27 +2219,227 @@ Schemes for the Ito SDE ``dX = a(X, t) dt + b(X, t) dW`` together with the drivi
 
 Descriptive statistics, regression and hypothesis testing.
 
-| Name | Signature | Summary |
+| Name | Kind | Purpose |
 | --- | --- | --- |
-| `describe` | `(x)` | Summary statistics of a sample. |
-| `mean` | `(x)` | Arithmetic mean. |
-| `variance` | `(x, ddof: int = 1)` | Sample variance (``ddof=1`` by default, the unbiased estimator). |
-| `skewness` | `(x, bias: bool = False)` | Sample skewness; ``bias=False`` applies the usual small-sample correction. |
-| `kurtosis` | `(x, excess: bool = True, bias: bool = False)` | Sample kurtosis; ``excess=True`` subtracts 3 (normal reference). |
-| `median` | `(x)` | Median by sorting. |
-| `quantile` | `(x, q, method: str = 'linear')` | Empirical quantile with linear interpolation between order statistics. |
-| `mode_estimate` | `(x, bins: int = 50)` | Mode estimated from the peak of a histogram. |
-| `covariance_matrix` | `(X, ddof: int = 1)` | Covariance matrix of observations stored as rows. |
-| `correlation_matrix` | `(X)` | Pearson correlation matrix. |
-| `linear_regression` | `(X, y, intercept: bool = True)` | Ordinary least squares with the usual inferential summary. |
-| `polynomial_regression` | `(x, y, degree: int = 2)` | Least squares polynomial fit using a Vandermonde design matrix. |
-| `logistic_regression` | `(X, y, tol: float = 1e-10, max_iter: int = 100, intercept: bool = True, ridge: float = 1e-08)` | Logistic regression by iteratively reweighted least squares. |
-| `pca` | `(X, n_components=None, center: bool = True)` | Principal component analysis via the SVD of the centred data. |
-| `welford_mean_var` | `(x)` | Welford's online algorithm for the mean and variance. |
-| `histogram_density` | `(x, bins: int = 30, range_=None)` | Histogram density estimate: returns ``(centres, density)``. |
-| `kernel_density` | `(x, points=None, bandwidth=None, kernel: str = 'gaussian')` | Kernel density estimate. |
-| `t_test` | `(a, b=None, mu0: float = 0.0, paired: bool = False, equal_var: bool = True)` | One-sample, paired or two-sample t test. |
-| `chi_square_test` | `(observed, expected=None)` | Chi-square goodness of fit test. |
-| `ks_test` | `(a, cdf=None, b=None)` | Kolmogorov-Smirnov test, one sample against a CDF or two samples. |
-| `anova_one_way` | `(*groups)` | One-way analysis of variance across several groups. |
-| `confidence_interval` | `(x, confidence: float = 0.95, method: str = 't')` | Confidence interval for the mean (``'t'``, ``'normal'`` or ``'bootstrap'``). |
+| [`describe`](#api-describe) | function | Summary statistics of a sample. |
+| [`mean`](#api-mean) | function | Arithmetic mean. |
+| [`variance`](#api-variance) | function | Sample variance (``ddof=1`` by default, the unbiased estimator). |
+| [`skewness`](#api-skewness) | function | Sample skewness; ``bias=False`` applies the usual small-sample correction. |
+| [`kurtosis`](#api-kurtosis) | function | Sample kurtosis; ``excess=True`` subtracts 3 (normal reference). |
+| [`median`](#api-median) | function | Median by sorting. |
+| [`quantile`](#api-quantile) | function | Empirical quantile with linear interpolation between order statistics. |
+| [`mode_estimate`](#api-mode_estimate) | function | Mode estimated from the peak of a histogram. |
+| [`covariance_matrix`](#api-covariance_matrix) | function | Covariance matrix of observations stored as rows. |
+| [`correlation_matrix`](#api-correlation_matrix) | function | Pearson correlation matrix. |
+| [`linear_regression`](#api-linear_regression) | function | Ordinary least squares with the usual inferential summary. |
+| [`polynomial_regression`](#api-polynomial_regression) | function | Least squares polynomial fit using a Vandermonde design matrix. |
+| [`logistic_regression`](#api-logistic_regression) | function | Logistic regression by iteratively reweighted least squares. |
+| [`pca`](#api-pca) | function | Principal component analysis via the SVD of the centred data. |
+| [`welford_mean_var`](#api-welford_mean_var) | function | Welford's online algorithm for the mean and variance. |
+| [`histogram_density`](#api-histogram_density) | function | Histogram density estimate: returns ``(centres, density)``. |
+| [`kernel_density`](#api-kernel_density) | function | Kernel density estimate. |
+| [`t_test`](#api-t_test) | function | One-sample, paired or two-sample t test. |
+| [`chi_square_test`](#api-chi_square_test) | function | Chi-square goodness of fit test. |
+| [`ks_test`](#api-ks_test) | function | Kolmogorov-Smirnov test, one sample against a CDF or two samples. |
+| [`anova_one_way`](#api-anova_one_way) | function | One-way analysis of variance across several groups. |
+| [`confidence_interval`](#api-confidence_interval) | function | Confidence interval for the mean (``'t'``, ``'normal'`` or ``'bootstrap'``). |
+
+### `describe` {#api-describe}
+
+```python
+describe(x)
+```
+
+Summary statistics of a sample.
+
+### `mean` {#api-mean}
+
+```python
+mean(x)
+```
+
+Arithmetic mean.
+
+### `variance` {#api-variance}
+
+```python
+variance(x, ddof: int = 1)
+```
+
+Sample variance (`ddof=1` by default, the unbiased estimator).
+
+### `skewness` {#api-skewness}
+
+```python
+skewness(x, bias: bool = False)
+```
+
+Sample skewness; `bias=False` applies the usual small-sample correction.
+
+### `kurtosis` {#api-kurtosis}
+
+```python
+kurtosis(x, excess: bool = True, bias: bool = False)
+```
+
+Sample kurtosis; `excess=True` subtracts 3 (normal reference).
+
+### `median` {#api-median}
+
+```python
+median(x)
+```
+
+Median by sorting.
+
+### `quantile` {#api-quantile}
+
+```python
+quantile(x, q, method: str = 'linear')
+```
+
+Empirical quantile with linear interpolation between order statistics.
+
+### `mode_estimate` {#api-mode_estimate}
+
+```python
+mode_estimate(x, bins: int = 50)
+```
+
+Mode estimated from the peak of a histogram.
+
+### `covariance_matrix` {#api-covariance_matrix}
+
+```python
+covariance_matrix(X, ddof: int = 1)
+```
+
+Covariance matrix of observations stored as rows.
+
+### `correlation_matrix` {#api-correlation_matrix}
+
+```python
+correlation_matrix(X)
+```
+
+Pearson correlation matrix.
+
+### `linear_regression` {#api-linear_regression}
+
+```python
+linear_regression(X, y, intercept: bool = True)
+```
+
+Ordinary least squares with the usual inferential summary.
+
+Returns coefficients, standard errors, t statistics, `R^2` and the
+residuals.
+
+### `polynomial_regression` {#api-polynomial_regression}
+
+```python
+polynomial_regression(x, y, degree: int = 2)
+```
+
+Least squares polynomial fit using a Vandermonde design matrix.
+
+### `logistic_regression` {#api-logistic_regression}
+
+```python
+logistic_regression(
+    X,
+    y,
+    tol: float = 1e-10,
+    max_iter: int = 100,
+    intercept: bool = True,
+    ridge: float = 1e-08,
+)
+```
+
+Logistic regression by iteratively reweighted least squares.
+
+IRLS is Newton's method on the log-likelihood; the small ridge term keeps
+the Hessian invertible under perfect separation.
+
+### `pca` {#api-pca}
+
+```python
+pca(X, n_components=None, center: bool = True)
+```
+
+Principal component analysis via the SVD of the centred data.
+
+### `welford_mean_var` {#api-welford_mean_var}
+
+```python
+welford_mean_var(x)
+```
+
+Welford's online algorithm for the mean and variance.
+
+One pass, and numerically stable where the naive
+`E[x^2] - E[x]^2` formula catastrophically cancels.
+
+### `histogram_density` {#api-histogram_density}
+
+```python
+histogram_density(x, bins: int = 30, range_=None)
+```
+
+Histogram density estimate: returns `(centres, density)`.
+
+### `kernel_density` {#api-kernel_density}
+
+```python
+kernel_density(x, points=None, bandwidth=None, kernel: str = 'gaussian')
+```
+
+Kernel density estimate.
+
+The default bandwidth is Silverman's rule of thumb, using a unit scale
+for a singleton or constant sample. Pairwise evaluations use bounded
+workspace, even when both the sample and evaluation grid are large.
+Samples and points must be finite and bandwidth must be positive.
+
+### `t_test` {#api-t_test}
+
+```python
+t_test(a, b=None, mu0: float = 0.0, paired: bool = False, equal_var: bool = True)
+```
+
+One-sample, paired or two-sample t test.
+
+With `equal_var=False` this is Welch's test, which does not assume equal
+variances.
+
+### `chi_square_test` {#api-chi_square_test}
+
+```python
+chi_square_test(observed, expected=None)
+```
+
+Chi-square goodness of fit test.
+
+### `ks_test` {#api-ks_test}
+
+```python
+ks_test(a, cdf=None, b=None)
+```
+
+Kolmogorov-Smirnov test, one sample against a CDF or two samples.
+
+### `anova_one_way` {#api-anova_one_way}
+
+```python
+anova_one_way(*groups)
+```
+
+One-way analysis of variance across several groups.
+
+### `confidence_interval` {#api-confidence_interval}
+
+```python
+confidence_interval(x, confidence: float = 0.95, method: str = 't')
+```
+
+Confidence interval for the mean (`'t'`, `'normal'` or `'bootstrap'`).

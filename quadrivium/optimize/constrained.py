@@ -7,6 +7,8 @@ KKT conditions directly (SQP).
 
 from __future__ import annotations
 
+from ._history import History, monitor
+
 from .. import numeric as np
 
 from ..core.types import OptimizeResult
@@ -93,7 +95,7 @@ def penalty_method(f, x0, eq=None, ineq=None, mu0: float = 1.0, growth: float = 
     inner = inner or (lambda g, x: bfgs(g, x, tol=1e-10, max_iter=2000))
     x = as_vector(x0).copy()
     mu = mu0
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, outer_iter + 1):
         def P(z, mu=mu):
             val = float(f(z))
@@ -107,7 +109,7 @@ def penalty_method(f, x0, eq=None, ineq=None, mu0: float = 1.0, growth: float = 
 
         res = inner(P, x)
         x = as_vector(res.x)
-        history.append(x.copy())
+        history.append(x)
         viol = 0.0
         if eq is not None:
             viol = max(viol, float(np.max(np.abs(as_vector(eq(x))))))
@@ -156,7 +158,7 @@ def barrier_method(f, x0, ineq, mu0: float = 1.0, shrink: float = 0.2,
         raise ValueError("barrier method needs a strictly feasible starting point "
                          f"(max constraint value {np.max(g0):.3e} >= 0)")
     mu = mu0
-    history = [x.copy()]
+    history = History([x])
     m = g0.size
     for k in range(1, outer_iter + 1):
         def B(z, mu=mu):
@@ -166,7 +168,7 @@ def barrier_method(f, x0, ineq, mu0: float = 1.0, shrink: float = 0.2,
         x_new = as_vector(res.x)
         if np.all(as_vector(ineq(x_new)) < 0):
             x = x_new
-        history.append(x.copy())
+        history.append(x)
         if mu * m < tol:
             return OptimizeResult(x, float(f(x)), None, None, k, True, 0, 0,
                                   "barrier", history,
@@ -193,7 +195,7 @@ def augmented_lagrangian(f, x0, eq=None, ineq=None, mu0: float = 10.0,
     lam = np.zeros(n_eq)
     mult = np.zeros(n_in)
     mu = mu0
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, outer_iter + 1):
         def L(z, lam=lam, mult=mult, mu=mu):
             val = float(f(z))
@@ -208,7 +210,7 @@ def augmented_lagrangian(f, x0, eq=None, ineq=None, mu0: float = 10.0,
 
         res = inner(L, x)
         x = as_vector(res.x)
-        history.append(x.copy())
+        history.append(x)
         viol = 0.0
         if eq is not None:
             h = as_vector(eq(x))
@@ -244,7 +246,7 @@ def projected_gradient(f, x0, projection, grad_f=None, lr: float = 0.01,
     g = (lambda x: as_vector(grad_f(x))) if grad_f is not None else \
         (lambda x: numerical_gradient(fc, x))
     x = as_vector(projection(as_vector(x0)))
-    history = [x.copy()]
+    history = History([x])
     for k in range(1, max_iter + 1):
         gk = g(x)
         step = lr
@@ -259,7 +261,7 @@ def projected_gradient(f, x0, projection, grad_f=None, lr: float = 0.01,
         x_new = as_vector(projection(x - step * gk))
         crit = np.linalg.norm(x_new - x) / max(step, 1e-16)
         x = x_new
-        history.append(x.copy())
+        history.append(x)
         if crit < tol:
             return OptimizeResult(x, float(fc(x)), gk, None, k, True, fc.calls, k,
                                   "projected_gradient", history, "converged")
@@ -403,7 +405,7 @@ def sqp(f, x0, eq=None, ineq=None, grad_f=None, tol: float = 1e-10,
     x = as_vector(x0).copy()
     n = x.size
     B = np.eye(n)
-    history = [x.copy()]
+    history = History([x])
     lam = None
     for k in range(1, max_iter + 1):
         gk = g(x)
@@ -453,6 +455,11 @@ def sqp(f, x0, eq=None, ineq=None, grad_f=None, tol: float = 1e-10,
         if sy > 1e-12:
             B = B - np.outer(Bs, Bs) / sBs + np.outer(y, y) / sy
         x = x_new
-        history.append(x.copy())
+        history.append(x)
     return OptimizeResult(x, float(fc(x)), g(x), B, max_iter, False, fc.calls,
                           max_iter, "sqp", history, "maximum iterations reached")
+
+
+# Apply a common context-local output policy to public iterative entry points.
+for _name in ['penalty_method', 'barrier_method', 'augmented_lagrangian', 'projected_gradient', 'sqp']:
+    globals()[_name] = monitor(globals()[_name])

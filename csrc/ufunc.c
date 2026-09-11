@@ -263,32 +263,86 @@ BIN_LOOP(lor_i, int64_t, qbool, x || y)
 BIN_LOOP(lor_d, double, qbool, x != 0.0 || y != 0.0)
 
 /* Loop table: [op][dtype], NULL where the combination is invalid. */
+/* Single-precision storage uses one double-width scalar register per operand.
+ * No widened temporary arrays are needed; existing scalar formulas are reused. */
+#define SMALL_BIN(NAME,FN,DT,ODT,WODT) \
+static void NAME(char *o,qintp os,const char *a,qintp as,const char *b,qintp bs,qintp n) { \
+    for(qintp i=0;i<n;i++,o+=os,a+=as,b+=bs) { \
+        qcomplex av=qnp_read_number(a,DT),bv=qnp_read_number(b,DT),r=qc(0,0); \
+        FN((char *)&r,16,(char *)&av,16,(char *)&bv,16,1); \
+        qnp_write_number(o,ODT,qnp_read_number((char *)&r,WODT)); \
+    } \
+}
+#define SMALL_UN(NAME,FN,DT,ODT,WODT) \
+static void NAME(char *o,qintp os,const char *a,qintp as,qintp n) { \
+    for(qintp i=0;i<n;i++,o+=os,a+=as) { \
+        qcomplex av=qnp_read_number(a,DT),r=qc(0,0); \
+        FN((char *)&r,16,(char *)&av,16,1); \
+        qnp_write_number(o,ODT,qnp_read_number((char *)&r,WODT)); \
+    } \
+}
+
+
+SMALL_BIN(smallbin_QOP_ADD_4, add_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_ADD_5, add_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_SUB_4, sub_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_SUB_5, sub_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_MUL_4, mul_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_MUL_5, mul_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_TRUEDIV_4, div_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_TRUEDIV_5, div_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_FLOORDIV_4, fdiv_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_MOD_4, mod_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_POW_4, pow_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_POW_5, pow_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_MAXIMUM_4, max_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_MAXIMUM_5, max_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_MINIMUM_4, min_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_MINIMUM_5, min_c, 5, 5, 3)
+SMALL_BIN(smallbin_QOP_HYPOT_4, hypot_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_ARCTAN2_4, atan2_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_COPYSIGN_4, copysign_d, 4, 4, 2)
+SMALL_BIN(smallbin_QOP_EQ_4, eq_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_EQ_5, eq_c, 5, 0, 0)
+SMALL_BIN(smallbin_QOP_NE_4, ne_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_NE_5, ne_c, 5, 0, 0)
+SMALL_BIN(smallbin_QOP_LT_4, lt_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_LT_5, lt_c, 5, 0, 0)
+SMALL_BIN(smallbin_QOP_LE_4, le_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_LE_5, le_c, 5, 0, 0)
+SMALL_BIN(smallbin_QOP_GT_4, gt_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_GT_5, gt_c, 5, 0, 0)
+SMALL_BIN(smallbin_QOP_GE_4, ge_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_GE_5, ge_c, 5, 0, 0)
+SMALL_BIN(smallbin_QOP_LOGICAL_AND_4, land_d, 4, 0, 0)
+SMALL_BIN(smallbin_QOP_LOGICAL_OR_4, lor_d, 4, 0, 0)
+
 static qbinloop bin_table[QOP_NBINARY][QNP_NTYPES] = {
-    [QOP_ADD]      = {add_b, add_i, add_d, add_c},
-    [QOP_SUB]      = {NULL, sub_i, sub_d, sub_c},
-    [QOP_MUL]      = {mul_b, mul_i, mul_d, mul_c},
-    [QOP_TRUEDIV]  = {NULL, NULL, div_d, div_c},
-    [QOP_FLOORDIV] = {NULL, fdiv_i, fdiv_d, NULL},
-    [QOP_MOD]      = {NULL, mod_i, mod_d, NULL},
-    [QOP_POW]      = {NULL, pow_i, pow_d, pow_c},
-    [QOP_MAXIMUM]  = {max_b, max_i, max_d, max_c},
-    [QOP_MINIMUM]  = {min_b, min_i, min_d, min_c},
-    [QOP_HYPOT]    = {NULL, NULL, hypot_d, NULL},
-    [QOP_ARCTAN2]  = {NULL, NULL, atan2_d, NULL},
-    [QOP_COPYSIGN] = {NULL, NULL, copysign_d, NULL},
-    [QOP_EQ]       = {eq_b, eq_i, eq_d, eq_c},
-    [QOP_NE]       = {ne_b, ne_i, ne_d, ne_c},
-    [QOP_LT]       = {lt_b, lt_i, lt_d, lt_c},
-    [QOP_LE]       = {le_b, le_i, le_d, le_c},
-    [QOP_GT]       = {gt_b, gt_i, gt_d, gt_c},
-    [QOP_GE]       = {ge_b, ge_i, ge_d, ge_c},
-    [QOP_AND]      = {and_b, and_i, NULL, NULL},
-    [QOP_OR]       = {or_b, or_i, NULL, NULL},
-    [QOP_XOR]      = {xor_b, xor_i, NULL, NULL},
-    [QOP_LOGICAL_AND] = {land_b, land_i, land_d, NULL},
-    [QOP_LOGICAL_OR]  = {lor_b, lor_i, lor_d, NULL},
-    [QOP_LSHIFT]      = {NULL, lshift_i, NULL, NULL},
-    [QOP_RSHIFT]      = {NULL, rshift_i, NULL, NULL},
+    [QOP_ADD]      = {add_b, add_i, add_d, add_c, smallbin_QOP_ADD_4, smallbin_QOP_ADD_5},
+    [QOP_SUB]      = {NULL, sub_i, sub_d, sub_c, smallbin_QOP_SUB_4, smallbin_QOP_SUB_5},
+    [QOP_MUL]      = {mul_b, mul_i, mul_d, mul_c, smallbin_QOP_MUL_4, smallbin_QOP_MUL_5},
+    [QOP_TRUEDIV]  = {NULL, NULL, div_d, div_c, smallbin_QOP_TRUEDIV_4, smallbin_QOP_TRUEDIV_5},
+    [QOP_FLOORDIV] = {NULL, fdiv_i, fdiv_d, NULL, smallbin_QOP_FLOORDIV_4, NULL},
+    [QOP_MOD]      = {NULL, mod_i, mod_d, NULL, smallbin_QOP_MOD_4, NULL},
+    [QOP_POW]      = {NULL, pow_i, pow_d, pow_c, smallbin_QOP_POW_4, smallbin_QOP_POW_5},
+    [QOP_MAXIMUM]  = {max_b, max_i, max_d, max_c, smallbin_QOP_MAXIMUM_4, smallbin_QOP_MAXIMUM_5},
+    [QOP_MINIMUM]  = {min_b, min_i, min_d, min_c, smallbin_QOP_MINIMUM_4, smallbin_QOP_MINIMUM_5},
+    [QOP_HYPOT]    = {NULL, NULL, hypot_d, NULL, smallbin_QOP_HYPOT_4, NULL},
+    [QOP_ARCTAN2]  = {NULL, NULL, atan2_d, NULL, smallbin_QOP_ARCTAN2_4, NULL},
+    [QOP_COPYSIGN] = {NULL, NULL, copysign_d, NULL, smallbin_QOP_COPYSIGN_4, NULL},
+    [QOP_EQ]       = {eq_b, eq_i, eq_d, eq_c, smallbin_QOP_EQ_4, smallbin_QOP_EQ_5},
+    [QOP_NE]       = {ne_b, ne_i, ne_d, ne_c, smallbin_QOP_NE_4, smallbin_QOP_NE_5},
+    [QOP_LT]       = {lt_b, lt_i, lt_d, lt_c, smallbin_QOP_LT_4, smallbin_QOP_LT_5},
+    [QOP_LE]       = {le_b, le_i, le_d, le_c, smallbin_QOP_LE_4, smallbin_QOP_LE_5},
+    [QOP_GT]       = {gt_b, gt_i, gt_d, gt_c, smallbin_QOP_GT_4, smallbin_QOP_GT_5},
+    [QOP_GE]       = {ge_b, ge_i, ge_d, ge_c, smallbin_QOP_GE_4, smallbin_QOP_GE_5},
+    [QOP_AND]      = {and_b, and_i, NULL, NULL, NULL, NULL},
+    [QOP_OR]       = {or_b, or_i, NULL, NULL, NULL, NULL},
+    [QOP_XOR]      = {xor_b, xor_i, NULL, NULL, NULL, NULL},
+    [QOP_LOGICAL_AND] = {land_b, land_i, land_d, NULL, smallbin_QOP_LOGICAL_AND_4, NULL},
+    [QOP_LOGICAL_OR]  = {lor_b, lor_i, lor_d, NULL, smallbin_QOP_LOGICAL_OR_4, NULL},
+    [QOP_LSHIFT]      = {NULL, lshift_i, NULL, NULL, NULL, NULL},
+    [QOP_RSHIFT]      = {NULL, rshift_i, NULL, NULL, NULL, NULL},
 };
 
 static const char *bin_names[QOP_NBINARY] = {
@@ -386,46 +440,112 @@ UN_LOOP(log1p_c, qcomplex, qcomplex, qc_log1p(x))
 UN_LOOP(expm1_c, qcomplex, qcomplex, qc_expm1(x))
 UN_LOOP(log10_c, qcomplex, qcomplex, qc_div(qc_log(x), qc(M_LN10, 0.0)))
 
+SMALL_UN(smallun_QOP_NEG_4, neg_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_NEG_5, neg_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ABS_4, abs_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ABS_5, abs_c, 5, 4, 2)
+SMALL_UN(smallun_QOP_SQRT_4, sqrt_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_SQRT_5, sqrt_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_EXP_4, exp_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_EXP_5, exp_strided_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_LOG_4, log_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_LOG_5, log_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_LOG2_4, log2_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_LOG2_5, log2_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_LOG10_4, log10_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_LOG10_5, log10_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_LOG1P_4, log1p_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_LOG1P_5, log1p_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_EXPM1_4, expm1_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_EXPM1_5, expm1_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_SIN_4, sin_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_SIN_5, sin_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_COS_4, cos_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_COS_5, cos_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_TAN_4, tan_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_TAN_5, tan_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ARCSIN_4, asin_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ARCSIN_5, asin_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ARCCOS_4, acos_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ARCCOS_5, acos_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ARCTAN_4, atan_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ARCTAN_5, atan_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_SINH_4, sinh_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_SINH_5, sinh_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_COSH_4, cosh_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_COSH_5, cosh_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_TANH_4, tanh_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_TANH_5, tanh_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ARCSINH_4, asinh_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ARCSINH_5, asinh_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ARCCOSH_4, acosh_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ARCCOSH_5, acosh_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_ARCTANH_4, atanh_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_ARCTANH_5, atanh_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_SIGN_4, sign_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_SIGN_5, sign_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_FLOOR_4, floor_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_CEIL_4, ceil_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_TRUNC_4, trunc_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_RINT_4, rint_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_SQUARE_4, sq_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_SQUARE_5, sq_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_RECIPROCAL_4, recip_d, 4, 4, 2)
+SMALL_UN(smallun_QOP_RECIPROCAL_5, recip_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_CONJ_5, conj_c, 5, 5, 3)
+SMALL_UN(smallun_QOP_REAL_5, real_c, 5, 4, 2)
+SMALL_UN(smallun_QOP_IMAG_5, imag_c, 5, 4, 2)
+SMALL_UN(smallun_QOP_ANGLE_5, angle_c, 5, 4, 2)
+SMALL_UN(smallun_QOP_ISFINITE_4, isfin_d, 4, 0, 0)
+SMALL_UN(smallun_QOP_ISFINITE_5, isfin_c, 5, 0, 0)
+SMALL_UN(smallun_QOP_ISNAN_4, isnan_d, 4, 0, 0)
+SMALL_UN(smallun_QOP_ISNAN_5, isnan_c, 5, 0, 0)
+SMALL_UN(smallun_QOP_ISINF_4, isinf_d, 4, 0, 0)
+SMALL_UN(smallun_QOP_ISINF_5, isinf_c, 5, 0, 0)
+SMALL_UN(smallun_QOP_NOT_4, not_d, 4, 0, 0)
+SMALL_UN(smallun_QOP_NOT_5, not_c, 5, 0, 0)
+SMALL_UN(smallun_QOP_SIGNBIT_4, signbit_d, 4, 0, 0)
+
 static qunloop un_table[QOP_NUNARY][QNP_NTYPES] = {
-    [QOP_NEG]   = {NULL, neg_i, neg_d, neg_c},
-    [QOP_ABS]   = {abs_b, abs_i, abs_d, abs_c},
-    [QOP_SQRT]  = {NULL, NULL, sqrt_d, sqrt_c},
-    [QOP_EXP]   = {NULL, NULL, exp_d, exp_strided_c},
-    [QOP_LOG]   = {NULL, NULL, log_d, log_c},
-    [QOP_LOG2]  = {NULL, NULL, log2_d, log2_c},
-    [QOP_LOG10] = {NULL, NULL, log10_d, log10_c},
-    [QOP_LOG1P] = {NULL, NULL, log1p_d, log1p_c},
-    [QOP_EXPM1] = {NULL, NULL, expm1_d, expm1_c},
-    [QOP_SIN]   = {NULL, NULL, sin_d, sin_c},
-    [QOP_COS]   = {NULL, NULL, cos_d, cos_c},
-    [QOP_TAN]   = {NULL, NULL, tan_d, tan_c},
-    [QOP_ARCSIN] = {NULL, NULL, asin_d, asin_c},
-    [QOP_ARCCOS] = {NULL, NULL, acos_d, acos_c},
-    [QOP_ARCTAN] = {NULL, NULL, atan_d, atan_c},
-    [QOP_SINH]  = {NULL, NULL, sinh_d, sinh_c},
-    [QOP_COSH]  = {NULL, NULL, cosh_d, cosh_c},
-    [QOP_TANH]  = {NULL, NULL, tanh_d, tanh_c},
-    [QOP_ARCSINH] = {NULL, NULL, asinh_d, asinh_c},
-    [QOP_ARCCOSH] = {NULL, NULL, acosh_d, acosh_c},
-    [QOP_ARCTANH] = {NULL, NULL, atanh_d, atanh_c},
-    [QOP_SIGN]  = {NULL, sign_i, sign_d, sign_c},
-    [QOP_FLOOR] = {NULL, NULL, floor_d, NULL},
-    [QOP_CEIL]  = {NULL, NULL, ceil_d, NULL},
-    [QOP_TRUNC] = {NULL, NULL, trunc_d, NULL},
-    [QOP_RINT]  = {NULL, NULL, rint_d, NULL},
-    [QOP_SQUARE] = {NULL, sq_i, sq_d, sq_c},
-    [QOP_RECIPROCAL] = {NULL, NULL, recip_d, recip_c},
-    [QOP_CONJ]  = {NULL, NULL, NULL, conj_c},
-    [QOP_REAL]  = {NULL, NULL, NULL, real_c},
-    [QOP_IMAG]  = {NULL, NULL, NULL, imag_c},
-    [QOP_ANGLE] = {NULL, NULL, NULL, angle_c},
-    [QOP_ISFINITE] = {NULL, isfin_i, isfin_d, isfin_c},
-    [QOP_ISNAN] = {NULL, isnan_i, isnan_d, isnan_c},
-    [QOP_ISINF] = {NULL, isinf_i, isinf_d, isinf_c},
-    [QOP_NOT]   = {not_b, not_i, not_d, not_c},
-    [QOP_INVERT] = {inv_b, inv_i, NULL, NULL},
-    [QOP_SIGNBIT] = {NULL, NULL, signbit_d, NULL},
-    [QOP_POS]   = {NULL, NULL, NULL, NULL},
+    [QOP_NEG]   = {NULL, neg_i, neg_d, neg_c, smallun_QOP_NEG_4, smallun_QOP_NEG_5},
+    [QOP_ABS]   = {abs_b, abs_i, abs_d, abs_c, smallun_QOP_ABS_4, smallun_QOP_ABS_5},
+    [QOP_SQRT]  = {NULL, NULL, sqrt_d, sqrt_c, smallun_QOP_SQRT_4, smallun_QOP_SQRT_5},
+    [QOP_EXP]   = {NULL, NULL, exp_d, exp_strided_c, smallun_QOP_EXP_4, smallun_QOP_EXP_5},
+    [QOP_LOG]   = {NULL, NULL, log_d, log_c, smallun_QOP_LOG_4, smallun_QOP_LOG_5},
+    [QOP_LOG2]  = {NULL, NULL, log2_d, log2_c, smallun_QOP_LOG2_4, smallun_QOP_LOG2_5},
+    [QOP_LOG10] = {NULL, NULL, log10_d, log10_c, smallun_QOP_LOG10_4, smallun_QOP_LOG10_5},
+    [QOP_LOG1P] = {NULL, NULL, log1p_d, log1p_c, smallun_QOP_LOG1P_4, smallun_QOP_LOG1P_5},
+    [QOP_EXPM1] = {NULL, NULL, expm1_d, expm1_c, smallun_QOP_EXPM1_4, smallun_QOP_EXPM1_5},
+    [QOP_SIN]   = {NULL, NULL, sin_d, sin_c, smallun_QOP_SIN_4, smallun_QOP_SIN_5},
+    [QOP_COS]   = {NULL, NULL, cos_d, cos_c, smallun_QOP_COS_4, smallun_QOP_COS_5},
+    [QOP_TAN]   = {NULL, NULL, tan_d, tan_c, smallun_QOP_TAN_4, smallun_QOP_TAN_5},
+    [QOP_ARCSIN] = {NULL, NULL, asin_d, asin_c, smallun_QOP_ARCSIN_4, smallun_QOP_ARCSIN_5},
+    [QOP_ARCCOS] = {NULL, NULL, acos_d, acos_c, smallun_QOP_ARCCOS_4, smallun_QOP_ARCCOS_5},
+    [QOP_ARCTAN] = {NULL, NULL, atan_d, atan_c, smallun_QOP_ARCTAN_4, smallun_QOP_ARCTAN_5},
+    [QOP_SINH]  = {NULL, NULL, sinh_d, sinh_c, smallun_QOP_SINH_4, smallun_QOP_SINH_5},
+    [QOP_COSH]  = {NULL, NULL, cosh_d, cosh_c, smallun_QOP_COSH_4, smallun_QOP_COSH_5},
+    [QOP_TANH]  = {NULL, NULL, tanh_d, tanh_c, smallun_QOP_TANH_4, smallun_QOP_TANH_5},
+    [QOP_ARCSINH] = {NULL, NULL, asinh_d, asinh_c, smallun_QOP_ARCSINH_4, smallun_QOP_ARCSINH_5},
+    [QOP_ARCCOSH] = {NULL, NULL, acosh_d, acosh_c, smallun_QOP_ARCCOSH_4, smallun_QOP_ARCCOSH_5},
+    [QOP_ARCTANH] = {NULL, NULL, atanh_d, atanh_c, smallun_QOP_ARCTANH_4, smallun_QOP_ARCTANH_5},
+    [QOP_SIGN]  = {NULL, sign_i, sign_d, sign_c, smallun_QOP_SIGN_4, smallun_QOP_SIGN_5},
+    [QOP_FLOOR] = {NULL, NULL, floor_d, NULL, smallun_QOP_FLOOR_4, NULL},
+    [QOP_CEIL]  = {NULL, NULL, ceil_d, NULL, smallun_QOP_CEIL_4, NULL},
+    [QOP_TRUNC] = {NULL, NULL, trunc_d, NULL, smallun_QOP_TRUNC_4, NULL},
+    [QOP_RINT]  = {NULL, NULL, rint_d, NULL, smallun_QOP_RINT_4, NULL},
+    [QOP_SQUARE] = {NULL, sq_i, sq_d, sq_c, smallun_QOP_SQUARE_4, smallun_QOP_SQUARE_5},
+    [QOP_RECIPROCAL] = {NULL, NULL, recip_d, recip_c, smallun_QOP_RECIPROCAL_4, smallun_QOP_RECIPROCAL_5},
+    [QOP_CONJ]  = {NULL, NULL, NULL, conj_c, NULL, smallun_QOP_CONJ_5},
+    [QOP_REAL]  = {NULL, NULL, NULL, real_c, NULL, smallun_QOP_REAL_5},
+    [QOP_IMAG]  = {NULL, NULL, NULL, imag_c, NULL, smallun_QOP_IMAG_5},
+    [QOP_ANGLE] = {NULL, NULL, NULL, angle_c, NULL, smallun_QOP_ANGLE_5},
+    [QOP_ISFINITE] = {NULL, isfin_i, isfin_d, isfin_c, smallun_QOP_ISFINITE_4, smallun_QOP_ISFINITE_5},
+    [QOP_ISNAN] = {NULL, isnan_i, isnan_d, isnan_c, smallun_QOP_ISNAN_4, smallun_QOP_ISNAN_5},
+    [QOP_ISINF] = {NULL, isinf_i, isinf_d, isinf_c, smallun_QOP_ISINF_4, smallun_QOP_ISINF_5},
+    [QOP_NOT]   = {not_b, not_i, not_d, not_c, smallun_QOP_NOT_4, smallun_QOP_NOT_5},
+    [QOP_INVERT] = {inv_b, inv_i, NULL, NULL, NULL, NULL},
+    [QOP_SIGNBIT] = {NULL, NULL, signbit_d, NULL, smallun_QOP_SIGNBIT_4, NULL},
+    [QOP_POS]   = {NULL, NULL, NULL, NULL, NULL, NULL},
 };
 
 static const char *un_names[QOP_NUNARY] = {
@@ -446,7 +566,7 @@ static int resolve_binary(int op, int dta, int dtb, int *in_dt, int *out_dt) {
     int common = qnp_promote(dta, dtb);
     switch (op) {
         case QOP_TRUEDIV:
-            *in_dt = (common <= QNP_FLOAT64) ? QNP_FLOAT64 : QNP_COMPLEX128;
+            *in_dt = (common <= QNP_INT64) ? QNP_FLOAT64 : common;
             *out_dt = *in_dt;
             return 0;
         case QOP_SUB: case QOP_FLOORDIV: case QOP_MOD: case QOP_POW:
@@ -454,9 +574,9 @@ static int resolve_binary(int op, int dta, int dtb, int *in_dt, int *out_dt) {
             *out_dt = *in_dt;
             return 0;
         case QOP_HYPOT: case QOP_ARCTAN2: case QOP_COPYSIGN:
-            if (common == QNP_COMPLEX128) { *in_dt = -1; return -1; }
-            *in_dt = QNP_FLOAT64;
-            *out_dt = QNP_FLOAT64;
+            if (qnp_is_complex(common)) { *in_dt = -1; return -1; }
+            *in_dt = common == QNP_FLOAT32 ? QNP_FLOAT32 : QNP_FLOAT64;
+            *out_dt = *in_dt;
             return 0;
         case QOP_AND: case QOP_OR: case QOP_XOR:
             if (common > QNP_INT64) { *in_dt = -1; return -1; }
@@ -490,7 +610,7 @@ static QArray *as_operand(PyObject *obj, int *weak) {
 }
 
 static int check_out(QArray *out, int natural, const char *name) {
-    if (out->dtype < natural) {
+    if ((qnp_is_complex(natural) && !qnp_is_complex(out->dtype)) || (natural > QNP_INT64 && out->dtype <= QNP_INT64) || (natural == QNP_INT64 && out->dtype == QNP_BOOL)) {
         PyErr_Format(PyExc_TypeError,
                      "Cannot cast ufunc '%s' output from dtype('%s') to dtype('%s') "
                      "with casting rule 'same_kind'",
@@ -548,11 +668,12 @@ static PyObject *finish(QArray *result, PyObject *out) {
 
 /* Recognises `x ** k` for the handful of exponents worth special-casing. */
 static int power_shortcut(QArray *b, double *k) {
-    if (qnp_size(b) != 1 || b->dtype == QNP_COMPLEX128) return 0;
+    if (qnp_size(b) != 1 || qnp_is_complex(b->dtype)) return 0;
     double v;
     switch (b->dtype) {
         case QNP_BOOL: v = *(qbool *)b->data; break;
         case QNP_INT64: v = (double)*(int64_t *)b->data; break;
+        case QNP_FLOAT32: v = *(float *)b->data; break;
         default: v = *(double *)b->data; break;
     }
     *k = v;
@@ -588,7 +709,13 @@ PyObject *qnp_binary_op(int op, PyObject *ao, PyObject *bo, PyObject *outo,
         }
     }
     int in_dt, out_dt;
-    if (resolve_binary(op, a->dtype, b->dtype, &in_dt, &out_dt) < 0 ||
+    int adt = a->dtype, bdt = b->dtype;
+    /* Python scalars are weak: do not widen explicitly compact arrays. */
+    if (weak_b && adt == QNP_FLOAT32 && bdt == QNP_COMPLEX128) bdt = QNP_COMPLEX64;
+    else if (weak_b && adt >= QNP_FLOAT32 && (bdt != QNP_COMPLEX128 || qnp_is_complex(adt))) bdt = adt;
+    if (weak_a && bdt == QNP_FLOAT32 && adt == QNP_COMPLEX128) adt = QNP_COMPLEX64;
+    else if (weak_a && bdt >= QNP_FLOAT32 && (adt != QNP_COMPLEX128 || qnp_is_complex(bdt))) adt = bdt;
+    if (resolve_binary(op, adt, bdt, &in_dt, &out_dt) < 0 ||
         bin_table[op][in_dt] == NULL) {
         PyErr_Format(PyExc_TypeError,
                      "ufunc '%s' not supported for the input types", bin_names[op]);
@@ -729,16 +856,16 @@ PyObject *qnp_unary_op(int op, PyObject *ao, PyObject *outo) {
             return finish(r, outo);
         }
         case QOP_CONJ: case QOP_REAL:
-            if (in_dt != QNP_COMPLEX128) {
+            if (!qnp_is_complex(in_dt)) {
                 QArray *r = qnp_astype(a, in_dt, 1);
                 Py_DECREF(a);
                 if (r == NULL) return NULL;
                 return finish(r, outo);
             }
-            out_dt = (op == QOP_CONJ) ? QNP_COMPLEX128 : QNP_FLOAT64;
+            out_dt = (op == QOP_CONJ) ? in_dt : in_dt == QNP_COMPLEX64 ? QNP_FLOAT32 : QNP_FLOAT64;
             break;
         case QOP_IMAG: case QOP_ANGLE:
-            if (in_dt != QNP_COMPLEX128) {
+            if (!qnp_is_complex(in_dt)) {
                 if (op == QOP_IMAG) {
                     QArray *r = qnp_new(a->nd, a->shape, in_dt);
                     Py_DECREF(a);
@@ -746,27 +873,20 @@ PyObject *qnp_unary_op(int op, PyObject *ao, PyObject *outo) {
                     memset(r->data, 0, (size_t)qnp_size(r) * (size_t)QNP_ITEMSIZE(in_dt));
                     return finish(r, outo);
                 }
-                in_dt = QNP_FLOAT64;   /* angle of a real number is 0 or pi */
-                QArray *f = qnp_astype(a, QNP_FLOAT64, 0);
-                Py_DECREF(a);
-                if (f == NULL) return NULL;
-                a = f;
-                qintp n = qnp_size(a);
-                QArray *ca = qnp_ascontiguous(a);
-                Py_DECREF(a);
-                if (ca == NULL) return NULL;
-                QArray *r = qnp_new(ca->nd, ca->shape, QNP_FLOAT64);
-                if (r == NULL) { Py_DECREF(ca); return NULL; }
-                const double *src = (const double *)ca->data;
-                double *dst = (double *)r->data;
-                for (qintp i = 0; i < n; i++) dst[i] = src[i] < 0 ? M_PI : 0.0;
-                Py_DECREF(ca);
-                return finish(r, outo);
+                int result_dt=in_dt==QNP_FLOAT32?QNP_FLOAT32:QNP_FLOAT64;
+                QArray *ca=qnp_ascontiguous(a);Py_DECREF(a);if(!ca)return NULL;
+                QArray *r=qnp_new(ca->nd,ca->shape,result_dt);
+                if(!r){Py_DECREF(ca);return NULL;}
+                for(qintp i=0;i<qnp_size(ca);i++) {
+                    double x=qnp_read_number(ca->data+i*QNP_ITEMSIZE(ca->dtype),ca->dtype).re;
+                    qnp_write_number(r->data+i*QNP_ITEMSIZE(result_dt),result_dt,qc(signbit(x)?M_PI:0,0));
+                }
+                Py_DECREF(ca);return finish(r,outo);
             }
-            out_dt = QNP_FLOAT64;
+            out_dt = in_dt == QNP_COMPLEX64 ? QNP_FLOAT32 : QNP_FLOAT64;
             break;
         case QOP_ABS:
-            out_dt = (in_dt == QNP_COMPLEX128) ? QNP_FLOAT64 : in_dt;
+            out_dt = qnp_is_complex(in_dt) ? (in_dt == QNP_COMPLEX64 ? QNP_FLOAT32 : QNP_FLOAT64) : in_dt;
             break;
         case QOP_ISFINITE: case QOP_ISNAN: case QOP_ISINF: case QOP_NOT:
         case QOP_SIGNBIT:

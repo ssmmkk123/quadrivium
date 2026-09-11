@@ -178,6 +178,36 @@ static int plan_build(RedPlan *p, QArray *a, PyObject *axis_obj, int keepdims) {
 
 static int reduce_run(int kind, int dtype, const char *p, qintp stride, qintp n,
                       char *out, int out_dtype) {
+    if (dtype >= QNP_FLOAT32) {
+        if (!n && (kind==QRED_MAX || kind==QRED_MIN || kind==QRED_ARGMAX || kind==QRED_ARGMIN)) {
+            PyErr_SetString(PyExc_ValueError,"zero-size array to reduction operation with no identity"); return -1;
+        }
+        qcomplex acc=qc(kind==QRED_PROD ? 1 : 0,0), correction=qc(0,0), best=qc(0,0);
+        qintp at=0; int64_t hits=0;
+        for(qintp i=0;i<n;i++) {
+            qcomplex z=qnp_read_number(p+i*stride,dtype);
+            hits += z.re!=0 || z.im!=0;
+            if(kind==QRED_SUM || kind==QRED_MEAN) {
+                if(isfinite(acc.re)&&isfinite(acc.im)&&isfinite(z.re)&&isfinite(z.im)) {
+                    qcomplex y=qc_sub(z,correction), t=qc_add(acc,y);
+                    correction=qc_sub(qc_sub(t,acc),y); acc=t;
+                } else {acc=qc_add(acc,z);correction=qc(0,0);}
+            } else if(kind==QRED_PROD) acc=dtype==QNP_FLOAT32?qc(acc.re*z.re,0):qc_mul(acc,z);
+            else {
+                int greater=z.re>best.re || (z.re==best.re && z.im>best.im);
+                int smaller=z.re<best.re || (z.re==best.re && z.im<best.im);
+                if(i==0 || (!(isnan(best.re)||isnan(best.im)) && (isnan(z.re)||isnan(z.im)|| ((kind==QRED_MAX||kind==QRED_ARGMAX)?greater:smaller)))) {best=z;at=i;}
+            }
+        }
+        if(kind==QRED_MEAN) acc=n?qc(acc.re/n,acc.im/n):qc(NAN,NAN);
+        if(kind==QRED_SUM || kind==QRED_MEAN || kind==QRED_PROD) qnp_write_number(out,out_dtype,acc);
+        else if(kind==QRED_ANY) *(qbool *)out=hits!=0;
+        else if(kind==QRED_ALL) *(qbool *)out=hits==n;
+        else if(kind==QRED_COUNT_NONZERO) *(int64_t *)out=hits;
+        else if(kind==QRED_ARGMAX || kind==QRED_ARGMIN) *(int64_t *)out=at;
+        else qnp_write_number(out,out_dtype,best);
+        return 0;
+    }
     qintp es = stride / QNP_ITEMSIZE(dtype);
     switch (kind) {
         case QRED_SUM: case QRED_MEAN: {
@@ -310,7 +340,7 @@ static int result_dtype(int kind, int dtype) {
         case QRED_SUM: case QRED_PROD:
             return dtype <= QNP_INT64 ? QNP_INT64 : dtype;
         case QRED_MEAN:
-            return dtype == QNP_COMPLEX128 ? QNP_COMPLEX128 : QNP_FLOAT64;
+            return dtype <= QNP_INT64 ? QNP_FLOAT64 : dtype;
         case QRED_ANY: case QRED_ALL: return QNP_BOOL;
         case QRED_ARGMAX: case QRED_ARGMIN: case QRED_COUNT_NONZERO: return QNP_INT64;
         default: return dtype;
@@ -372,7 +402,7 @@ PyObject *qnp_moment(PyObject *ao, PyObject *axis_obj, double ddof, int want_std
                      int keepdims) {
     QArray *a = qnp_from_any(ao, -1, 0);
     if (a == NULL) return NULL;
-    int complex_input = (a->dtype == QNP_COMPLEX128);
+    int complex_input = qnp_is_complex(a->dtype);
     PyObject *mean = qnp_reduce(QRED_MEAN, (PyObject *)a, axis_obj, NULL, 1);
     if (mean == NULL) { Py_DECREF(a); return NULL; }
     PyObject *dev = qnp_binary_op(QOP_SUB, (PyObject *)a, mean, NULL, NULL);
@@ -474,26 +504,44 @@ PyObject *qnp_accumulate(int kind, PyObject *ao, PyObject *axis_obj, PyObject *o
             q += idx[w] * out->strides[d];
             w++;
         }
-        if (odt == QNP_FLOAT64) {
-            double acc = kind == QRED_PROD ? 1.0 : 0.0;
-            for (qintp i = 0; i < len; i++) {
+        if (odt >= QNP_FLOAT32) {
+            if(len) {
+                qcomplex acc=qnp_read_number(p,odt);
+                qnp_write_number(q,odt,acc);
+                for(qintp i=1;i<len;i++) {
+                    qcomplex v=qnp_read_number(p+i*sstride,odt);
+                    acc=kind==QRED_PROD?(odt==QNP_FLOAT32?qc(acc.re*v.re,0):qc_mul(acc,v)):qc_add(acc,v);
+                    qnp_write_number(q+i*dstride,odt,acc);
+                }
+            }
+        } else if (odt == QNP_FLOAT64) {
+            /* The first cumulative value is the first input itself. Starting
+             * from an identity loses signed zero and contaminates complex
+             * infinities with the otherwise unnecessary identity multiply. */
+            double acc = *(const double *)p;
+            *(double *)q = acc;
+            for (qintp i = 1; i < len; i++) {
                 double v = *(const double *)(p + i * sstride);
                 acc = kind == QRED_PROD ? acc * v : acc + v;
                 *(double *)(q + i * dstride) = acc;
             }
         } else if (odt == QNP_COMPLEX128) {
-            qcomplex acc = kind == QRED_PROD ? qc(1.0, 0.0) : qc(0.0, 0.0);
-            for (qintp i = 0; i < len; i++) {
+            qcomplex acc = *(const qcomplex *)p;
+            *(qcomplex *)q = acc;
+            for (qintp i = 1; i < len; i++) {
                 qcomplex v = *(const qcomplex *)(p + i * sstride);
                 acc = kind == QRED_PROD ? qc_mul(acc, v) : qc_add(acc, v);
                 *(qcomplex *)(q + i * dstride) = acc;
             }
         } else {
-            int64_t acc = kind == QRED_PROD ? 1 : 0;
-            for (qintp i = 0; i < len; i++) {
-                int64_t v = *(const int64_t *)(p + i * sstride);
+            /* Integer accumulation wraps modulo 2**64. Unsigned arithmetic
+             * makes that behavior defined even when a prefix overflows. */
+            uint64_t acc = *(const uint64_t *)p;
+            *(uint64_t *)q = acc;
+            for (qintp i = 1; i < len; i++) {
+                uint64_t v = *(const uint64_t *)(p + i * sstride);
                 acc = kind == QRED_PROD ? acc * v : acc + v;
-                *(int64_t *)(q + i * dstride) = acc;
+                *(uint64_t *)(q + i * dstride) = acc;
             }
         }
         for (int d = csrc->nd - 2; d >= 0; d--) {
@@ -559,6 +607,23 @@ static PyObject *qnp_reduceat(int kind, PyObject *ao, PyObject *idxo, int axis) 
     shape[axis] = segments;
     QArray *out = qnp_new(a->nd, shape, odt);
     if (out == NULL) { Py_DECREF(a); Py_DECREF(idx); return NULL; }
+    /* Each segment is a strided run along the reduced axis.  Iterate the
+     * other dimensions directly: constructing a window, reduction result and
+     * destination view for every segment made short segments allocation-bound.
+     * Reusing reduce_run retains the exact dtype rules and pairwise sum order. */
+    /* The output allocator already checked its shape product. Dividing it
+     * avoids overflowing a product of huge dimensions in an empty array. */
+    qintp outer = qnp_size(out) / (segments ? segments : 1);
+    qintp keep_shape[QNP_MAXDIMS], src_stride[QNP_MAXDIMS], dst_stride[QNP_MAXDIMS];
+    int nkeep = 0;
+    for (int d = 0; d < a->nd; d++) {
+        if (d == axis) continue;
+        keep_shape[nkeep] = a->shape[d];
+        src_stride[nkeep] = a->strides[d];
+        dst_stride[nkeep] = out->strides[d];
+        nkeep++;
+    }
+    qintp coord[QNP_MAXDIMS] = {0};
     const int64_t *ip = (const int64_t *)idx->data;
     for (qintp s = 0; s < segments; s++) {
         int64_t start = ip[s];
@@ -574,35 +639,35 @@ static PyObject *qnp_reduceat(int kind, PyObject *ao, PyObject *idxo, int axis) 
         if (next < 0) next += len;
         if (next > len) next = len;
         qintp count = (next > start) ? (qintp)(next - start) : 1;
-        qintp sub[QNP_MAXDIMS];
-        for (int i = 0; i < a->nd; i++) sub[i] = a->shape[i];
-        sub[axis] = count;
-        QArray *window = qnp_new_view(a, a->data + start * a->strides[axis],
-                                      a->nd, sub, a->strides, a->dtype);
-        if (window == NULL) { Py_DECREF(a); Py_DECREF(idx); Py_DECREF(out); return NULL; }
-        PyObject *axis_obj = PyLong_FromLong(axis);
-        PyObject *reduced = axis_obj == NULL ? NULL
-            : qnp_reduce(kind, (PyObject *)window, axis_obj, NULL, 1);
-        Py_XDECREF(axis_obj);
-        Py_DECREF(window);
-        if (reduced == NULL) { Py_DECREF(a); Py_DECREF(idx); Py_DECREF(out); return NULL; }
-        QArray *slot = qnp_new_view(out, out->data + s * out->strides[axis],
-                                    out->nd, sub, out->strides, out->dtype);
-        if (slot != NULL) slot->shape[axis] = 1;
-        QArray *value = qnp_from_any(reduced, odt, 1);
-        Py_DECREF(reduced);
-        int rc = (slot != NULL && value != NULL) ? qnp_copy_into(slot, value) : -1;
-        Py_XDECREF(slot);
-        Py_XDECREF(value);
-        if (rc < 0) { Py_DECREF(a); Py_DECREF(idx); Py_DECREF(out); return NULL; }
+        const char *src = a->data + start * a->strides[axis];
+        char *dst = out->data + s * out->strides[axis];
+        for (qintp k = 0; k < outer; k++) {
+            if (reduce_run(kind, a->dtype, src, a->strides[axis], count,
+                           dst, odt) < 0) {
+                Py_DECREF(a); Py_DECREF(idx); Py_DECREF(out);
+                return NULL;
+            }
+            /* Advance within the unreduced dimensions without recomputing
+             * multidimensional offsets or allocating iterator objects. */
+            for (int d = nkeep - 1; d >= 0; d--) {
+                if (++coord[d] < keep_shape[d]) {
+                    src += src_stride[d];
+                    dst += dst_stride[d];
+                    break;
+                }
+                src -= (coord[d] - 1) * src_stride[d];
+                dst -= (coord[d] - 1) * dst_stride[d];
+                coord[d] = 0;
+            }
+        }
     }
     Py_DECREF(a);
     Py_DECREF(idx);
     return (PyObject *)out;
 }
 
-/* The overwhelmingly common shape -- a 1-D float sum -- skips the view
- * machinery entirely and runs pairwise sums straight off the buffer. */
+/* One-dimensional float sums skip dtype dispatch and outer iteration;
+ * gapped, reversed and broadcast views use the same pairwise kernel. */
 static PyObject *reduceat_fast_sum(QArray *a, QArray *idx) {
     qintp segments = qnp_size(idx);
     qintp len = a->shape[0];
@@ -610,6 +675,7 @@ static PyObject *reduceat_fast_sum(QArray *a, QArray *idx) {
     if (out == NULL) return NULL;
     const int64_t *ip = (const int64_t *)idx->data;
     const double *values = (const double *)a->data;
+    qintp stride = a->strides[0] / (qintp)sizeof(double);
     double *dst = (double *)out->data;
     for (qintp s = 0; s < segments; s++) {
         int64_t start = ip[s];
@@ -622,9 +688,11 @@ static PyObject *reduceat_fast_sum(QArray *a, QArray *idx) {
             return NULL;
         }
         int64_t next = (s + 1 < segments) ? ip[s + 1] : len;
+        if (next < 0) next += len;
         if (next > len) next = len;
-        if (next <= start) dst[s] = values[start];
-        else dst[s] = qnp_pairwise_sum_f64(values + start, (qintp)(next - start), 1);
+        if (next <= start) dst[s] = values[start * stride];
+        else dst[s] = qnp_pairwise_sum_f64(values + start * stride,
+                                         (qintp)(next - start), stride);
     }
     return (PyObject *)out;
 }
@@ -637,9 +705,9 @@ static PyObject *py_reduceat(PyObject *self, PyObject *args, PyObject *kwds) {
     static char *kwlist[] = {"a", "indices", "axis", "kind", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "OO|ii:reduceat", kwlist,
                                      &ao, &idxo, &axis, &kind)) return NULL;
-    if (kind == QRED_SUM && axis == 0 && QArray_Check(ao) &&
+    if (kind == QRED_SUM && (axis == 0 || axis == -1) && QArray_Check(ao) &&
         ((QArray *)ao)->nd == 1 && ((QArray *)ao)->dtype == QNP_FLOAT64 &&
-        (((QArray *)ao)->flags & QNP_C_CONTIGUOUS) && qnp_size((QArray *)ao) > 0) {
+        qnp_size((QArray *)ao) > 0) {
         QArray *idx0 = qnp_from_any(idxo, QNP_INT64, 1);
         if (idx0 == NULL) return NULL;
         QArray *idx = qnp_ascontiguous(idx0);
