@@ -116,10 +116,13 @@ class TestNativeBuild(unittest.TestCase):
         files = FileList()
         # A previous SOURCES.txt may list files that new include directives
         # no longer mention; the manifest must explicitly prune those entries.
-        files.files = fixtures.copy()
         previous = Path.cwd()
         try:
             os.chdir(self.root)
+            # read_manifest uses append, which converts manifest slashes to
+            # native separators before matching directory-pruning patterns.
+            for path in fixtures:
+                files.append(path)
             with patch("setuptools.command.egg_info.log.warn"):
                 for line in manifest.splitlines():
                     line = line.split("#", 1)[0].strip()
@@ -127,7 +130,7 @@ class TestNativeBuild(unittest.TestCase):
                         files.process_template_line(line)
         finally:
             os.chdir(previous)
-        self.assertTrue(set(fixtures[:6]).issubset(files.files))
+        self.assertTrue({str(Path(path)) for path in fixtures[:6]}.issubset(files.files))
         self.assertFalse(any(Path(path).parts[0] == "rust" for path in files.files))
         self.assertFalse(any(Path(path).suffix in self.module.NATIVE_SUFFIXES
                              for path in files.files))
