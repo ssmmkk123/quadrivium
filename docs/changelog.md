@@ -10,6 +10,17 @@ behavior details that applied at the time of release.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-12
+
+### Migration
+
+This release replaces NumPy as a runtime dependency with Quadrivium's own C
+array engine. Install a wheel matching your Python and platform, or provide a
+C compiler and Python development headers for a source installation. Use
+`quadrivium.numeric` for the documented array APIs; arbitrary NumPy APIs and
+dtypes are not supported. Disabling acceleration still requires the C array
+engine. Review the behavior corrections below when reproducing earlier results.
+
 ### Added
 
 - **A native numeric namespace.** `quadrivium.numeric` provides strided
@@ -209,6 +220,13 @@ behavior details that applied at the time of release.
   native binaries where inappropriate. CI uses pytest so parametrized
   regressions are collected, and documentation examples and supported
   accelerated/reference paths are checked explicitly.
+- **Release platform compatibility.** Python 3.9 imports use a compatible
+  reference-counting helper, and Windows builds use portable PCG64 arithmetic
+  with the same seeded sequences and saved state. Figure-catalogue checks do
+  not require Matplotlib, and generated solver documentation is consistent
+  across supported Python versions. Wheel validation runs against installed
+  packages in an isolated test tree, and current macOS runners build both
+  architectures.
 
 ## [1.1.0] - 2026-09-01
 
@@ -216,7 +234,7 @@ The first release published to PyPI introduced the Quadrivium name, packaging,
 and documentation site. At this release, the library contained 836 public
 functions and classes across 13 subpackages and depended on NumPy. Its
 pure-Python wheel and installation requirements belong to this historical
-release; they do not describe the current unreleased C-based source tree.
+release; they do not describe the C-based 1.2.0 release.
 
 ### Added
 
@@ -255,5 +273,6 @@ release; they do not describe the current unreleased C-based source tree.
 
 Earlier development versions were not published to a package index.
 
-[Unreleased]: https://github.com/ssmmkk123/quadrivium/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ssmmkk123/quadrivium/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ssmmkk123/quadrivium/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ssmmkk123/quadrivium/releases/tag/v1.1.0

@@ -73,8 +73,9 @@ Also install and test the source archive in a separate scratch environment.
 ## Understand the release workflow
 
 `.github/workflows/release.yml` accepts either a pushed `v*` tag or a manual
-workflow dispatch. A manual run selects `testpypi` or `pypi`; it is a publishing
-action, not merely a build preview.
+workflow dispatch. The default manual target, `build`, validates the source
+archive and all platform wheels without publishing. Select `testpypi` or `pypi`
+only when ready to publish to that index.
 
 | Job | Responsibility |
 | --- | --- |
@@ -103,6 +104,9 @@ strict site build. Its trigger is not automatically equivalent to every release
 tag, so verify documentation publication independently of package publication.
 
 ## Publish a reviewed candidate
+
+Push the candidate commit and run the `Release` workflow with target `build`.
+Confirm that CI and every platform wheel pass before creating the release tag.
 
 Commit the reviewed source, release notes, and generated assets. The tag must
 be exactly `v` followed by the packaged version. For example, if the candidate

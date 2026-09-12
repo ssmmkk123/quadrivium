@@ -405,10 +405,9 @@ Brent's method: inverse quadratic interpolation with a bisection fallback.
 The standard general-purpose bracketed solver -- superlinear in practice,
 never slower than bisection in the worst case.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `secant` {#api-secant}
 
@@ -454,10 +453,9 @@ Newton-Raphson, optionally damped and corrected for a known multiplicity.
 
 `df=None` falls back to a central difference derivative.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `halley` {#api-halley}
 
@@ -546,10 +544,9 @@ Fixed point iteration `x <- g(x)`, optionally relaxed.
 
 Converges when `|g'(x*)| < 1`; relaxation can create that condition.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `aitken_accelerated` {#api-aitken_accelerated}
 
@@ -794,10 +791,9 @@ Keeps `n+1` points, fits the affine model interpolating `F` at all of
 them, and takes its root -- the direct generalization of the scalar secant
 method, needing no derivatives.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `fixed_point_system` {#api-fixed_point_system}
 
@@ -863,10 +859,9 @@ Natural parameter continuation from `F(x) - (1-t) F(x0)`.
 
 Solves a sequence of easier problems, using each solution to start the next.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `homotopy` {#api-homotopy}
 
@@ -945,10 +940,9 @@ the raw `g` value (damping, useful when the iteration is fragile).  The
 least-squares system is regularized because the difference matrix becomes
 rank deficient exactly as the iteration converges.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `newton_krylov` {#api-newton_krylov}
 
@@ -989,7 +983,6 @@ number, which for a PDE discretization grows with the mesh -- so the
 unpreconditioned method needs steadily more Krylov steps as the grid is
 refined, even though each is cheap.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.

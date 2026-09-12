@@ -9,6 +9,8 @@ import pytest
 
 
 def _run_limited(code):
+    if sys.platform != "linux":
+        pytest.skip("safe oversized-allocation probes require Linux address-space limits")
     resource = pytest.importorskip("resource")
     if not hasattr(resource, "RLIMIT_AS"):
         pytest.skip("address-space limits are unavailable")

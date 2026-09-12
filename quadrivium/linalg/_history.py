@@ -1,7 +1,7 @@
 """Bounded residual retention for iterative linear solvers."""
 from contextvars import ContextVar
 from functools import wraps
-from inspect import Parameter, signature
+from inspect import Parameter, getdoc, signature
 from operator import index
 
 from ..core.types import IterationResult
@@ -90,5 +90,8 @@ def monitor(function):
         return result
 
     wrapped.__signature__ = sig.replace(parameters=parameters)
-    wrapped.__doc__ = (function.__doc__ or "") + "\n\n    store_history=False retains only the latest residual; history_stride keeps\n    every Nth residual plus the first and last. callback(x) receives a private\n    iterate snapshot; return True or raise StopIteration to stop.\n"
+    wrapped.__doc__ = (getdoc(function) or "") + (
+        "\n\nstore_history=False retains only the latest residual; history_stride keeps\n"
+        "every Nth residual plus the first and last. callback(x) receives a private\n"
+        "iterate snapshot; return True or raise StopIteration to stop.\n")
     return wrapped

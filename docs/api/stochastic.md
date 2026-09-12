@@ -1792,12 +1792,12 @@ The direct analogue of forward Euler.  Its strong order is only 1/2 --
 *not* 1 -- because the Ito-Taylor expansion has a term `b b' (dW^2 - dt)/2`
 of size `dt` that this scheme discards; `milstein` keeps it.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `milstein` {#api-milstein}
 
@@ -1826,12 +1826,12 @@ Adds the Ito correction `0.5 b b' (dW^2 - dt)` that Euler-Maruyama drops.
 used.  For genuinely multidimensional noise the scheme also needs Levy
 areas, so this implementation applies the diagonal-noise form.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `implicit_milstein` {#api-implicit_milstein}
 
@@ -1862,12 +1862,12 @@ well would be wrong, not merely awkward: `dW` can take either sign, so an
 implicit diffusion term does not define a contraction and the resulting
 scheme need not have a solution at all.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `stochastic_heun` {#api-stochastic_heun}
 
@@ -1894,12 +1894,12 @@ Converges to the *Stratonovich* solution, which differs from the Ito one by
 the drift correction `0.5 b b'` -- so for multiplicative noise this and
 `euler_maruyama` are solving genuinely different equations.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `stochastic_rk` {#api-stochastic_rk}
 
@@ -1926,12 +1926,12 @@ Reproduces Milstein's correction using a supporting value instead of
 `b'`, which makes it the practical choice when the derivative of the
 diffusion is unavailable.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `srk_strong_1_5` {#api-srk_strong_1_5}
 
@@ -1958,12 +1958,12 @@ extra Ito integral needed is `I_{1,0}`, which is jointly Gaussian with
 `dW` and can be sampled exactly -- the double integrals that block the
 general case never appear.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `tamed_euler` {#api-tamed_euler}
 
@@ -1990,12 +1990,12 @@ faster than linearly (Hutzenthaler-Jentzen-Kloeden): the moments blow up
 however small the step.  Scaling the drift by `1/(1 + dt|a|)` restores
 convergence while leaving the small-step limit unchanged.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `geometric_brownian_motion` {#api-geometric_brownian_motion}
 
@@ -2022,12 +2022,12 @@ Geometric Brownian motion `dX = mu X dt + sigma X dW`.
 which is exact at every grid point -- there is no discretization error at
 all, only the sampling of `W`.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `ornstein_uhlenbeck` {#api-ornstein_uhlenbeck}
 
@@ -2055,12 +2055,12 @@ Ornstein-Uhlenbeck `dX = theta (mu - X) dt + sigma dW`.
 Gaussian, so each step is drawn from its exact conditional law and the
 result carries no discretization error whatever the step size.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `cox_ingersoll_ross` {#api-cox_ingersoll_ross}
 
@@ -2088,12 +2088,12 @@ diffusion is undefined; the full-truncation fix evaluates the coefficients
 at `max(X, 0)` and is the standard remedy.  `2 theta mu >= sigma^2`
 (the Feller condition) keeps the exact process strictly positive.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    linear interpolation between simulated grid states.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+linear interpolation between simulated grid states.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `gillespie_ssa` {#api-gillespie_ssa}
 
@@ -2124,12 +2124,12 @@ step per individual reaction event.
 
 Returns `(times, states)` with one row per event.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    right-continuous step sampling.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+right-continuous step sampling.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `tau_leaping` {#api-tau_leaping}
 
@@ -2156,12 +2156,12 @@ and drawing each reaction count from a Poisson law.  Species counts are
 clipped at zero, since a leap can otherwise overshoot into negative
 populations -- the well-known failure mode of the naive scheme.
 
-    Output controls: final_only retains one state; save_every retains every
-    kth state and the endpoint; save_at requests selected times using
-    right-continuous step sampling.
-    callback(t, state_copy) receives accepted states, including the initial
-    state; return True to stop. Controlled output streams random draws
-    without retaining the full driving-noise array.
+Output controls: final_only retains one state; save_every retains every
+kth state and the endpoint; save_at requests selected times using
+right-continuous step sampling.
+callback(t, state_copy) receives accepted states, including the initial
+state; return True to stop. Controlled output streams random draws
+without retaining the full driving-noise array.
 
 ### `poisson_process` {#api-poisson_process}
 

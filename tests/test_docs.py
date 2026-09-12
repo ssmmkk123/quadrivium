@@ -10,9 +10,8 @@ package no longer has.
 The figures get the same treatment one level down: they are generated from the
 library by ``tools/gen_figures.py``, and the checks here tie every file on disk
 to the page that shows it and every reference on a page to a file that exists.
-Regenerating them needs Matplotlib, so the tests that compare the catalogue
-with the directory are skipped when it is not installed; the rest run
-everywhere.
+Regenerating them needs Matplotlib; inspecting the catalogue does not, so
+these checks also run with only the test dependencies installed.
 """
 
 import doctest
@@ -93,17 +92,27 @@ def referenced_figures():
 
 
 def figure_catalogue():
-    """The registered figures, or None when Matplotlib is not installed."""
+    """The registered figures, without requiring plotting dependencies."""
+    sys.path.insert(0, str(ROOT / "tools"))
     try:
-        sys.path.insert(0, str(ROOT / "tools"))
         from figures import load_all  # noqa: PLC0415
-    except ImportError:  # pragma: no cover - exercised only without Matplotlib
-        return None
-    return load_all()
+        return load_all()
+    finally:
+        sys.path.pop(0)
 
 
 class TestFigures(unittest.TestCase):
     """The figures, the pages that show them, and the code that draws them."""
+
+    def test_catalogue_does_not_require_matplotlib(self):
+        """Optional figure regeneration tools must not gate catalogue checks."""
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.modules['matplotlib'] = None; "
+             "sys.path.insert(0, 'tools'); "
+             "from figures import load_all; assert load_all()"],
+            cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_every_referenced_figure_exists(self):
         """A page must not point at a picture that was never generated."""
@@ -151,8 +160,6 @@ class TestFigures(unittest.TestCase):
         if SDIST_WITHOUT_FIGURES:
             self.skipTest("generated figures are intentionally omitted from the sdist")
         catalogue = figure_catalogue()
-        if catalogue is None:
-            self.skipTest("Matplotlib is not installed")
         registered = {figure.name for figure in catalogue}
         on_disk = {path.stem for path in FIGURES.glob("*.svg")
                    if not path.stem.endswith("-dark")}
@@ -161,8 +168,6 @@ class TestFigures(unittest.TestCase):
     def test_each_figure_is_shown_on_the_page_it_was_registered_for(self):
         """The page recorded with a figure is the page that has to embed it."""
         catalogue = figure_catalogue()
-        if catalogue is None:
-            self.skipTest("Matplotlib is not installed")
         for figure in catalogue:
             with self.subTest(figure=figure.name):
                 page = DOCS / figure.page

@@ -799,10 +799,9 @@ Jacobi iteration `x <- D^-1 (b - (L+U) x)`.
 
 Converges for strictly diagonally dominant systems.
 
-
-    store_history=False retains only the latest residual; history_stride keeps
-    every Nth residual plus the first and last. callback(x) receives a private
-    iterate snapshot; return True or raise StopIteration to stop.
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
 
 ### `gauss_seidel` {#api-gauss_seidel}
 
@@ -893,10 +892,9 @@ Richardson iteration `x <- x + omega r`.
 
 With `omega=None` uses the optimal `2/(lmin+lmax)` for SPD systems.
 
-
-    store_history=False retains only the latest residual; history_stride keeps
-    every Nth residual plus the first and last. callback(x) receives a private
-    iterate snapshot; return True or raise StopIteration to stop.
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
 
 ### `chebyshev_iteration` {#api-chebyshev_iteration}
 
@@ -1146,10 +1144,9 @@ Damping solves `min ||A x-b||² + damp² ||x||²`. Convergence is checked
 against the actual normal residual, including inconsistent systems, rather
 than assuming the data residual can reach zero.
 
-
-    store_history=False retains only the latest residual; history_stride keeps
-    every Nth residual plus the first and last. callback(x) receives a private
-    iterate snapshot; return True or raise StopIteration to stop.
+store_history=False retains only the latest residual; history_stride keeps
+every Nth residual plus the first and last. callback(x) receives a private
+iterate snapshot; return True or raise StopIteration to stop.
 
 ### `jacobi_preconditioner` {#api-jacobi_preconditioner}
 

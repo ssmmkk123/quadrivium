@@ -53,7 +53,7 @@ Each subpackage can also be imported directly::
 
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from . import (approx, core, diff, integrate, interpolate, linalg, ode,
                optimize, pde, rootfind, special, stochastic, transforms)

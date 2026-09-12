@@ -105,10 +105,9 @@ Quadratic penalty: minimize `f + mu/2 (||h||^2 + ||max(g,0)||^2)`.
 Simple and robust, but the subproblems become ill-conditioned as `mu`
 grows -- which is exactly what the augmented Lagrangian fixes.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `barrier_method` {#api-barrier_method}
 
@@ -134,10 +133,9 @@ Logarithmic barrier (interior point) for `g(x) <= 0`.
 Requires a strictly feasible starting point; the barrier keeps every
 iterate inside the feasible region as `mu` is driven to zero.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `augmented_lagrangian` {#api-augmented_lagrangian}
 
@@ -164,10 +162,9 @@ Augmented Lagrangian (method of multipliers).
 Adds explicit multiplier estimates to the penalty, so the constraints are
 satisfied exactly at a finite penalty -- no ill-conditioning blow-up.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `projected_gradient` {#api-projected_gradient}
 
@@ -193,10 +190,9 @@ Projected gradient descent for a simple feasible set.
 Each step takes a gradient step and projects back, so feasibility is
 maintained exactly whenever the projection is exact.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `sqp` {#api-sqp}
 
@@ -223,10 +219,9 @@ Each iteration solves a QP built from a quadratic model of the Lagrangian
 and linearized constraints; the Hessian is kept positive definite by a
 damped BFGS update (Powell's modification).
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `active_set_qp` {#api-active_set_qp}
 
@@ -361,10 +356,9 @@ Nelder-Mead simplex: reflect, expand, contract, shrink.
 The most widely used derivative-free method; robust on low-dimensional
 problems but with no convergence guarantee in general.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `powell` {#api-powell}
 
@@ -387,10 +381,9 @@ Powell's conjugate direction method.
 Minimizes along a set of directions and replaces one each cycle, building
 conjugate directions without derivatives.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `hooke_jeeves` {#api-hooke_jeeves}
 
@@ -439,10 +432,9 @@ sweeps where Powell needs a handful. Prefer `powell`, which builds
 conjugate directions from the same kind of line searches, when the
 variables interact strongly.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `pattern_search` {#api-pattern_search}
 
@@ -474,10 +466,9 @@ Compass (coordinate) search: poll the `2n` axis directions.
 
 A generating set search with a convergence guarantee for smooth functions.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `cyclic_coordinate` {#api-cyclic_coordinate}
 
@@ -532,10 +523,9 @@ Simulated annealing with geometric cooling.
 Uphill moves are accepted with probability `exp(-dE/T)`, so the search can
 leave a local basin early and settles as the temperature falls.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `particle_swarm` {#api-particle_swarm}
 
@@ -562,10 +552,9 @@ Particle swarm optimization.
 Particles are drawn toward their own best position and the swarm's best;
 the inertia weight `w` balances exploration against convergence.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `differential_evolution` {#api-differential_evolution}
 
@@ -597,10 +586,9 @@ adapts to the population's spread automatically.
 unimodal problems but is prone to stalling in a local basin on multimodal
 ones.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `genetic_algorithm` {#api-genetic_algorithm}
 
@@ -651,10 +639,9 @@ Basin hopping: random perturbation followed by local minimization.
 
 Very effective when the landscape is a set of smooth basins.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `random_search` {#api-random_search}
 
@@ -694,10 +681,9 @@ problems. On a strongly multimodal landscape that small a sample gets
 trapped; raise `pop_size` (a few dozen is usually enough) to restore
 global behaviour.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `cma_es_lite` {#api-cma_es_lite}
 
@@ -950,10 +936,9 @@ Nonlinear conjugate gradient with a strong Wolfe line search.
 `'pr'` (Polak-Ribiere, restarted at negative beta), or `'hs'`
 (Hestenes-Stiefel). Automatic restarts keep the directions descent.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `barzilai_borwein` {#api-barzilai_borwein}
 
@@ -982,10 +967,9 @@ so Raydan's globalization is applied: a step is accepted when it improves on
 the *worst* of the last `memory` objective values, and is backtracked
 otherwise.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ## `least_squares`
 
@@ -1241,10 +1225,9 @@ Primal-dual interior point method with Mehrotra-style centering.
 Follows the central path from the interior, so the work is polynomial in
 the problem size rather than combinatorial in the vertices.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `linprog` {#api-linprog}
 
@@ -1392,10 +1375,9 @@ Alternates a gradient step on the smooth part with the proximal operator of
 the non-smooth part. With `accelerate=True` this is FISTA, which improves
 the rate from `O(1/k)` to `O(1/k^2)`.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `admm` {#api-admm}
 
@@ -1420,10 +1402,9 @@ Alternating direction method of multipliers for `min f(x) + g(z)`, `x = z`.
 Splits a hard problem into two easy proximal steps coupled by a dual
 variable; converges for any `rho > 0` when both parts are convex.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `admm_lasso` {#api-admm_lasso}
 
@@ -1469,10 +1450,9 @@ Douglas-Rachford splitting for `min f(x) + g(x)`.
 
 Handles two non-smooth terms, neither of which needs a gradient.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `lasso` {#api-lasso}
 
@@ -1496,10 +1476,9 @@ LASSO: `min 0.5 ||Ax - b||^2 + lam ||x||_1`.
 
 Solved by proximal gradient with the Lipschitz step `1/||A||_2^2`.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `ridge` {#api-ridge}
 
@@ -1530,10 +1509,9 @@ Elastic net: `0.5||Ax-b||^2 + lam(alpha||x||_1 + (1-alpha)/2 ||x||^2)`.
 
 Blends LASSO's sparsity with ridge's stability under correlated columns.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ## `quasinewton`
 
@@ -1603,10 +1581,9 @@ Newton with a Hessian modification that forces positive definiteness.
 Adds increasing multiples of the identity until Cholesky succeeds, which
 guarantees a descent direction even in non-convex regions.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `bfgs` {#api-bfgs}
 
@@ -1631,10 +1608,9 @@ Updates the inverse Hessian directly and keeps it positive definite whenever
 the curvature condition `s'y > 0` holds -- which the Wolfe line search
 guarantees.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `dfp` {#api-dfp}
 
@@ -1660,10 +1636,9 @@ DFP is markedly more sensitive to line search accuracy than BFGS -- with a
 loose curvature condition it can stall on Rosenbrock -- so the default
 `c2` here is tighter than the BFGS default.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `sr1` {#api-sr1}
 
@@ -1689,10 +1664,9 @@ Symmetric rank-one update.
 Not guaranteed positive definite, but often a better Hessian approximation
 than BFGS -- useful inside trust region methods.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `broyden_class` {#api-broyden_class}
 
@@ -1743,10 +1717,9 @@ Stores only the last `m` correction pairs and applies the inverse Hessian
 by the two-loop recursion, so memory is `O(mn)` instead of `O(n^2)` --
 the reason L-BFGS is the default for large problems.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `quasi_newton` {#api-quasi_newton}
 
@@ -1791,10 +1764,9 @@ Only Hessian-*vector* products are needed; supply `hess_vec(x, v)` for
 large problems, or let it be approximated by a directional difference of
 gradients.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `lbfgsb` {#api-lbfgsb}
 
@@ -1826,10 +1798,9 @@ is skipped when the step was clipped.
 `bounds` is a sequence of `(lo, hi)` pairs; use `None` for an
 unbounded side.  With `bounds=None` this is plain L-BFGS.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ## `scalar`
 
@@ -1994,10 +1965,9 @@ The Cauchy point only minimizes along the steepest descent direction, so it
 guarantees global convergence but at a linear rate; `dogleg` and
 `steihaug` capture the Newton direction too and converge superlinearly.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `cauchy_point` {#api-cauchy_point}
 
@@ -2059,10 +2029,9 @@ The damping `lambda` is raised when a step fails and lowered when it
 succeeds, which gives the robustness of descent far from the solution and
 the speed of Gauss-Newton near it.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `gauss_newton` {#api-gauss_newton}
 
@@ -2084,10 +2053,9 @@ Gauss-Newton for least squares: drop the second-order residual term.
 
 Converges quadratically for zero-residual problems and linearly otherwise.
 
-
-    Optional controls: store_history=False disables snapshots; history_stride
-    retains every Nth snapshot; callback(x) receives a private iterate copy.
-    Return True or raise StopIteration from the callback to stop.
+Optional controls: store_history=False disables snapshots; history_stride
+retains every Nth snapshot; callback(x) receives a private iterate copy.
+Return True or raise StopIteration from the callback to stop.
 
 ### `nonlinear_least_squares` {#api-nonlinear_least_squares}
 

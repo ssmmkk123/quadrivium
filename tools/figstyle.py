@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import textwrap
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -34,6 +33,9 @@ MARKERS = ("o", "s", "^", "D")
 
 
 def rc_params(scheme: Scheme) -> dict:
+    # Catalogue inspection imports these helpers without generating a plot.
+    import matplotlib.pyplot as plt
+
     return {
         "figure.facecolor": "none", "axes.facecolor": "none",
         "savefig.facecolor": "none", "savefig.transparent": True,

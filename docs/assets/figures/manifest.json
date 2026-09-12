@@ -4,7 +4,7 @@
     "matplotlib": "3.10.9",
     "numpy": "2.4.4",
     "python": "3.14.4",
-    "quadrivium": "1.1.0"
+    "quadrivium": "1.2.0"
   },
   "figures": [
     {
@@ -455,7 +455,7 @@
   ],
   "schema_version": 1,
   "source_sha256": {
-    "tools/figstyle.py": "8d5c9e222e727fd351d3b789f178342d57db705c466713e900e2c31fe611169f",
+    "tools/figstyle.py": "c18d4fe411a91f4ad4cb02951cdae9135d6af38bda80887dcbaa6be193ce5d98",
     "tools/figures/__init__.py": "f2704f5bf488b2cf4f1df685761f4a42a251b676319b499f889f226dbc975419",
     "tools/figures/experiments.py": "5c9d03304b544a11c7f51b3e1e576413664c7c8a3de5abbf93b07d369cecb5d7",
     "tools/gen_figures.py": "9afed100acbdc39c92a455c4a49d44ec3d2355622657a8cce4fabe9347835021"

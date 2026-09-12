@@ -57,8 +57,8 @@ class TestNativeBuild(unittest.TestCase):
             extension = self.module.core_extension()
         self.assertEqual(extension.sources, sources)
         self.assertEqual(extension.depends, headers)
-        self.assertIn("csrc/accel_ode.c", extension.sources)
-        self.assertIn("csrc/qaccel.h", extension.depends)
+        self.assertIn(str(Path("csrc") / "accel_ode.c"), extension.sources)
+        self.assertIn(str(Path("csrc") / "qaccel.h"), extension.depends)
 
     def test_missing_required_sources_fails_the_build(self):
         with patch.object(self.module, "CSRC", self.root / "missing"):

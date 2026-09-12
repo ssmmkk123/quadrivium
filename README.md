@@ -27,8 +27,8 @@ compiler; building from source needs a C compiler and Python development headers
 python -m pip install quadrivium
 ```
 
-The documentation in this checkout describes the working tree, including
-[unreleased changes](CHANGELOG.md). For these APIs, install this checkout:
+This documentation describes Quadrivium 1.2.0. See the [changelog](CHANGELOG.md)
+for release notes and migration details. To develop from a source checkout:
 
 ```bash
 python -m venv .venv

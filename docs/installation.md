@@ -37,9 +37,9 @@ On Windows PowerShell, replace the activation command with:
 Using `python -m pip` helps ensure that installation and execution use the same
 interpreter. A notebook kernel also needs to use that environment.
 
-These documentation pages follow the working tree. A published package can
-lack APIs listed under **Unreleased** in the [changelog](changelog.md). For the
-features documented in this checkout, install from source.
+These documentation pages describe Quadrivium 1.2.0. Review the migration notes
+in the [changelog](changelog.md) when upgrading from 1.1.0. Future changes listed
+under **Unreleased** require installation from the corresponding source checkout.
 
 ## From source
 
@@ -121,13 +121,13 @@ report. The final `ImportError` alone may hide the earlier compiler failure.
 ## Reproduce an environment
 
 Record the package version and, for unreleased work, the source commit. The
-version string in this checkout is **1.1.0**, but a working tree with unreleased
-changes is not equivalent to the published 1.1.0 artifact.
+version in this release is **1.2.0**. A modified working tree is not equivalent
+to the published artifact.
 
 For published-version experiments, pin the release explicitly:
 
 ```text
-quadrivium==1.1.0
+quadrivium==1.2.0
 ```
 
 Also record Python, platform, numeric dtype, backend, solver options, and random

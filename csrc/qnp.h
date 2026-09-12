@@ -18,6 +18,20 @@
 #include <stdint.h>
 #include <string.h>
 
+/* M_PI is not defined by the standard C headers on every platform. */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+/* Py_NewRef became part of the C API in Python 3.10. */
+#if PY_VERSION_HEX < 0x030A0000
+static inline PyObject *qnp_newref(PyObject *obj) {
+    Py_INCREF(obj);
+    return obj;
+}
+#define Py_NewRef(obj) qnp_newref((PyObject *)(obj))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

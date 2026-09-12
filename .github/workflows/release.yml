@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Index to publish to
+        description: Build only or choose an index to publish to
         type: choice
-        options: [testpypi, pypi]
-        default: testpypi
+        options: [build, testpypi, pypi]
+        default: build
 
 permissions:
   contents: read
@@ -90,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-13, macos-14, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-15, windows-latest]
 
     steps:
       - name: Check out the repository
@@ -104,11 +104,16 @@ jobs:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_i686 *_i686 *-win32"
           CIBW_ARCHS_MACOS: auto
-          CIBW_TEST_REQUIRES: "pytest numpy"
+          CIBW_TEST_REQUIRES: "pytest numpy setuptools>=77"
+          # Keep every test fixture, but omit quadrivium/ so pytest and its
+          # subprocesses can only import the installed wheel's package.
+          CIBW_TEST_SOURCES: >
+            tests docs tools examples csrc setup.py pyproject.toml MANIFEST.in mkdocs.yml
+            README.md CHANGELOG.md CONTRIBUTING.md CODE_OF_CONDUCT.md SUPPORT.md SECURITY.md LICENSE
           CIBW_TEST_COMMAND: >
             python -c "import quadrivium; assert quadrivium.accel.backend() == 'c',
             'wheel was built without the compiled backend'" &&
-            python -m pytest {project}/tests -q
+            python -m pytest tests -q
 
       - name: Upload the wheel
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

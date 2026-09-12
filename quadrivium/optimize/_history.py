@@ -6,7 +6,7 @@ callback. Copies are made only for retained snapshots or callback arguments.
 """
 from contextvars import ContextVar
 from functools import wraps
-from inspect import Parameter, signature
+from inspect import Parameter, getdoc, signature
 from operator import index
 
 from ..core.types import OptimizeResult
@@ -97,5 +97,8 @@ def monitor(function):
             _policy.reset(token)
 
     wrapped.__signature__ = sig.replace(parameters=parameters)
-    wrapped.__doc__ = (function.__doc__ or "") + "\n\n    Optional controls: store_history=False disables snapshots; history_stride\n    retains every Nth snapshot; callback(x) receives a private iterate copy.\n    Return True or raise StopIteration from the callback to stop.\n"
+    wrapped.__doc__ = (getdoc(function) or "") + (
+        "\n\nOptional controls: store_history=False disables snapshots; history_stride\n"
+        "retains every Nth snapshot; callback(x) receives a private iterate copy.\n"
+        "Return True or raise StopIteration from the callback to stop.\n")
     return wrapped

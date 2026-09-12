@@ -9,11 +9,45 @@
 #include "ziggurat_tables.h"
 #include <float.h>
 
-#if defined(__SIZEOF_INT128__)
+#if defined(__SIZEOF_INT128__) && !defined(QNP_FORCE_PORTABLE_UINT128)
 typedef unsigned __int128 qu128;
-#define HAVE_U128 1
+static inline qu128 u128_make(uint64_t hi, uint64_t lo) {
+    return ((qu128)hi << 64) | lo;
+}
+static inline uint64_t u128_hi(qu128 v) { return (uint64_t)(v >> 64); }
+static inline uint64_t u128_lo(qu128 v) { return (uint64_t)v; }
+static inline qu128 u128_add(qu128 a, qu128 b) { return a + b; }
+static inline qu128 u128_mul(qu128 a, qu128 b) { return a * b; }
+static inline qu128 u128_mul64(uint64_t a, uint64_t b) { return (qu128)a * b; }
 #else
-#error "a 128-bit integer type is required for the PCG64 generator"
+/* MSVC has no native unsigned __int128.  Unsigned limb arithmetic preserves
+ * the exact PCG64 stream and serialized state, including modulo-2^128 wrap. */
+typedef struct { uint64_t hi, lo; } qu128;
+static inline qu128 u128_make(uint64_t hi, uint64_t lo) {
+    qu128 v = {hi, lo};
+    return v;
+}
+static inline uint64_t u128_hi(qu128 v) { return v.hi; }
+static inline uint64_t u128_lo(qu128 v) { return v.lo; }
+static inline qu128 u128_add(qu128 a, qu128 b) {
+    uint64_t lo = a.lo + b.lo;
+    return u128_make(a.hi + b.hi + (lo < a.lo), lo);
+}
+static inline qu128 u128_mul64(uint64_t a, uint64_t b) {
+    const uint64_t mask = UINT32_MAX;
+    uint64_t a0 = a & mask, a1 = a >> 32;
+    uint64_t b0 = b & mask, b1 = b >> 32;
+    uint64_t w0 = a0 * b0;
+    uint64_t t = a1 * b0 + (w0 >> 32);
+    uint64_t w1 = (t & mask) + a0 * b1;
+    uint64_t hi = a1 * b1 + (t >> 32) + (w1 >> 32);
+    return u128_make(hi, (w1 << 32) | (w0 & mask));
+}
+static inline qu128 u128_mul(qu128 a, qu128 b) {
+    qu128 product = u128_mul64(a.lo, b.lo);
+    product.hi += a.hi * b.lo + a.lo * b.hi;
+    return product;
+}
 #endif
 
 typedef unsigned char qbool;
@@ -79,8 +113,8 @@ typedef struct {
 } PCG64;
 
 static inline void pcg_step(PCG64 *rng) {
-    qu128 mult = ((qu128)PCG_MULT_HI << 64) | PCG_MULT_LO;
-    rng->state = rng->state * mult + rng->inc;
+    qu128 mult = u128_make(PCG_MULT_HI, PCG_MULT_LO);
+    rng->state = u128_add(u128_mul(rng->state, mult), rng->inc);
 }
 
 static inline uint64_t rotr64(uint64_t v, unsigned r) {
@@ -90,8 +124,8 @@ static inline uint64_t rotr64(uint64_t v, unsigned r) {
 static inline uint64_t pcg_next64(PCG64 *rng) {
     pcg_step(rng);
     qu128 s = rng->state;
-    uint64_t value = (uint64_t)(s >> 64) ^ (uint64_t)s;
-    unsigned rot = (unsigned)(s >> 122);
+    uint64_t value = u128_hi(s) ^ u128_lo(s);
+    unsigned rot = (unsigned)(u128_hi(s) >> 58);
     return rotr64(value, rot);
 }
 
@@ -116,12 +150,11 @@ static void pcg_seed(PCG64 *rng, const uint32_t *pool) {
     uint64_t u64[4];
     for (int i = 0; i < 4; i++)
         u64[i] = (uint64_t)words[2 * i] | ((uint64_t)words[2 * i + 1] << 32);
-    qu128 initstate = ((qu128)u64[0] << 64) | u64[1];
-    qu128 initseq = ((qu128)u64[2] << 64) | u64[3];
-    rng->state = 0;
-    rng->inc = (initseq << 1) | 1u;
+    qu128 initstate = u128_make(u64[0], u64[1]);
+    rng->state = u128_make(0, 0);
+    rng->inc = u128_make((u64[2] << 1) | (u64[3] >> 63), (u64[3] << 1) | 1u);
     pcg_step(rng);
-    rng->state += initstate;
+    rng->state = u128_add(rng->state, initstate);
     pcg_step(rng);
     rng->has_uint32 = 0;
     rng->uinteger = 0;
@@ -188,16 +221,16 @@ static uint32_t lemire_uint32(PCG64 *rng, uint32_t range) {
 
 static uint64_t lemire_uint64(PCG64 *rng, uint64_t range) {
     const uint64_t range_excl = range + 1;
-    qu128 m = (qu128)pcg_next64(rng) * range_excl;
-    uint64_t leftover = (uint64_t)m;
+    qu128 m = u128_mul64(pcg_next64(rng), range_excl);
+    uint64_t leftover = u128_lo(m);
     if (leftover < range_excl) {
         const uint64_t threshold = (0xFFFFFFFFFFFFFFFFULL - range) % range_excl;
         while (leftover < threshold) {
-            m = (qu128)pcg_next64(rng) * range_excl;
-            leftover = (uint64_t)m;
+            m = u128_mul64(pcg_next64(rng), range_excl);
+            leftover = u128_lo(m);
         }
     }
-    return (uint64_t)(m >> 64);
+    return u128_hi(m);
 }
 
 /* Masked rejection.  NumPy keeps this one for `shuffle`, so the two draw
@@ -892,8 +925,8 @@ static PyObject *gen_bit_generator(QGenerator *self, void *closure) {
 static PyObject *gen_get_state(QGenerator *self, void *closure) {
     (void)closure;
     return Py_BuildValue("{s:s,s:i,s:(KKKK),s:i,s:I}","bit_generator","PCG64","version",1,
-        "words",(unsigned long long)(self->rng.state>>64),(unsigned long long)self->rng.state,
-        (unsigned long long)(self->rng.inc>>64),(unsigned long long)self->rng.inc,
+        "words",(unsigned long long)u128_hi(self->rng.state),(unsigned long long)u128_lo(self->rng.state),
+        (unsigned long long)u128_hi(self->rng.inc),(unsigned long long)u128_lo(self->rng.inc),
         "has_uint32",self->rng.has_uint32,"uinteger",self->rng.uinteger);
 }
 static int gen_set_state(QGenerator *self,PyObject *value,void *closure) {
@@ -909,7 +942,7 @@ static int gen_set_state(QGenerator *self,PyObject *value,void *closure) {
     uint64_t w[4];for(int i=0;i<4;i++){w[i]=PyLong_AsUnsignedLongLong(PySequence_Fast_GET_ITEM(seq,i));if(PyErr_Occurred()){Py_DECREF(seq);return -1;}}
     Py_DECREF(seq);
     if(!(w[3]&1)){PyErr_SetString(PyExc_ValueError,"PCG64 increment must be odd");return -1;}
-    self->rng.state=((qu128)w[0]<<64)|w[1];self->rng.inc=((qu128)w[2]<<64)|w[3];self->rng.has_uint32=(int)h;self->rng.uinteger=(uint32_t)c;return 0;
+    self->rng.state=u128_make(w[0],w[1]);self->rng.inc=u128_make(w[2],w[3]);self->rng.has_uint32=(int)h;self->rng.uinteger=(uint32_t)c;return 0;
 }
 
 static PyGetSetDef generator_getset[] = {

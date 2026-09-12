@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 import operator
+from inspect import getdoc
 
 from .. import numeric as np
 
@@ -560,12 +561,12 @@ for _solver_name in (
     _solver = globals()[_solver_name]
     _sampling = ("right-continuous step sampling" if _solver_name in {"gillespie_ssa", "tau_leaping"}
                  else "linear interpolation between simulated grid states")
-    _solver.__doc__ = (_solver.__doc__ or "") + (
-        "\n    Output controls: final_only retains one state; save_every retains every\n"
-        "    kth state and the endpoint; save_at requests selected times using\n"
-        "    " + _sampling + ".\n"
-        "    callback(t, state_copy) receives accepted states, including the initial\n"
-        "    state; return True to stop. Controlled output streams random draws\n"
-        "    without retaining the full driving-noise array.\n")
+    _solver.__doc__ = (getdoc(_solver) or "") + (
+        "\n\nOutput controls: final_only retains one state; save_every retains every\n"
+        "kth state and the endpoint; save_at requests selected times using\n"
+        f"{_sampling}.\n"
+        "callback(t, state_copy) receives accepted states, including the initial\n"
+        "state; return True to stop. Controlled output streams random draws\n"
+        "without retaining the full driving-noise array.\n")
     globals()[_solver_name] = output_control(_solver)
 del _solver_name, _solver, _sampling

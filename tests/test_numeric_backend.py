@@ -123,6 +123,10 @@ def test_unary_ufuncs(data, fn, key):
         except TypeError:
             pytest.skip(f"{fn} rejects this dtype in NumPy too")
     got = getattr(qp, fn)(mine[key])
+    if key == "i" and fn in ("floor", "ceil", "trunc"):
+        # Quadrivium preserves the integer dtype for integer rounding, as
+        # current NumPy does; older NumPy releases promoted these to float.
+        expected = expected.astype(raw[key].dtype)
     exact = fn in EXACT_UNARY and not (key == "c" and fn in ("sqrt", "absolute", "square"))
     assert_same(got, expected, exact=exact, tol=1e-13, name=f"{fn}({key})")
 
@@ -222,11 +226,19 @@ def test_reduction_over_three_dimensions(data):
 
 
 def test_sum_matches_numpy_pairwise_exactly():
-    """Long float sums must agree bit for bit, not just to a tolerance."""
+    """The same pairwise traversal must agree bit for bit across backends."""
     rng = np.random.default_rng(11)
-    for n in (7, 8, 129, 1000, 4096, 10007):
-        values = rng.normal(size=n) * 1e6
-        assert float(qp.sum(qp.array(values.tolist()))) == float(np.sum(values))
+    # Older NumPy versions split large reductions into 8,192-element buffers,
+    # changing the addition order. Keep each input in one buffer so this test
+    # compares the pairwise kernels rather than NumPy's version-specific
+    # outer buffering policy.
+    previous_bufsize = np.setbufsize(1 << 16)
+    try:
+        for n in (7, 8, 129, 1000, 4096, 10007):
+            values = rng.normal(size=n) * 1e6
+            assert float(qp.sum(qp.array(values.tolist()))) == float(np.sum(values))
+    finally:
+        np.setbufsize(previous_bufsize)
 
 
 INDEXING = [
