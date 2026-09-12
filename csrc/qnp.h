@@ -18,9 +18,15 @@
 #include <stdint.h>
 #include <string.h>
 
-/* M_PI is not defined by the standard C headers on every platform. */
+/* These constants are not defined by the C headers on every platform. */
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+#ifndef M_LN2
+#define M_LN2 0.69314718055994530942
+#endif
+#ifndef M_LN10
+#define M_LN10 2.30258509299404568402
 #endif
 
 /* Py_NewRef became part of the C API in Python 3.10. */

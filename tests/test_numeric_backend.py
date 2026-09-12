@@ -556,8 +556,20 @@ def test_random_streams_match_numpy_exactly(seed):
     theirs = np.random.default_rng(seed)
     assert list(to_numpy(mine.random(50))) == list(theirs.random(50))
     assert list(to_numpy(mine.standard_normal(50))) == list(theirs.standard_normal(50))
-    assert list(to_numpy(mine.uniform(-2.0, 3.0, 50))) == list(theirs.uniform(-2.0, 3.0, 50))
-    assert list(to_numpy(mine.normal(1.5, 0.25, 50))) == list(theirs.normal(1.5, 0.25, 50))
+    # NumPy's ARM distribution kernels can fuse the multiply and add, while
+    # Quadrivium deliberately rounds them separately. Compare exact raw-draw
+    # transforms first, then bound the platform distribution's affine rounding.
+    draws = np.random.default_rng(seed)
+    draws.bit_generator.state = theirs.bit_generator.state
+    eps = np.finfo(float).eps
+    uniform = to_numpy(mine.uniform(-2.0, 3.0, 50))
+    np.testing.assert_array_equal(uniform, -2.0 + 5.0 * draws.random(50))
+    np.testing.assert_allclose(uniform, theirs.uniform(-2.0, 3.0, 50),
+                               rtol=2 * eps, atol=4 * eps)
+    normal = to_numpy(mine.normal(1.5, 0.25, 50))
+    np.testing.assert_array_equal(normal, 1.5 + 0.25 * draws.standard_normal(50))
+    np.testing.assert_allclose(normal, theirs.normal(1.5, 0.25, 50),
+                               rtol=2 * eps, atol=3 * eps)
     assert list(to_numpy(mine.standard_exponential(50))) == \
         list(theirs.standard_exponential(50))
     assert list(to_numpy(mine.integers(0, 1000, 50))) == list(theirs.integers(0, 1000, 50))
@@ -675,12 +687,15 @@ def test_repr_matches_numpy(data):
 
 
 def _peak_rss_kib():
-    import resource
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    import sys
+
+    resource = pytest.importorskip("resource", reason="peak RSS is only available on Unix")
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # Darwin reports bytes; Linux reports KiB. Keep the leak thresholds below
+    # in MiB on both platforms instead of magnifying macOS growth by 1024.
+    return peak / 1024 if sys.platform == "darwin" else peak
 
 
-@pytest.mark.skipif(not hasattr(__import__("resource", fromlist=["getrusage"]), "getrusage"),
-                    reason="peak RSS is only available on Unix")
 def test_temporaries_do_not_accumulate():
     """Churning large temporaries must not grow the process.
 

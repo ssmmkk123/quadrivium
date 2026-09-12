@@ -75,12 +75,20 @@ def test_choice_rejects_invalid_probabilities_without_consuming_draws(probabilit
 def test_valid_distributions_preserve_seeded_streams_and_broadcasting():
     actual = a.random.default_rng(77)
     expected = np.random.default_rng(77)
+    platform = np.random.default_rng(77)
     low, high = np.array([-2., 0., 3.])[::-1], np.array([0., 4., 7.])[::-1]
+    eps = np.finfo(float).eps
+    for lower, upper, size in ((low, high, (4, 3)), (2., 2., 7),
+                               (-1e300, 1e300, 7)):
+        result = np.asarray(actual.uniform(a.array(lower), a.array(upper), size=size))
+        # Explicit NumPy ufuncs retain the same two-step affine transform even
+        # when NumPy's distribution kernel uses a fused multiply-add.
+        reference = lower + (upper - lower) * expected.random(size)
+        np.testing.assert_array_equal(result, reference)
+        np.testing.assert_allclose(
+            result, platform.uniform(lower, upper, size=size), rtol=2 * eps,
+            atol=2 * eps * float(np.max(np.abs(lower))))
     for result, reference in (
-        (actual.uniform(a.array(low), a.array(high), size=(4, 3)),
-         expected.uniform(low, high, size=(4, 3))),
-        (actual.uniform(2., 2., size=7), expected.uniform(2., 2., size=7)),
-        (actual.uniform(-1e300, 1e300, size=7), expected.uniform(-1e300, 1e300, size=7)),
         (actual.poisson(a.array([0., .1, 3., 10., 1e5]), size=(4, 5)),
          expected.poisson([0., .1, 3., 10., 1e5], size=(4, 5))),
         (actual.choice(4, size=25, p=[0., .2, 0., .8]),
